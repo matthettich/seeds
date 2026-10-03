@@ -1006,6 +1006,8 @@ body.recmain .recvideoport{display:none !important}
       <div class="setsec">
         <div class="sethead">Performance</div>
         <label class="setsel"><span>Quality</span><select id="setquality"><option value="full">Full quality</option><option value="draft">Draft (faster, half resolution)</option></select></label>
+        <div class="setsub" id="gpuinfo"></div>
+        <label class="setrow" id="hwrow" hidden><input type="checkbox" id="sethw"><span><b>Record with the graphics card</b><br><span class="setsub">Faster recording using the Nvidia/AMD encoder. Some drivers refuse it (“video encoding failed”); if that happens, turn this off. Needs a restart.</span></span></label>
         <label class="setsel"><span>Generators</span><select id="setgenfps"><option value="0">Redraw every frame</option><option value="30">Redraw 30 times a second</option><option value="20">Redraw 20 times a second</option><option value="15">Redraw 15 times a second</option></select></label>
         <div class="setsub">The frame rate and CPU load are shown in the top bar. Drawn generators (Contour bloom, Geo composer, Strata…) are the heaviest part of a patch: redrawing them less often keeps everything else smooth. Draft quality makes effects and generators lighter. Recordings use the same settings.</div>
       </div>
@@ -1283,6 +1285,7 @@ function P(n, key){
   return +r.toFixed(6);
 }
 function modPass(){
+  if (frameNo % 3) return; // the eye doesn't need slider readouts redrawn every frame
   for (const n of nodes.values()){
     if (n.cmeta) for (const k in n.cmeta){
       const m = n.cmeta[k], o = choiceMod(n, k), txt = o ? o[1] : '';
@@ -1495,7 +1498,7 @@ async function playerLoad(n, file){
 /* ---------- GPU engine: shared WebGL2 context, video stays on the GPU between modules ---------- */
 const GLX = (() => {
   let cv = null, gl = null;
-  try { cv = document.createElement('canvas'); gl = cv.getContext('webgl2', {premultipliedAlpha:false, preserveDrawingBuffer:true, antialias:false, alpha:false}); } catch(e){}
+  try { cv = document.createElement('canvas'); gl = cv.getContext('webgl2', {premultipliedAlpha:false, preserveDrawingBuffer:true, antialias:false, alpha:false, powerPreference:'high-performance'}); } catch(e){}
   if (!gl) return null;
   const VS = '#version 300 es\nin vec2 p; out vec2 uv; void main(){ uv = p*.5+.5; gl_Position = vec4(p,0.,1.); }';
   const HEAD = `#version 300 es
@@ -1552,7 +1555,8 @@ vec2 cov(vec2 u, vec2 s){ float ar = s.x/s.y, ao = res.x/res.y; vec2 k = ar > ao
         let u = uploads.get(v);
         if (!u){ u = {tex: gl.createTexture(), f: -1}; gl.bindTexture(gl.TEXTURE_2D, u.tex); texParams(); uploads.set(v, u); }
         gl.bindTexture(gl.TEXTURE_2D, u.tex);
-        if (u.f !== frameNo){ gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v); u.f = frameNo; }
+        const fresh = v.__ver !== undefined ? u.ver !== v.__ver : u.f !== frameNo; // generator pictures carry a version; others upload once a frame
+        if (fresh){ gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v); u.f = frameNo; u.ver = v.__ver; }
       }
       const l = L('tex' + i); if (l) gl.uniform1i(l, i);
     });
@@ -1567,7 +1571,7 @@ vec2 cov(vec2 u, vec2 s){ float ar = s.x/s.y, ao = res.x/res.y; vec2 k = ar > ao
     if (target) gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   }
   return {
-    Tex,
+    Tex, gl,
     lost: () => lost || gl.isContextLost(),
     target(n, key, W, H){
       n._gt = n._gt || {};
@@ -2433,7 +2437,14 @@ function makeBlobs(seed){
 }
 
 /* ---------- graph pulling ---------- */
-function edgeInto(id, port){ return edges.find(e => e.to.node === id && e.to.port === port); }
+let _eIdx = null, _eArr = null, _eLen = -1, _eFrame = -1, _eVer = -1, edgeVer = 0;
+function edgeInto(id, port){
+  if (_eArr !== edges || _eLen !== edges.length || _eFrame !== frameNo || _eVer !== edgeVer){
+    _eIdx = new Map(); for (const e of edges){ const k = e.to.node + '\u0001' + e.to.port; if (!_eIdx.has(k)) _eIdx.set(k, e); }
+    _eArr = edges; _eLen = edges.length; _eFrame = frameNo; _eVer = edgeVer;
+  }
+  return _eIdx.get(id + '\u0001' + port);
+}
 // Raw input: may be a GPU texture. GPU modules and pass-throughs use this.
 function inputRaw(n, port){
   const e = edgeInto(n.id, port); if (!e) return null;
@@ -2516,6 +2527,7 @@ function pullNode(id){
   n._out = null;
   if (MEM_TYPES.has(n.type)) memTick(n);
   n._out = def.pull ? withChoiceMods(n, () => def.pull(n)) : null;
+  if (GEN_CAP.has(n.type) && n._out && n._out.getContext) n._out.__ver = (n._out.__ver || 0) + 1;
   if (def.mix && n._out) n._out = applyMix(n, n._out);
   if (n._out && n.params.tntAmt !== undefined && (n.params.tntAmt > 0 || edgeInto(n.id, 'p:tntAmt'))) n._out = applyTint(n, n._out);
   if (GEN_CAP.has(n.type)){ n._gout = n._out; n._gt = performance.now(); gatesChanged(n); }
@@ -5851,6 +5863,7 @@ function cableGroup(kind){
   return {g, shadow, line, sheen, ends, kind};
 }
 function syncCableEls(){
+  edgeVer++;
   for (const [e, c] of cableEls) if (!edges.includes(e)){ c.g.remove(); cableEls.delete(e); }
   for (const e of edges){
     if (cableEls.has(e)) continue;
@@ -6061,7 +6074,8 @@ function cableBendAt(ev, edge){
 window.addEventListener('keydown', e => { if (e.key === 'Alt') document.body.classList.add('alting'); });
 window.addEventListener('keyup', e => { if (e.key === 'Alt') document.body.classList.remove('alting'); });
 window.addEventListener('blur', () => document.body.classList.remove('alting'));
-function afterEdges(){ syncCableEls(); syncAudio(); refreshGroups(); save(); }
+function afterEdges(){
+  edgeVer++; syncCableEls(); syncAudio(); refreshGroups(); save(); }
 
 /* ---------- pan ---------- */
 const zoomVal = document.getElementById('zoomval');
@@ -7788,6 +7802,27 @@ function fpsTick(){
 }
 function setQuality(q){ settings.quality = q; QS = q === 'draft' ? 0.5 : 1; saveSettings(); const sel = document.getElementById('setquality'); if (sel) sel.value = q; }
 document.getElementById('setquality').addEventListener('change', e => setQuality(e.target.value));
+// Which graphics chip is doing the work (Windows laptops sometimes use the slower built-in Intel graphics).
+{
+  const el = document.getElementById('gpuinfo');
+  try {
+    const gl = GLX && GLX.gl, ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+    const r = gl ? String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)) : 'not available';
+    const nice = r.replace(/^ANGLE \(|\)$/g, '').replace(/,\s*(D3D11|Direct3D11|OpenGL|Metal).*$/i, '').replace(/ \(0x[0-9A-F]+\)/gi, '');
+    el.textContent = 'Graphics chip in use: ' + nice;
+    if (/intel/i.test(r) && /win/i.test(navigator.platform)) el.innerHTML += '<br><b>Tip:</b> this is the built-in Intel graphics. For more speed, open Windows Settings → System → Display → Graphics, choose Seeds, and set it to High performance (NVIDIA). Then restart Seeds.';
+  } catch(e){ el.textContent = ''; }
+  // Desktop app on Windows: hardware recording switch
+  const nat = window.seedsNative;
+  if (nat && nat.platform === 'win32' && nat.getHwEncode){
+    const row = document.getElementById('hwrow'), cb = document.getElementById('sethw'); row.hidden = false;
+    nat.getHwEncode().then(v => { cb.checked = !!v; });
+    cb.addEventListener('change', async () => {
+      await nat.setHwEncode(cb.checked);
+      if (await askDialog('Seeds needs to restart to change how it records. Restart now? (Save your patch and takes first.)', {ok: 'Restart now', cancel: 'Later'})) nat.relaunch();
+    });
+  }
+}
 { const gs = document.getElementById('setgenfps'); if (settings.genFps == null) settings.genFps = 30; genFps = +settings.genFps; gs.value = String(settings.genFps); gs.addEventListener('change', () => { settings.genFps = +gs.value; genFps = settings.genFps; saveSettings(); }); }
 
 /* ---------- Automatic backups ---------- */
