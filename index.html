@@ -1995,15 +1995,29 @@ function hatchPoly(x, pts, gap, ang, color, lw){
   x.beginPath(); for (let d = -R; d <= R; d += gap){ x.moveTo(cx + c*-R - s*d, cy + s*-R + c*d); x.lineTo(cx + c*R - s*d, cy + s*R + c*d); }
   x.strokeStyle = color; x.lineWidth = lw; x.stroke(); x.restore();
 }
+// Hatch stripes as fill patterns at three angles (much cheaper than clipping every cell).
+function isoHatchPatterns(x, n, lw, color, S){
+  if (!x.createPattern || typeof DOMMatrix === 'undefined') return null;
+  const gapPx = Math.max(3, lw*4*S), linePx = Math.max(0.6, lw*0.7*S), key = gapPx.toFixed(2) + '|' + linePx.toFixed(2) + '|' + color + '|' + S.toFixed(3);
+  if (n.hpKey === key && n.hp) return n.hp;
+  const tile = document.createElement('canvas'), tw = Math.max(2, Math.round(gapPx)); tile.width = tw; tile.height = 8;
+  const t = tile.getContext('2d'); t.fillStyle = color; t.fillRect(0, 0, Math.min(tw, Math.max(1, Math.round(linePx))), 8);
+  n.hp = [0, 1, 2].map(k => { const p = x.createPattern(tile, 'repeat'); const ang = (Math.PI/6 + k*Math.PI/3)*180/Math.PI; try { p.setTransform(new DOMMatrix().scale(1/S, 1/S).rotate(ang)); } catch(e){ return null; } return p; });
+  if (n.hp.some(p => !p)) n.hp = null;
+  n.hpKey = key; return n.hp;
+}
 function quadPath(x, q){ x.beginPath(); q.forEach((p, i) => i ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.closePath(); }
 function drawIso(x, n, lw){
   const cols = ['c1','c2','c3','c4'].map(k => colorCss(n, k)), line = colorCss(n, 'line'), seed = n.params.seed, cx = Math.round(P(n, 'complexity'));
   const hatch = P(n, 'hatch'), shuf = P(n, 'shuffle'), t = n.time;
   // Color for a cell: fixed by the seed, with a share of cells re-picking colors over time.
   const pick = id => { const flick = hashRand(seed, id*7 + 5) < shuf ? Math.floor(t*2 + hashRand(seed, id)*7) : 0; return cols[Math.floor(hashRand(seed + flick*131, id)*4)]; };
+  const S = x.getTransform().a ? Math.hypot(x.getTransform().a, x.getTransform().b) : 1;
+  const pats = isoHatchPatterns(x, n, lw, line, S);
   const cell = (q, id) => { quadPath(x, q); x.fillStyle = pick(id); x.fill();
-    if (hashRand(seed, id*13 + 1) < hatch){ hatchPoly(x, q, lw*4, Math.PI/6 + Math.floor(hashRand(seed, id*3)*3)*Math.PI/3, line, lw*0.7); }
-    quadPath(x, q); x.strokeStyle = line; x.lineWidth = lw; x.stroke(); };
+    if (pats && hashRand(seed, id*13 + 1) < hatch){ x.fillStyle = pats[Math.floor(hashRand(seed, id*3)*3)]; x.fill(); }
+    else if (!pats && hashRand(seed, id*13 + 1) < hatch){ hatchPoly(x, q, lw*4, Math.PI/6 + Math.floor(hashRand(seed, id*3)*3)*Math.PI/3, line, lw*0.7); quadPath(x, q); }
+    x.strokeStyle = line; x.lineWidth = lw; x.stroke(); };
   const mode = n.params.mode, c30 = Math.cos(Math.PI/6);
   if (mode === 'tunnel'){
     const K = 4 + cx, g = 0.8, f = ((t % 1) + 1) % 1, base = Math.floor(t);
@@ -4249,28 +4263,41 @@ const DEFS = {
       const x = n.ctx; x.setTransform(1,0,0,1,0,0); x.globalAlpha = 1; x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H);
       const S = H/2*0.95, N = Math.round(P(n, 'points')), L = Math.round(P(n, 'layers')), skip = Math.round(P(n, 'skip')), jag = P(n, 'jag');
       const ri = P(n, 'inner'), ro = P(n, 'outer'), fill = P(n, 'fill'), tw = P(n, 'twist'), lw = P(n, 'lw')*H/720/S;
-      x.translate(W/2, H/2); x.scale(S, S); x.rotate(n.rot*Math.PI/180); x.lineJoin = 'miter';
-      const R = k => hashRand(n.params.seed, k);
-      const fa = colorCss(n, 'fa'), fb = colorCss(n, 'fb');
-      for (let l = 0; l < L; l++){
-        const off = l*tw*Math.PI/N, sc = 1 - l*0.08;
-        const tip = i => { const a = (i/N)*Math.PI*2 + off; const r = (ro*(1 - jag*0.6*R(i*13 + l*997)))*sc; return [Math.cos(a)*r, Math.sin(a)*r]; };
-        const base = i => { const a = ((i + 0.5)/N)*Math.PI*2 + off; const r = ri*(1 + jag*0.3*(R(i*7 + l*31) - 0.5))*sc; return [Math.cos(a)*r, Math.sin(a)*r]; };
-        // Filled shards: triangles from the inner ring out to each tip.
-        for (let i = 0; i < N; i++) if (R(i*3 + l*101) < fill){
-          const b0 = base(i - 1), t0 = tip(i), b1 = base(i);
-          x.beginPath(); x.moveTo(b0[0], b0[1]); x.lineTo(t0[0], t0[1]); x.lineTo(b1[0], b1[1]); x.closePath();
-          x.fillStyle = (i + l) % 2 ? fa : fb; x.globalAlpha = 0.85; x.fill(); x.globalAlpha = 1;
+      const fa = colorCss(n, 'fa'), fb = colorCss(n, 'fb'), lc = colorCss(n, 'line');
+      // The star only changes when its settings do; spinning just turns the finished picture.
+      const key = [W, H, N, L, skip, jag, ri, ro, fill, tw, lw, fa, fb, lc, n.params.seed].join('|');
+      const D = Math.ceil(S*2*1.02) + 4;
+      if (key !== n.starKey){
+        n.starKey = key;
+        if (!n.star) n.star = mkCanvas(D, D); fitCanvas(n.star.cv, D, D);
+        const y = n.star.ctx; y.setTransform(1,0,0,1,0,0); y.clearRect(0, 0, D, D);
+        y.translate(D/2, D/2); y.scale(S, S); y.lineJoin = 'miter';
+        const R = k => hashRand(n.params.seed, k);
+        for (let l = 0; l < L; l++){
+          const off = l*tw*Math.PI/N, sc = 1 - l*0.08;
+          const tips = [], bases = [];
+          for (let i = 0; i < N; i++){
+            const a = (i/N)*Math.PI*2 + off, r = (ro*(1 - jag*0.6*R(i*13 + l*997)))*sc; tips.push([Math.cos(a)*r, Math.sin(a)*r]);
+            const a2 = ((i + 0.5)/N)*Math.PI*2 + off, r2 = ri*(1 + jag*0.3*(R(i*7 + l*31) - 0.5))*sc; bases.push([Math.cos(a2)*r2, Math.sin(a2)*r2]);
+          }
+          const base = i => bases[(i + N) % N], tip = i => tips[(i + N) % N];
+          // Filled shards in two batches (one per color) instead of one drawing call per triangle.
+          y.globalAlpha = 0.85;
+          for (const par of [0, 1]){
+            y.beginPath(); let any = false;
+            for (let i = 0; i < N; i++) if ((i + l) % 2 === par && R(i*3 + l*101) < fill){ const b0 = base(i - 1), t0 = tip(i), b1 = base(i); y.moveTo(b0[0], b0[1]); y.lineTo(t0[0], t0[1]); y.lineTo(b1[0], b1[1]); y.closePath(); any = true; }
+            if (any){ y.fillStyle = par ? fa : fb; y.fill(); }
+          }
+          y.globalAlpha = 1; y.strokeStyle = lc; y.lineWidth = lw;
+          y.beginPath();
+          for (let i = 0; i <= N; i++){ const b = base(i - 1), t = tip(i % N); i ? y.lineTo(b[0], b[1]) : y.moveTo(b[0], b[1]); y.lineTo(t[0], t[1]); }
+          y.stroke();
+          y.globalAlpha = 0.55; y.beginPath();
+          for (let i = 0; i < N; i++){ const b = base(i), t = tip((i + skip) % N); y.moveTo(b[0], b[1]); y.lineTo(t[0], t[1]); }
+          y.stroke(); y.globalAlpha = 1;
         }
-        x.strokeStyle = colorCss(n, 'line'); x.lineWidth = lw;
-        x.beginPath();
-        for (let i = 0; i <= N; i++){ const b = base(i - 1), t = tip(i % N); i ? x.lineTo(b[0], b[1]) : x.moveTo(b[0], b[1]); x.lineTo(t[0], t[1]); }
-        x.stroke();
-        // String-art weave: each inner point to a tip several steps around.
-        x.globalAlpha = 0.55; x.beginPath();
-        for (let i = 0; i < N; i++){ const b = base(i), t = tip((i + skip) % N); x.moveTo(b[0], b[1]); x.lineTo(t[0], t[1]); }
-        x.stroke(); x.globalAlpha = 1;
       }
+      x.translate(W/2, H/2); x.rotate(n.rot*Math.PI/180); x.drawImage(n.star.cv, -D/2, -D/2);
       x.setTransform(1,0,0,1,0,0);
       return n.cv;
     }
@@ -4513,14 +4540,32 @@ const DEFS = {
         n.hm = Array.from({length: 8}, (_, i) => ({k: 2 + i + Math.floor(R()*2), a: 0.5/(i + 1)*(0.5 + R()), ph: R()*Math.PI*2, s: (R() - 0.5)*0.8, dj: (R() - 0.5)*0.35}));
         n.sp = Array.from({length: 240}, () => R()); }
       const [W, H] = genSize(n); fitCanvas(n.cv, W, H);
-      const x = n.ctx; x.setTransform(1,0,0,1,0,0); x.globalAlpha = 1; x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H);
       const S = H/2*0.95, t = n.time, K = Math.round(P(n, 'rings')), sp = P(n, 'spacing'), dist = P(n, 'distort'), det = Math.round(P(n, 'detail')), tw = P(n, 'twist'), inner = P(n, 'inner');
+      // Nothing moving and nothing changed: keep the last picture.
+      const ckey = [W, H, t, K, sp, dist, det, tw, inner, P(n, 'spikes'), P(n, 'spikelen'), P(n, 'layers'), P(n, 'lw'), colorCss(n, 'col'), colorCss(n, 'spcol'), colorCss(n, 'bg'), n.params.seed].join('|');
+      if (ckey === n.ckey) return n.cv; n.ckey = ckey;
+      const x = n.ctx; x.setTransform(1,0,0,1,0,0); x.globalAlpha = 1; x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H);
       x.translate(W/2, H/2); x.scale(S, S); x.lineJoin = 'round'; x.lineWidth = P(n, 'lw')*H/720/S;
       const wav = (a, j) => { let w = 0; for (let i = 0; i < det; i++){ const hm = n.hm[i]; w += hm.a*Math.sin(hm.k*a + hm.ph + t*hm.s + j*hm.dj*tw); } return w; };
+      // Rings: sin(A + B) = sin A cos B + cos A sin B, with A per point (fixed) and B per ring (changes with time),
+      // so each ring needs a handful of sines instead of thousands.
+      const NP = 160;
+      if (!n.tab || n.tabSeed !== n.params.seed){
+        n.tabSeed = n.params.seed; n.tab = {ca: new Float32Array(NP + 1), sa: new Float32Array(NP + 1), sA: [], cA: []};
+        for (let k = 0; k <= NP; k++){ const a = k/NP*Math.PI*2; n.tab.ca[k] = Math.cos(a); n.tab.sa[k] = Math.sin(a); }
+        for (let i = 0; i < 8; i++){ const hm = n.hm[i], sA = new Float32Array(NP + 1), cA = new Float32Array(NP + 1);
+          for (let k = 0; k <= NP; k++){ const A = hm.k*(k/NP*Math.PI*2) + hm.ph; sA[k] = Math.sin(A); cA[k] = Math.cos(A); }
+          n.tab.sA.push(sA); n.tab.cA.push(cA); }
+      }
+      const T = n.tab, sB = new Float32Array(det), cB = new Float32Array(det), amp = new Float32Array(det);
       x.strokeStyle = colorCss(n, 'col'); x.beginPath();
       const first = inner > 0.0005 ? sp : sp*0.12; // no gap: the first ring sits right at the center
       for (let j = 0; j < K; j++){ const base = inner + first + j*sp;
-        for (let k = 0; k <= 160; k++){ const a = k/160*Math.PI*2, r = base*(1 + dist*0.35*wav(a, j)); const px = Math.cos(a)*r, py = Math.sin(a)*r; k ? x.lineTo(px, py) : x.moveTo(px, py); } }
+        for (let i = 0; i < det; i++){ const hm = n.hm[i], B = t*hm.s + j*hm.dj*tw; sB[i] = Math.sin(B); cB[i] = Math.cos(B); amp[i] = hm.a; }
+        for (let k = 0; k <= NP; k++){
+          let w = 0; for (let i = 0; i < det; i++) w += amp[i]*(T.sA[i][k]*cB[i] + T.cA[i][k]*sB[i]);
+          const r = base*(1 + dist*0.35*w), px = T.ca[k]*r, py = T.sa[k]*r; k ? x.lineTo(px, py) : x.moveTo(px, py);
+        } }
       x.stroke();
       const Sp = Math.round(P(n, 'spikes'));
       if (Sp > 0){
@@ -4564,7 +4609,21 @@ const DEFS = {
         renderGeo(n, W, H, n.params.mode, 'none', {hatch: P(n, 'hatch'), grad: 0.3, shadow: 'auto', frames: 0, drift: 0});
         return n.cv;
       }
-      const S = H/2*0.92; x.translate(W/2, H/2); x.rotate(n.rot*Math.PI/180); x.scale(S, S); x.lineJoin = 'miter';
+      const S = H/2*0.92;
+      if (n.params.mode === 'cube'){
+        // The cube only changes when its settings do (or when shuffled colors flip); spinning turns the finished picture.
+        const shuf = P(n, 'shuffle'), D = Math.ceil(S*2.6);
+        const key = [W, H, P(n, 'complexity'), P(n, 'hatch'), shuf, P(n, 'lw'), ...['c1','c2','c3','c4','line'].map(k => colorCss(n, k)), n.params.seed, shuf > 0 ? Math.floor(n.time*8) : 0].join('|');
+        if (key !== n.cubeKey){
+          n.cubeKey = key; if (!n.cube) n.cube = mkCanvas(D, D); fitCanvas(n.cube.cv, D, D);
+          const y = n.cube.ctx; y.setTransform(1,0,0,1,0,0); y.clearRect(0, 0, D, D); y.translate(D/2, D/2); y.scale(S, S); y.lineJoin = 'miter';
+          const t0 = n.time; n.time = Math.floor(n.time*8)/8; drawIso(y, n, P(n, 'lw')*H/720/S); n.time = t0;
+        }
+        x.translate(W/2, H/2); x.rotate(n.rot*Math.PI/180); x.drawImage(n.cube.cv, -D/2, -D/2);
+        x.setTransform(1,0,0,1,0,0);
+        return n.cv;
+      }
+      x.translate(W/2, H/2); x.rotate(n.rot*Math.PI/180); x.scale(S, S); x.lineJoin = 'miter';
       drawIso(x, n, P(n, 'lw')*H/720/S);
       x.setTransform(1,0,0,1,0,0);
       return n.cv;
@@ -5225,6 +5284,8 @@ const DEFS = {
     pull(n){
       const [, dt] = tdt(n); n.time += dt*P(n, 'speed');
       const [W, H] = genSize(n); fitCanvas(n.cv, W, H);
+      const lkey = [W, H, n.time, n.params.mode, P(n, 'count'), P(n, 'thick'), P(n, 'angle'), P(n, 'wave'), P(n, 'horizon'), P(n, 'glow'), n.params.seed, colorCss(n, 'col'), colorCss(n, 'bg')].join('|');
+      if (lkey === n.lkey) return n.cv; n.lkey = lkey;
       const x = n.ctx; x.setTransform(1,0,0,1,0,0); x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H);
       const N = Math.max(2, Math.round(P(n, 'count'))), lw = P(n, 'thick')*H/720, g = P(n, 'glow'), t = n.time, mode = n.params.mode;
       x.strokeStyle = colorCss(n, 'col'); x.lineCap = 'round';
