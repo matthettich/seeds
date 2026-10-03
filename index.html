@@ -130,12 +130,20 @@ body.learning .pad{outline:1px dashed var(--muted); outline-offset:3px}
 .drawer.collapsed .dchev{transform:rotate(-45deg)}
 .dtoggle:hover{background:var(--panel)}
 body.perform .drawer{display:none}
-.viewmore{display:none}
-.stagebar.compact .viewbtns{display:none}
-.stagebar.compact .viewmore{display:block}
+.stagebar{flex-wrap:nowrap; overflow:hidden}
+.viewbtns{display:flex; gap:6px; flex:none}
+.stagebar .srcsel{flex:none}
+.stagebar.compact .info, .stagebar.compact .srclbl{display:none}
+.stagebar.compact .viewbtns .tb{padding-left:8px; padding-right:8px}
+.stagebar.tiny .ttl{display:none}
+.stagebar.tiny #stagesrc{max-width:110px}
 .viewmenu{right:0; left:auto; width:200px; display:grid; gap:4px; padding:6px}
 .viewmenu[hidden]{display:none}
 .viewmenu .tb{text-align:left}
+.fmtbar{display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; padding:6px 12px; background:var(--panel-2); border-top:1px solid var(--edge); font-size:13px; color:var(--muted)}
+.fmtbar label{display:flex; align-items:center; gap:6px}
+.fmtbar select{color:var(--ink); max-width:170px}
+.fmtbar select:disabled{opacity:.45}
 .srcsel{display:flex; align-items:center; gap:6px; color:var(--muted); font-size:13px}
 .srcsel select{width:auto; max-width:170px; color:var(--ink)}
 @media (max-width: 760px){
@@ -650,6 +658,9 @@ body.alting svg.cables rect.bend{opacity:1; pointer-events:all}
 :root[data-skinbase="minimal"] .pgroup.tinted.tinted[class*="fam-"]:hover{background:color-mix(in srgb, var(--panel) 50%, var(--edge) 50%)}
 :root[data-skin="neon"] .pgroup.tinted.tinted[class*="fam-"]{background:color-mix(in srgb, var(--panel) 60%, var(--edge) 40%); color:#fff}
 .split{border-bottom:10px solid var(--frame, var(--panel-2))}
+.split > .ws, .split > .perf, .split > .simplev, .split > .livev, .split > .side, .split > .drawer, .split > .divider, .split > .cstrip{border-bottom:1px solid var(--edge)}
+:root[data-skinbase="minimal"] .split > *{border-bottom-color:#111}
+:root[data-skin="minblack"] .split > *, :root[data-skin="mincolorblack"] .split > *{border-bottom-color:#fff}
 :root[data-skin="minimal"]{--frame:#efefef} :root[data-skin="mincolor"]{--frame:#cfcfd3} :root[data-skin="neon"]{--frame:#13131d}
 .node > header .t{font-size:17px}
 .node.selected{outline:none; box-shadow:0 14px 30px rgba(0,0,0,.38), 0 0 0 2.5px var(--ink)}
@@ -844,11 +855,10 @@ body.sliders .row.sl .jack[data-port^="p:"]{box-shadow:0 0 0 3px color-mix(in sr
   body.simplemode .side{grid-column:1 !important; grid-row:1 !important; display:grid !important; grid-template-columns:minmax(0,1fr) !important; grid-template-rows:auto auto !important; border-bottom:2px solid var(--edge)}
   body.simplemode .simplev{grid-column:1 !important; grid-row:2 !important; display:grid !important}
   body.simplemode .stage{grid-template-rows:auto auto}
-  body.simplemode .stagewrap{height:min(46dvh, calc(100vw * 9 / 16))}
+  body.simplemode .stagewrap{height:var(--mvh, min(30dvh, calc(100vw * 9 / 16)))}
   body.simplemode .stagebar{padding:6px 12px}
-  body.simplemode .stagebar .srcsel, body.simplemode #stageinfo{display:none}
-  body.simplemode .stagebar.compact .viewmore, body.simplemode .viewmore{display:block}
-  body.simplemode .viewbtns{display:none}
+  body.simplemode .stagebar .srclbl, body.simplemode #stageinfo{display:none}
+  body.simplemode .viewbtns .tb{font-size:15px; padding:8px 12px}
   /* recorder: one row, takes underneath */
   body.simplemode .recdock{padding:8px 12px; gap:8px; border-left:0 !important}
   body.simplemode .recdock > header .status, body.simplemode .recdock .meterwrap, body.simplemode .recsum{display:none !important}
@@ -873,11 +883,24 @@ body.sliders .row.sl .jack[data-port^="p:"]{box-shadow:0 0 0 3px color-mix(in sr
 }
 @media (pointer: coarse) and (orientation: landscape) and (min-width: 900px){
   /* wide and short: main view on the left, effects scroll on the right */
-  body.simplemode .split{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) !important; grid-template-rows:minmax(0,1fr) !important}
+  body.simplemode .split{grid-template-columns:var(--mvw, 48vw) minmax(0,1fr) !important; grid-template-rows:minmax(0,1fr) !important}
   body.simplemode .side{grid-row:1 !important; grid-column:1 !important; border-bottom:0; border-right:2px solid var(--edge); align-content:start}
   body.simplemode .simplev{grid-row:1 !important; grid-column:2 !important}
-  body.simplemode .stagewrap{height:min(70dvh, calc(55vw * 9 / 16))}
+  body.simplemode .stagewrap{height:min(70dvh, calc(var(--mvw, 48vw) * 9 / 16))}
   body.simplemode .simplerow{grid-template-columns:minmax(0,1fr) !important}
+}
+
+/* drag grip for the main view on touchscreens */
+.vgrip{display:none}
+@media (pointer: coarse){
+  body.simplemode .vgrip{display:flex; align-items:center; justify-content:center; height:26px; background:var(--panel-2); border-top:1px solid var(--edge); border-bottom:1px solid var(--edge); touch-action:none; cursor:ns-resize}
+  body.simplemode .vgrip span{width:56px; height:6px; border-radius:3px; background:var(--muted)}
+  body.simplemode .vgrip.drag span{background:var(--ink)}
+}
+@media (pointer: coarse) and (orientation: landscape) and (min-width: 900px){
+  body.simplemode .side{position:relative}
+  body.simplemode .vgrip{position:absolute; top:0; bottom:0; right:-14px; width:26px; height:auto; z-index:20; border:0; background:transparent; cursor:ew-resize}
+  body.simplemode .vgrip span{width:6px; height:56px; box-shadow:0 0 0 6px var(--panel-2)}
 }
 </style>
 </head>
@@ -918,7 +941,7 @@ body.sliders .row.sl .jack[data-port^="p:"]{box-shadow:0 0 0 3px color-mix(in sr
         <label class="setsel"><span>Frame rate</span><select id="recfps">
           <option value="24">24 fps (film)</option><option value="25">25 fps</option><option value="30">30 fps</option><option value="50">50 fps</option><option value="60">60 fps (smooth)</option></select></label>
         <label class="setsel"><span>Size</span><select id="recsize">
-          <option value="source">Same as the video</option><option value="1280x720">1280 × 720 (HD)</option><option value="1920x1080">1920 × 1080 (Full HD)</option>
+          <option value="source">Same as the main view</option><option value="1280x720">1280 × 720 (HD)</option><option value="1920x1080">1920 × 1080 (Full HD)</option>
           <option value="1080x1080">1080 × 1080 (square)</option><option value="1080x1920">1080 × 1920 (vertical)</option><option value="3840x2160">3840 × 2160 (4K)</option></select></label>
         <label class="setsel"><span>Audio</span><select id="recabr">
           <option value="128000">128 kbps</option><option value="192000">192 kbps</option><option value="256000">256 kbps</option><option value="320000">320 kbps (best)</option></select></label>
@@ -1009,16 +1032,18 @@ body.sliders .row.sl .jack[data-port^="p:"]{box-shadow:0 0 0 3px color-mix(in sr
     <button class="collbtn" data-coll="right" title="Collapse the main view" aria-label="Collapse the main view"><span class="dchev"></span></button>
     <span class="ttl">Main view</span>
     <span class="info" id="stageinfo"></span>
-    <label class="srcsel">Showing <select id="stagesrc" aria-label="What the main view shows"><option value="live">Live output</option></select></label>
-    <span class="spacer"></span>
-    <span class="viewbtns"><button class="tb" id="snapbtn" title="Save a still image of the main view">Snapshot</button>
-    <button class="tb" id="stagefs">Full screen</button>
-    <button class="tb" id="stageout">Output window</button></span>
-    <span class="setwrap viewmore"><button class="tb" id="viewmore" aria-haspopup="true">View ▾</button><div class="setmenu viewmenu" id="viewmenu" hidden></div></span>
+    <label class="srcsel"><span class="srclbl">Showing</span> <select id="stagesrc" aria-label="What the main view shows"><option value="live">Live output</option></select></label>
+    <span class="viewbtns"><button class="tb" id="snapbtn" title="Save a still image of the main view">Snapshot</button><button class="tb" id="stagefs" title="Fill this screen with the main view">Full screen</button><button class="tb" id="stageout" title="Open the main view in its own window for a second monitor or projector">Output window</button></span>
   </div>
   <div class="stagewrap" id="stagewrap"><canvas id="stagecv"></canvas>
     <div class="pvwrap" id="pvwrap" hidden><video id="pvvideo" controls playsinline></video><img id="pvimg" alt="Snapshot preview" hidden><button class="tb" id="pvclose" hidden>Close preview</button></div>
   </div>
+  <div class="fmtbar" id="fmtbar">
+    <label>Shape <select id="ofmt"><option value="source">Same as the video</option><option value="16:9">16:9 widescreen</option><option value="4:3">4:3 classic TV</option><option value="3:2">3:2 photo</option><option value="1:1">1:1 square</option><option value="4:5">4:5 portrait post</option><option value="9:16">9:16 vertical</option><option value="21:9">21:9 cinema</option></select></label>
+    <label>Size <select id="ores"><option value="480">480p</option><option value="720">720p</option><option value="1080">1080p</option><option value="1440">1440p</option><option value="2160">4K</option></select></label>
+    <label>Fit <select id="ofit"><option value="crop">Fill (crop edges)</option><option value="fit">Fit (black bars)</option></select></label>
+  </div>
+  <div class="vgrip" id="vgrip" role="separator" aria-label="Drag to resize the main view" title="Drag to resize the main view"><span></span></div>
 </section>
 <section class="recdock" id="recdock" aria-label="Recorder"></section>
 </div>
@@ -2846,11 +2871,11 @@ const DEFS = {
     mount(n){ n.el = document.querySelector('.stage'); n.outBtn = stageOutBtn; dockPort(n, DEFS.main.ins[0], dockTop); },
     pull(n){ return inputRaw(n, 'in'); },
     render(n){
-      const src = toDraw(pullNode(n.id));
+      const src = conformOut(toDraw(pullNode(n.id)));
       const r = stageCv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
       const W = Math.max(2, Math.round(r.width*dpr)), H = Math.max(2, Math.round(r.height*dpr));
       fitCanvas(stageCv, W, H);
-      drawFit(stageCtx, src, W, H, '#000');
+      drawFit(stageCtx, src, W, H, OUT.aspect === 'source' ? '#000' : '#2a2a2e');
       let info = '';
       if (src){ const [w, hh] = dims(src); info = w + '×' + hh; }
       else {
@@ -5082,7 +5107,7 @@ const DEFS = {
     audioIn(n){ return n.bus; },
     render(n){
       if (rising(n, 'rtrig')) isRec(n) ? stopRec(n) : startRec(n);
-      const src = inputOf(n, 'video');
+      const src = recSrc(n);
       if (isRec(n)){
         drawFit(n.rctx, src, n.rc.width, n.rc.height, '#000');
         n.time.textContent = fmtTime((performance.now() - n.t0)/1000);
@@ -5106,10 +5131,11 @@ const DEFS = {
 };
 
 function isRec(n){ return n.rec && n.rec.state === 'recording'; }
+function recSrc(n){ const s = inputOf(n, 'video'); return s ? conformOut(s) : s; }
 function startRec(n){
   ensureAudio();
   n.status.classList.remove('err');
-  const src = inputOf(n, 'video');
+  const src = recSrc(n);
   const rs = recSettings();
   let [w, hh] = src ? dims(src) : [1280, 720];
   if (!w) [w, hh] = [1280, 720];
@@ -5302,7 +5328,7 @@ function removeNode(id){
 /* ---------- output windows ---------- */
 function setOutBtns(n){
   const open = !!n.popup;
-  if (n.outBtn){ n.outBtn.textContent = open ? 'Close output' : 'Output window'; n.outBtn.classList.toggle('on', open); }
+  if (n.outBtn){ const sm = n.outBtn.closest('.stagebar.compact'); n.outBtn.textContent = open ? (sm ? 'Close' : 'Close output') : (sm ? 'Output' : 'Output window'); n.outBtn.classList.toggle('on', open); }
 }
 function openOutput(n){
   if (n.popup && !n.popup.closed){ n.popup.focus(); return; }
@@ -5380,7 +5406,7 @@ function hidePreview(){ pvVideo.pause(); pvVideo.removeAttribute('src'); pvVideo
 function markPreviewRows(){ document.querySelectorAll('.take').forEach(r => { const on = r.dataset.url === pvUrl; r.classList.toggle('showing', on); r.querySelector('.livebtn').hidden = !on; }); }
 // Snapshot: a full-size still of whatever the main view is showing.
 document.getElementById('snapbtn').addEventListener('click', () => {
-  const src = toDraw(pullNode('main')); const [W, H] = dims(src);
+  const src = conformOut(toDraw(pullNode('main'))); const [W, H] = dims(src);
   if (!src || !W){ toast('Nothing is showing in the main view yet.'); return; }
   const c = mkCanvas(W, H); c.ctx.drawImage(src, 0, 0, W, H);
   c.cv.toBlob(blob => { if (blob){ addTake(nodes.get('rec'), blob, 0, 'png', W + '×' + H); toast('Snapshot added to your takes.'); } }, 'image/png');
@@ -7032,7 +7058,7 @@ function helpDoc(){
     ['sliders', 'Control mode', `<p><b>Control</b> shows your patch without cables and a bank of 1 to 16 faders along the bottom (use − and + to change how many). Drag a fader’s jack onto the purple jack of any slider in a module to link them; a small F badge shows which faders control it. One fader can move many controls, and a control can take several faders. A fader only takes over once you move it past the control’s current value (the ▲/▼ hint shows where), so nothing jumps. Right-click a fader to unlink.</p>`],
     ['simple', 'Simple mode', `<p>Turn on <b>Simple mode</b> in Settings for a camera, up to six effect slots and the recorder, with patching and the other modes hidden. Pick an effect in any slot; <b>More controls</b> shows the rest of its settings; <b>On/Off</b> bypasses it. Use <b>Effect slots − +</b> to show fewer slots. In the recorder, tick <b>Record audio</b> and choose the audio source. Your full patch is kept safe and returns when you turn Simple mode off.</p>`],
     ['record', 'Recording and snapshots', `<p>Press <b>Record</b> in the recorder, then Stop. Takes appear in the list: click one to watch it in the main view, <b>Back to live</b> returns to the live picture, <b>Save</b> downloads it. <b>Snapshot</b> (above the main view) saves a still image of the main view as a PNG. Format, quality, frame rate, size and audio quality are in <b>Settings → Recording</b>.</p>
-      <p><b>Output window</b> opens the main view in its own window you can put full screen on a second display or projector.</p>`],
+      <p><b>Picture shape:</b> under the main view, <b>Shape</b> sets the aspect ratio (16:9, 4:3, 3:2, square, 4:5, 9:16 vertical, 21:9 or the video’s own), <b>Size</b> the resolution (480p to 4K) and <b>Fit</b> whether the picture is cropped to fill the frame or fitted with black bars. The main view, output windows, snapshots and recordings all use it.</p><p><b>Output window</b> opens the main view in its own window you can put full screen on a second display or projector.</p>`],
     ['shapes', 'Presets and stored shapes', `<p><b>Presets</b> (top bar) store the settings of every module. <b>Preset morph</b> can slide between two.</p>
       <p>Shape generators (Contour bloom, Contour shell, Shard burst, Strata, Geo composer, Contour rings, Iso geometry, Line art, Blobs) can <b>store shapes</b>: press New shape until you like it, then Store shape. Click a number to recall it; right-click to delete or replace. Their inputs let you make a new shape, store a shape and <b>Recall</b> one with a trigger or a <b>Counter</b>.</p>`],
     ['midi', 'MIDI', `<p>Press <b>MIDI learn</b>, click a slider or Button pad, then move a knob or hit a pad on your controller. Mapped controls show a small pink dot. Use the <b>MIDI input</b> module for notes and knobs as modulation, and <b>MIDI clock</b> to follow an external tempo. MIDI works in Chrome, Edge and the desktop app.</p>`],
@@ -7328,11 +7354,14 @@ if ('serviceWorker' in navigator && location.protocol === 'https:' && !window.se
 }
 
 {
-  const bar = document.querySelector('.stagebar'), menu = document.getElementById('viewmenu'), more = document.getElementById('viewmore');
-  menu.replaceChildren(...['snapbtn', 'stagefs', 'stageout'].map(id => { const o = document.getElementById(id); const b = h('button', {class:'tb', text: o.textContent}); b.addEventListener('click', () => { menu.hidden = true; o.click(); }); return b; }));
-  more.addEventListener('click', () => { menu.hidden = !menu.hidden; });
-  window.addEventListener('pointerdown', e => { if (!menu.hidden && !menu.contains(e.target) && e.target !== more) menu.hidden = true; }, true);
-  new ResizeObserver(() => bar.classList.toggle('compact', bar.clientWidth < 760)).observe(bar);
+  // When the bar gets narrow, labels shorten so all three buttons always fit next to "Live output".
+  const bar = document.querySelector('.stagebar');
+  const short = {snapbtn: ['Snapshot', 'Snap'], stagefs: ['Full screen', 'Full'], stageout: ['Output window', 'Output']};
+  const fit = () => {
+    const w = bar.clientWidth; bar.classList.toggle('compact', w < 700); bar.classList.toggle('tiny', w < 520);
+    for (const [id, [l, sh]] of Object.entries(short)){ const b = document.getElementById(id); if (b.textContent === l || b.textContent === sh) b.textContent = w < 700 ? sh : l; }
+  };
+  new ResizeObserver(fit).observe(bar); fit();
 }
 
 
@@ -7866,6 +7895,57 @@ document.getElementById('bankplus').addEventListener('click', () => { bank.count
 bankEl.addEventListener('pointerdown', e => e.stopPropagation());
 function slidersEnter(){ document.body.classList.add('sliders'); bankRender(); }
 function slidersExit(){ document.body.classList.remove('sliders'); }
+
+
+/* ---------- Resize the main view on touchscreens (drag the grip) ---------- */
+{
+  const grip = document.getElementById('vgrip'), root = document.documentElement;
+  try { const v = JSON.parse(localStorage.getItem(STORE + ':mview') || '{}'); if (v.h) root.style.setProperty('--mvh', v.h + 'px'); if (v.w) root.style.setProperty('--mvw', v.w + 'vw'); } catch(e){}
+  const keep = (k, v) => { try { const o = JSON.parse(localStorage.getItem(STORE + ':mview') || '{}'); o[k] = v; localStorage.setItem(STORE + ':mview', JSON.stringify(o)); } catch(e){} };
+  grip.addEventListener('pointerdown', e => {
+    e.preventDefault(); grip.setPointerCapture(e.pointerId); grip.classList.add('drag');
+    const side = matchMedia('(orientation: landscape) and (min-width: 900px)').matches;
+    const wrap = document.getElementById('stagewrap'), h0 = wrap.offsetHeight, w0 = document.querySelector('.side').offsetWidth, x0 = e.clientX, y0 = e.clientY;
+    const mv = ev => {
+      if (side){ const w = Math.max(28, Math.min(72, (w0 + ev.clientX - x0)/innerWidth*100)); root.style.setProperty('--mvw', w.toFixed(1) + 'vw'); grip.dataset.v = w.toFixed(1); }
+      else { const hh = Math.max(innerHeight*0.15, Math.min(innerHeight*0.7, h0 + ev.clientY - y0)); root.style.setProperty('--mvh', Math.round(hh) + 'px'); grip.dataset.v = Math.round(hh); }
+    };
+    const up = () => { grip.removeEventListener('pointermove', mv); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up); grip.classList.remove('drag'); if (grip.dataset.v) keep(side ? 'w' : 'h', +grip.dataset.v); };
+    grip.addEventListener('pointermove', mv); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
+  });
+  // Double-tap the grip to go back to the usual size.
+  grip.addEventListener('dblclick', () => { root.style.removeProperty('--mvh'); root.style.removeProperty('--mvw'); try { localStorage.removeItem(STORE + ':mview'); } catch(e){} });
+}
+
+
+/* ---------- Picture shape and size for the main view, output windows, snapshots and recordings ---------- */
+const OUT = {aspect: 'source', res: '1080', fit: 'crop'};
+try { Object.assign(OUT, JSON.parse(localStorage.getItem(STORE + ':outfmt') || '{}')); } catch(e){}
+function outDims(src){
+  if (OUT.aspect === 'source'){ const d = src ? dims(src) : [0, 0]; return d; }
+  const [a, b] = OUT.aspect.split(':').map(Number), r = +OUT.res;
+  const w = a >= b ? Math.round(r*a/b) : r, h = a >= b ? r : Math.round(r*b/a);
+  return [w - (w % 2), h - (h % 2)];
+}
+const outCv = mkCanvas(2, 2); let outKey = null;
+// The picture in the chosen shape: cropped to fill, or fitted with black bars.
+function conformOut(src){
+  if (!src || OUT.aspect === 'source') return src;
+  const [sw] = dims(src); if (!sw) return src;
+  const key = frameNo + ':' + (src.__oid || (src.__oid = Math.random()));
+  if (key === outKey) return outCv.cv;
+  outKey = key;
+  const [W, H] = outDims(src); fitCanvas(outCv.cv, W, H);
+  const x = outCv.ctx; x.setTransform(1,0,0,1,0,0); x.fillStyle = '#000'; x.fillRect(0, 0, W, H);
+  OUT.fit === 'fit' ? drawFit(x, src, W, H, '#000') : drawCover(x, src, W, H);
+  return outCv.cv;
+}
+{
+  const a = document.getElementById('ofmt'), r = document.getElementById('ores'), f = document.getElementById('ofit');
+  const paint = () => { a.value = OUT.aspect; r.value = OUT.res; f.value = OUT.fit; r.disabled = f.disabled = OUT.aspect === 'source'; };
+  const set = () => { OUT.aspect = a.value; OUT.res = r.value; OUT.fit = f.value; outKey = null; paint(); try { localStorage.setItem(STORE + ':outfmt', JSON.stringify(OUT)); } catch(e){} };
+  [a, r, f].forEach(el => el.addEventListener('change', set)); paint();
+}
 
 /* ---------- boot ---------- */
 renderCustom();
