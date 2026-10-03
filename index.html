@@ -829,6 +829,56 @@ svg.bankline line{stroke:var(--mod); stroke-width:3; stroke-dasharray:6 4}
 body.sliders .row.sl .jack[data-port^="p:"]{box-shadow:0 0 0 3px color-mix(in srgb, var(--mod) 35%, transparent)}
 @media (max-width: 1420px){ .bar .tb, .bar .seg button{padding-left:9px; padding-right:9px} .bar .pname{width:118px} .bar .fps{padding:6px 7px} .bar h1{font-size:19px} }
 @media (max-width: 1300px){ .bar .zoomctl #zoomfit{display:none} .bar #keylearn{padding-left:7px; padding-right:7px} }
+
+/* ---------- Touch Simple mode (phones, tablets, foldables): one column, big controls ---------- */
+@media (pointer: coarse){
+  body.simplemode{height:100dvh; min-height:100dvh}
+  body.simplemode #exwrap, body.simplemode #fpsv, body.simplemode #cpuv, body.simplemode #midilearn, body.simplemode #keylearn,
+  body.simplemode .zoomctl, body.simplemode .vsep, body.simplemode .pname, body.simplemode .divider, body.simplemode .cstrip, body.simplemode .collbtn{display:none !important}
+  body.simplemode .bar{flex-wrap:nowrap; padding:8px 12px; gap:8px}
+  body.simplemode .bar h1{font-size:20px; margin-right:auto}
+  body.simplemode .bar .spacer{display:none}
+  body.simplemode .bar .tb{font-size:16px; padding:8px 14px}
+  /* main view on top, sized to the screen; effects below and scrolling */
+  body.simplemode .split{grid-template-columns:minmax(0,1fr) !important; grid-template-rows:auto minmax(0,1fr) !important; border-bottom:0}
+  body.simplemode .side{grid-column:1 !important; grid-row:1 !important; display:grid !important; grid-template-columns:minmax(0,1fr) !important; grid-template-rows:auto auto !important; border-bottom:2px solid var(--edge)}
+  body.simplemode .simplev{grid-column:1 !important; grid-row:2 !important; display:grid !important}
+  body.simplemode .stage{grid-template-rows:auto auto}
+  body.simplemode .stagewrap{height:min(46dvh, calc(100vw * 9 / 16))}
+  body.simplemode .stagebar{padding:6px 12px}
+  body.simplemode .stagebar .srcsel, body.simplemode #stageinfo{display:none}
+  body.simplemode .stagebar.compact .viewmore, body.simplemode .viewmore{display:block}
+  body.simplemode .viewbtns{display:none}
+  /* recorder: one row, takes underneath */
+  body.simplemode .recdock{padding:8px 12px; gap:8px; border-left:0 !important}
+  body.simplemode .recdock > header .status, body.simplemode .recdock .meterwrap, body.simplemode .recsum{display:none !important}
+  body.simplemode .recrow{display:flex !important; align-items:center; gap:14px}
+  body.simplemode .recrow .recbtn{min-height:52px; min-width:150px; font-size:18px}
+  body.simplemode .recrow .time{font-size:22px}
+  body.simplemode .simpaudio{display:flex !important; flex-wrap:wrap; gap:10px 16px}
+  body.simplemode .recdock .takes{height:auto; max-height:110px}
+  body.simplemode .recdock .takes:empty{display:none}
+  /* effects */
+  body.simplemode .simplebar{padding:8px 12px}
+  body.simplemode .simplebar .pbadge{display:none}
+  body.simplemode .simplerow{grid-template-columns:repeat(2, minmax(0,1fr)) !important; padding:12px; gap:12px}
+  body.simplemode .scard.wide{grid-column:1 / -1}
+  body.simplemode .scard .row{grid-template-columns:96px 1fr 70px; font-size:15px; min-height:46px}
+  body.simplemode .scard select{min-height:44px}
+  body.simplemode .scard .btn{min-height:44px; font-size:15px}
+  body.simplemode .hint, body.simplemode .toast{max-width:90vw}
+}
+@media (pointer: coarse) and (max-width: 640px){
+  body.simplemode .simplerow{grid-template-columns:minmax(0,1fr) !important}
+}
+@media (pointer: coarse) and (orientation: landscape) and (min-width: 900px){
+  /* wide and short: main view on the left, effects scroll on the right */
+  body.simplemode .split{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) !important; grid-template-rows:minmax(0,1fr) !important}
+  body.simplemode .side{grid-row:1 !important; grid-column:1 !important; border-bottom:0; border-right:2px solid var(--edge); align-content:start}
+  body.simplemode .simplev{grid-row:1 !important; grid-column:2 !important}
+  body.simplemode .stagewrap{height:min(70dvh, calc(55vw * 9 / 16))}
+  body.simplemode .simplerow{grid-template-columns:minmax(0,1fr) !important}
+}
 </style>
 </head>
 <body>
