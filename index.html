@@ -454,7 +454,7 @@ canvas.scope{display:block; width:100%; height:54px; background:var(--glass); bo
 .skin .dots{display:flex; gap:3px}
 .skin.isdef::after{content:'Default'; font-size:11px; color:var(--muted); border:1px solid var(--edge); border-radius:999px; padding:0 7px}
 .skin .dots i{width:12px; height:12px; border-radius:50%; border:1px solid rgba(0,0,0,.2); display:block}
-body.simplemode .seg, body.simplemode .zoomctl, body.simplemode .pbar{display:none}
+body.simplemode .zoomctl, body.simplemode .pbar{display:none}
 body.simplemode{grid-template-rows:auto 1fr}
 .membox{display:grid; gap:6px; padding:8px; border:1px dashed var(--edge); border-radius:8px}
 .memlist{display:flex; flex-wrap:wrap; gap:4px}
@@ -470,6 +470,11 @@ body.simplemode{grid-template-rows:auto 1fr}
 .exmenu[hidden]{display:none}
 .exitem{display:grid; gap:2px; text-align:left; border:1px solid var(--edge); background:var(--panel-2); padding:8px 10px; border-radius:8px}
 .exitem:hover{border-color:var(--ink)}
+.exwrapitem{position:relative}
+.exwrapitem .exitem{width:100%}
+.exdel{position:absolute; top:6px; right:6px}
+.scard .body .btns:has(button:only-child){display:none}
+.crumb #crumbsave, .crumb #crumbclose{margin-left:4px}
 .exitem b{font-size:14px} .exitem span{font-size:12.5px; color:var(--muted)}
 .exmenu .sethead{margin:6px 2px 2px}
 .bklist{display:grid; gap:5px}
@@ -663,7 +668,11 @@ body.alting svg.cables rect.bend{opacity:1; pointer-events:all}
 :root[data-skin="minblack"] .split > *, :root[data-skin="mincolorblack"] .split > *{border-bottom-color:#fff}
 :root[data-skin="minimal"]{--frame:#efefef} :root[data-skin="mincolor"]{--frame:#cfcfd3} :root[data-skin="neon"]{--frame:#13131d}
 .node > header .t{font-size:17px}
-.node.selected{outline:none; box-shadow:0 14px 30px rgba(0,0,0,.38), 0 0 0 2.5px var(--ink)}
+:root{--selc:#ff3d8b}
+:root[data-skin="neon"], :root[data-skin="minblack"], :root[data-skin="mincolorblack"]{--selc:#00e5ff}
+.node.selected{outline:3px solid var(--selc) !important; outline-offset:3px; box-shadow:0 14px 30px rgba(0,0,0,.30) !important}
+.node.selected > header{background:color-mix(in srgb, var(--panel-2) 70%, var(--selc) 30%) !important}
+.node.selected::after{content:''; position:absolute; inset:0; background:var(--selc); opacity:.07; pointer-events:none; border-radius:inherit}
 .emptylbl{position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); z-index:0; pointer-events:none; font-family:Futura,"Futura PT",Jost,"Century Gothic",system-ui,sans-serif; font-weight:700; font-size:clamp(34px, 6vw, 76px); letter-spacing:.02em; white-space:nowrap}
 .emptylbl[hidden]{display:none}
 .drawer .dresize{position:absolute; top:0; bottom:0; right:-4px; width:8px; cursor:col-resize; z-index:5}
@@ -743,6 +752,9 @@ body.learning.pinkbg .ws, body.learning.pinkbg .perf, body.learning.pinkbg .simp
 /* ---------- color opacity ---------- */
 .cpwrap{position:relative}
 
+.keyrow .rng{display:grid; grid-template-columns:26px 1fr; gap:6px; align-items:center}
+.kcol{width:26px; height:22px; padding:0; border:1px solid var(--edge); border-radius:4px; background:none}
+.modhint{font-size:11.5px}
 .bigbpm{font-size:30px; font-weight:700; font-variant-numeric:tabular-nums; text-align:center; letter-spacing:.02em}
 .syncbtn{justify-self:start}
 .syncbtn.on{background:var(--ink); color:var(--panel)}
@@ -771,6 +783,11 @@ body.live{grid-template-rows:auto 1fr}
 .lslot.on .lstate{color:var(--ink); font-weight:700}
 .lnote{justify-self:start; font-size:12px; padding:3px 9px}
 .lbtns{display:flex; flex-wrap:wrap; gap:4px}
+.livebar{flex-wrap:wrap; row-gap:6px}
+.lcount{width:56px}
+#lsync.pink{background:#ff4fa3; border-color:#ff4fa3; color:#fff}
+.lslot.queued{border-color:#ff4fa3; box-shadow:0 0 0 2px #ff4fa3}
+.lslot.queued.blink{background:color-mix(in srgb, var(--panel) 70%, #ff4fa3 30%)}
 .ltctl{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
 .ltctl select{font-size:12px; max-width:120px}
 .ltctl input[type=range]{width:80px}
@@ -838,8 +855,9 @@ svg.bankline line{stroke:var(--mod); stroke-width:3; stroke-dasharray:6 4}
 .row.sl[data-bank]{position:relative}
 .row.sl[data-bank]::before{content:'F' attr(data-bank); position:absolute; left:-6px; top:-9px; padding:0 4px; height:14px; border-radius:4px; background:var(--mod); color:#fff; font-size:9.5px; font-weight:700; line-height:14px; pointer-events:none; z-index:3}
 body.sliders .row.sl .jack[data-port^="p:"]{box-shadow:0 0 0 3px color-mix(in srgb, var(--mod) 35%, transparent)}
-@media (max-width: 1420px){ .bar .tb, .bar .seg button{padding-left:9px; padding-right:9px} .bar .pname{width:118px} .bar .fps{padding:6px 7px} .bar h1{font-size:19px} }
-@media (max-width: 1300px){ .bar .zoomctl #zoomfit{display:none} .bar #keylearn{padding-left:7px; padding-right:7px} }
+@media (max-width: 1700px){ .bar .tb, .bar .seg button{padding-left:9px; padding-right:9px} .bar .pname{width:110px} .bar .fps{padding:6px 7px} .bar h1{font-size:19px} }
+@media (max-width: 1500px){ .bar .seg button{padding-left:7px; padding-right:7px} .bar .tb{padding-left:8px; padding-right:8px} .bar{gap:6px} .bar .pname{width:96px} }
+@media (max-width: 1340px){ .bar .zoomctl #zoomfit, .bar .vsep{display:none} .bar #keylearn{padding-left:7px; padding-right:7px} .bar h1{font-size:17px} .bar .pname{width:84px; font-size:14px} .bar .fps{font-size:12px; padding:5px 6px} .bar .tb, .bar .seg button{font-size:13.5px} }
 
 /* ---------- Touch Simple mode (phones, tablets, foldables): one column, big controls ---------- */
 @media (pointer: coarse){
@@ -902,12 +920,46 @@ body.sliders .row.sl .jack[data-port^="p:"]{box-shadow:0 0 0 3px color-mix(in sr
   body.simplemode .vgrip{position:absolute; top:0; bottom:0; right:-14px; width:26px; height:auto; z-index:20; border:0; background:transparent; cursor:ew-resize}
   body.simplemode .vgrip span{width:6px; height:56px; box-shadow:0 0 0 6px var(--panel-2)}
 }
+
+/* Presentation: hidden mixer rows don't leave Hide buttons behind; every panel the same width */
+.pcw:has(> [hidden]){display:none !important}
+.ppanel, .ppanel.min{width:300px !important}
+/* color rows never overlap their Mod button */
+.row.cprow{grid-template-columns:62px minmax(0,1fr) auto}
+.cprow .cpwrap, .cprow .cpick{min-width:0}
+:root[data-skinbase="minimal"] .row.cprow, :root[data-skin="neon"] .row.cprow{grid-template-columns:70px minmax(0,1fr) auto}
+/* Back to live sits on its own line so Save and Delete stay put */
+.takes .take.showing{grid-template-columns:minmax(0,1fr) auto auto}
+.takes .take.showing .livebtn{grid-column:1 / -1; grid-row:2; justify-self:start}
+
+/* on/off on title bars */
+.bypass{font-size:10.5px !important; font-weight:700; letter-spacing:.04em; min-width:34px !important; height:20px !important; padding:0 6px !important; border-radius:999px !important; background:var(--edge) !important; color:var(--panel) !important; border:0}
+.bypass.isoff{background:transparent !important; color:var(--muted) !important; box-shadow:inset 0 0 0 1.5px var(--muted)}
+:root[data-skinbase="minimal"] .bypass, :root[data-skin="neon"] .bypass{border-radius:0 !important}
+.node.bypassed > .body, .node.bypassed > .ports{opacity:.45}
+/* Control mode: cables show faintly and can't be touched */
+body.sliders svg.cables{display:block !important; opacity:.16; pointer-events:none}
+body.sliders svg.cables *{pointer-events:none !important}
+/* presets dropdown */
+#psel{max-width:280px; min-width:180px}
+/* record the main view: hide the Rec. Video jack */
+body.recmain .recvideoport{display:none !important}
+.dockport.rpauseport{border:2px solid var(--rec) !important}
+.dockport.rpauseport.lit{background:#f0c23a !important; color:#111}
+.recdock.paused .recbtn{background:#f0c23a}
+/* takes: Save all */
+.takeshead{display:flex; align-items:center; justify-content:space-between; font-size:12.5px; color:var(--muted)}
+.takeshead .btn{font-size:12px; padding:3px 9px}
+.takeshead .headlive{margin-left:auto; margin-right:6px}
+.takes .take .livebtn{display:none !important}
+@media (pointer: coarse){ body.simplemode .seg button{font-size:14px; padding:7px 9px} }
+@media (pointer: coarse) and (max-width: 760px){ body.simplemode .seg{display:none} }
 </style>
 </head>
 <body>
 <div class="bar">
   <h1>...Seeds</h1>
-  <div class="seg" role="group" aria-label="Mode"><button class="on" id="mpatch" aria-pressed="true">Patch</button><button id="mperf" aria-pressed="false">Presentation</button><button id="msliders" aria-pressed="false">Control</button><button id="mlive" aria-pressed="false">Clips</button></div>
+  <div class="seg" role="group" aria-label="Mode"><button id="msimple" aria-pressed="false">Simple</button><button class="on" id="mpatch" aria-pressed="true">Patch</button><button id="mperf" aria-pressed="false">Presentation</button><button id="msliders" aria-pressed="false">Control</button><button id="mlive" aria-pressed="false">Clips</button></div>
   <input id="pname" class="pname" aria-label="Patch name" maxlength="60" spellcheck="false">
   <span class="vsep" aria-hidden="true"></span>
   <div class="setwrap"><button class="tb" id="filebtn" aria-haspopup="true">File ▾</button>
@@ -920,6 +972,11 @@ body.sliders .row.sl .jack[data-port^="p:"]{box-shadow:0 0 0 3px color-mix(in sr
       <button class="fitem" id="undobtn" disabled><span>Undo</span><kbd data-k="Z"></kbd></button>
       <button class="fitem" id="redobtn" disabled><span>Redo</span><kbd data-k="⇧Z"></kbd></button>
       <hr>
+      <button class="fitem" id="fsaveex"><span>Save as Example…</span></button>
+      <hr>
+      <button class="fitem" id="fexpmods"><span>Export custom modules…</span></button>
+      <button class="fitem" id="fimpmods"><span>Import custom modules…</span></button>
+      <hr>
       <button class="fitem" id="fdir"><span>Choose save folder…</span></button>
       <div class="setsub fdirname" id="fdirname"></div>
     </div>
@@ -927,8 +984,8 @@ body.sliders .row.sl .jack[data-port^="p:"]{box-shadow:0 0 0 3px color-mix(in sr
   <div class="setwrap"><button class="tb" id="setbtn" aria-haspopup="true" aria-expanded="false">Settings ▾</button>
     <div class="setmenu setleft" id="setmenu" hidden>
       <div class="setsec">
-        <label class="setrow"><input type="checkbox" id="setsimple"><span><b>Simple mode</b><br><span class="setsub">Just a camera, six effect slots and the output. Hides patching and the other modes. Your patch is kept safe and comes back when you turn this off.</span></span></label>
         <label class="setrow"><input type="checkbox" id="settips"><span><b>Show tips</b><br><span class="setsub">The help note in the corner of the patch.</span></span></label>
+        <label class="setrow"><input type="checkbox" id="setrecmain"><span><b>Patch main view to record video</b><br><span class="setsub">The recorder always records what the main view shows, and the Rec. Video jack is hidden.</span></span></label>
         <label class="setrow"><input type="checkbox" id="setnoex"><span><b>Hide Examples</b><br><span class="setsub">Removes the Examples menu from the top bar.</span></span></label>
         <label class="setrow"><input type="checkbox" id="setnorec"><span><b>Hide recorder</b><br><span class="setsub">The main view fills the whole right side.</span></span></label>
       </div>
@@ -975,7 +1032,7 @@ body.sliders .row.sl .jack[data-port^="p:"]{box-shadow:0 0 0 3px color-mix(in sr
 
   <div class="zoomctl"><button class="tb" id="zoomout" aria-label="Zoom out">−</button><button class="tb" id="zoomval" title="Reset to 100%">100%</button><button class="tb" id="zoomin" aria-label="Zoom in">+</button><button class="tb" id="zoomfit">Fit</button></div>
 </div>
-<div class="pbar"><span class="lbl">Presets</span><div class="chips" id="chips"></div><button class="tb" id="pcap">Capture</button><button class="tb" id="pupd" title="Save the current settings into the selected preset">Update</button></div>
+<div class="pbar"><span class="lbl">Presets</span><select id="psel" aria-label="Recall a preset"></select><button class="tb" id="pren" title="Rename the selected preset">Rename</button><button class="tb" id="pdel" title="Delete the selected preset">Delete</button><div class="chips" id="chips" hidden></div><span class="spacer"></span><button class="tb" id="pcap">Capture</button><button class="tb" id="pupd" title="Save the current settings into the selected preset">Update</button></div>
 <div class="split" id="split">
 <aside class="drawer" id="drawer">
   <button class="dtoggle" id="dtoggle" aria-expanded="false" title="Show or hide the module list"><span class="dchev" aria-hidden="true"></span><span class="dlabel">Modules</span></button>
@@ -987,7 +1044,11 @@ body.sliders .row.sl .jack[data-port^="p:"]{box-shadow:0 0 0 3px color-mix(in sr
 
 <div class="livev" id="live">
   <div class="simplebar livebar"><button class="collbtn" data-coll="left" title="Collapse this section"><span class="dchev"></span></button><span class="sttl">Clips</span>
-    <label class="srcsel">Tempo <input type="number" id="lbpm" min="20" max="2000" step="0.1" class="lbpm"> BPM</label><button class="tb" id="ltap">Tap</button>
+    <label class="srcsel">Tempo <input type="number" id="lbpm" min="20" max="2000" step="0.1" class="lbpm"> BPM</label><button class="tb" id="ltap">Tap</button><button class="tb" id="lsync" title="Follow MIDI clock from a drum machine or sequencer">Sync</button>
+    <label class="srcsel">Launch <select id="lquant" aria-label="Launch quantize"></select></label>
+    <label class="srcsel">Clips <input type="number" id="lcount" min="2" max="32" step="1" class="lbpm lcount"></label>
+    <label class="srcsel">Notes <select id="llayout" aria-label="MIDI note layout"></select></label>
+    <button class="tb" id="lsavelay" title="Save the current clip notes as a named layout">Save layout…</button><button class="tb" id="lexplay">Export layout…</button><button class="tb" id="limplay">Import layout…</button>
     <span class="spacer"></span>
     <button class="tb" id="limport">Import set…</button><button class="tb" id="lexport">Export set…</button><input type="file" id="limportf" accept=".json,application/json" hidden>
   </div>
@@ -1018,7 +1079,7 @@ body.sliders .row.sl .jack[data-port^="p:"]{box-shadow:0 0 0 3px color-mix(in sr
       <span class="setsub">Drag a fader’s jack onto a slider’s purple jack in any module. One fader can move many controls, and a control can take many faders. Right-click a fader to unlink.</span></div>
     <div class="bankstrips" id="bankstrips"></div>
   </div>
-  <div class="crumb" id="crumb" hidden><button class="tb" id="crumbback">‹ Back</button><span id="crumbpath"></span></div>
+  <div class="crumb" id="crumb" hidden><button class="tb" id="crumbback">‹ Back</button><span id="crumbpath"></span><button class="tb on" id="crumbsave">Save custom module</button><button class="tb" id="crumbclose">Close</button></div>
   <div class="lasso" id="lasso" hidden></div>
   <div class="emptylbl" id="emptylbl" aria-hidden="true" hidden></div>
   <div class="toast" id="toast" hidden></div>
@@ -1154,7 +1215,7 @@ function slider(n, key, label, min, max, step, fmt, onchange, modable = true){
 }
 const FAMILY = {
   camera:'src', player:'src', audioin:'aud', midi:'midi', midiclock:'midi',
-  osc:'gen', shapes:'gen', text:'gen', lineart:'gen', bloom:'gen', text3d:'gen', topo:'gen', iso:'gen', geo:'gen', shell:'gen', shards:'gen', strata:'gen', liveout:'mix', counter:'gate', bpm:'gate', aplayer:'aud', speakers:'aud', ameter:'aud', again:'aud', apan:'aud', afilter:'aud', aeq:'aud', acomp:'aud', adist:'aud', adelay:'aud', areverb:'aud', amix:'aud', atrig:'aud', attenuator:'util', scale:'util', send:'util', receive:'util', blobs:'gen', lines:'gen', audioctl:'aud',
+  osc:'gen', shapes:'gen', text:'gen', lineart:'gen', bloom:'gen', text3d:'gen', topo:'gen', iso:'gen', geo:'gen', shell:'gen', shards:'gen', strata:'gen', amoeba:'gen', vector3d:'gen', liveout:'mix', gin:'grp', gout:'grp', image:'src', gif:'src', counter:'gate', bpm:'gate', aplayer:'aud', speakers:'aud', ameter:'aud', again:'aud', apan:'aud', afilter:'aud', aeq:'aud', acomp:'aud', adist:'aud', adelay:'aud', areverb:'aud', amix:'aud', atrig:'aud', attenuator:'util', scale:'util', send:'util', receive:'util', blobs:'gen', lines:'gen', audioctl:'aud',
   kaleido:'geo', mirror:'geo', rotate:'geo', vzoom:'geo', crop:'geo', tile:'geo', warp:'geo',
   cadj:'tex', bw:'tex', poster:'tex', gmap:'tex', edge:'tex', pixelate:'tex', crt:'tex',
   rgbdelay:'time', vdelay:'time', slitscan:'time', feedback:'time', stutter:'time', looper:'time',
@@ -1172,12 +1233,20 @@ function setParam(n, key, v){
 }
 // Value on a modulation or gate cable. Control modules return {port: value}.
 function ctlOut(e){
+  const v = ctlRaw(e); if (v == null) return v;
+  // A source's Offset shifts where its swing sits on whatever it's moving.
+  const src = nodes.get(e.from.node);
+  if (src && typeof src.params.modoff === 'number' && modPortKind(src, e.from.port) === 'mod') return v + P(src, 'modoff');
+  return v;
+}
+function ctlRaw(e){
   const v = pullNode(e.from.node);
   if (typeof v === 'number') return e.from.port === 'inv' ? -v : v;
   if (v && v.constructor === Object && typeof v[e.from.port] === 'number') return v[e.from.port];
   if (v instanceof PortOut && typeof v.p[e.from.port] === 'number') return v.p[e.from.port];
   return null;
 }
+const modPortKind = (n, port) => ((DEFS[n.type].outs || []).find(p => p.name === port) || {}).kind;
 // Gate inputs read high above zero, so an LFO or sequencer can also act as a clock.
 function gateHigh(n, port){ const e = edgeInto(n.id, port); if (!e) return null; const v = ctlOut(e); return v != null && v > 0.0001; }
 function rising(n, port){
@@ -1298,7 +1367,7 @@ class FrameBuf {
   push(src, now){
     const [sw, sh] = dims(src), sc = Math.min(1, this.maxW/sw), W = Math.round(sw*sc), H = Math.round(sh*sc);
     if (W !== this.w || H !== this.h){ this.buf = []; this.pool = []; this.w = W; this.h = H; }
-    if (this.buf.length && now - this.last < 32) return;
+    if (this.buf.length && now - this.last < (this.gap || 32)) return;
     const f = this.pool.pop() || mkCanvas(W, H); f.ctx.drawImage(src, 0, 0, W, H); f.t = now; this.buf.push(f); this.last = now;
   }
   at(t){ for (let i = this.buf.length - 1; i >= 0; i--) if (this.buf[i].t <= t) return this.buf[i]; return this.buf[0]; }
@@ -1525,7 +1594,8 @@ function gpu(n, frag, inputs, uni, W, H, key){
   const fallback = () => { const s = (inputs || []).find(Boolean) || null; return s; };
   if (!GLX){ if (!n.glWarned){ n.glWarned = true; toast('This browser has no WebGL 2, so ' + DEFS[n.type].title + ' passes video through unchanged.'); } return fallback(); }
   if (GLX.lost()) return fallback();
-  try { const t = GLX.target(n, key || 'out', Math.max(1, Math.round(W*QS)), Math.max(1, Math.round(H*QS))); GLX.pass(frag, t, inputs, uni); return t; }
+  const q = QS < 1 && W > 1000 ? QS : 1; // draft: only full-size pictures are halved, so a chain of effects doesn't keep shrinking
+  try { const t = GLX.target(n, key || 'out', Math.max(1, Math.round(W*q)), Math.max(1, Math.round(H*q))); GLX.pass(frag, t, inputs, uni); return t; }
   catch(e){ if (!n.glWarned){ n.glWarned = true; console.error(e); toast(DEFS[n.type].title + ' couldn’t start on the GPU.'); } return fallback(); }
 }
 const hexRgb = hx => [parseInt(hx.slice(1,3),16)/255, parseInt(hx.slice(3,5),16)/255, parseInt(hx.slice(5,7),16)/255];
@@ -1758,7 +1828,8 @@ void main(){
  else if (mode < 3.5) bl = abs(base - inp);
  else bl = inp;
  o = vec4(mix(base, bl, inl), 1.); }`,
-  mixer: `uniform vec4 has, lvl, md; uniform vec2 s0, s1, s2, s3; uniform vec3 bgc;
+  mixer: `uniform vec4 has, lvl, md, kt; uniform vec2 s0, s1, s2, s3; uniform vec3 bgc, k0, k1, k2, k3;
+float keyA(vec3 c, vec3 k, float t){ return t > 0. ? smoothstep(t*.55, t, distance(c, k)) : 1.; }
 float lum(vec3 c){ return dot(c, vec3(.3, .59, .11)); }
 vec3 clipC(vec3 c){ float l = lum(c), n = min(min(c.r, c.g), c.b), x = max(max(c.r, c.g), c.b);
  if (n < 0.) c = l + (c - l)*l/max(l - n, 1e-5); if (x > 1.) c = l + (c - l)*(1. - l)/max(x - l, 1e-5); return c; }
@@ -1787,10 +1858,10 @@ vec3 blend(vec3 b, vec3 s, float m){
  if (m < 16.5) return setLum(b, lum(s));
  return vec3(0.); }
 void main(){ vec3 a = bgc;
- if (has.x > .5) a = mix(a, blend(a, texture(tex0, cov(uv, s0)).rgb, md.x), lvl.x);
- if (has.y > .5) a = mix(a, blend(a, texture(tex1, cov(uv, s1)).rgb, md.y), lvl.y);
- if (has.z > .5) a = mix(a, blend(a, texture(tex2, cov(uv, s2)).rgb, md.z), lvl.z);
- if (has.w > .5) a = mix(a, blend(a, texture(tex3, cov(uv, s3)).rgb, md.w), lvl.w);
+ if (has.x > .5){ vec3 c0 = texture(tex0, cov(uv, s0)).rgb; a = mix(a, blend(a, c0, md.x), lvl.x*keyA(c0, k0, kt.x)); }
+ if (has.y > .5){ vec3 c1 = texture(tex1, cov(uv, s1)).rgb; a = mix(a, blend(a, c1, md.y), lvl.y*keyA(c1, k1, kt.y)); }
+ if (has.z > .5){ vec3 c2 = texture(tex2, cov(uv, s2)).rgb; a = mix(a, blend(a, c2, md.z), lvl.z*keyA(c2, k2, kt.z)); }
+ if (has.w > .5){ vec3 c3 = texture(tex3, cov(uv, s3)).rgb; a = mix(a, blend(a, c3, md.w), lvl.w*keyA(c3, k3, kt.w)); }
  o = vec4(clamp(a, 0., 1.), 1.); }`,
   key: `uniform float mode, th, soft, inv, hasBg; uniform vec3 kc, bgc;
 void main(){ vec4 f = texture(tex0, uv); vec3 b = hasBg > .5 ? texture(tex1, uv).rgb : bgc;
@@ -2113,7 +2184,7 @@ function renderGeo(n, W, H, motif, back, opts){
 
 
 /* ---------- shape memory: store and recall generator shapes ---------- */
-const MEM_TYPES = new Set(['bloom', 'geo', 'topo', 'iso', 'lineart', 'blobs', 'shell', 'shards', 'strata']);
+const MEM_TYPES = new Set(['amoeba', 'vector3d', 'bloom', 'geo', 'topo', 'iso', 'lineart', 'blobs', 'shell', 'shards', 'strata']);
 const MEM_SKIP = new Set(['mem', 'res']);
 function memSnapshot(n){ const o = {}; for (const [k, v] of Object.entries(n.params)) if (!MEM_SKIP.has(k)) o[k] = JSON.parse(JSON.stringify(v)); return o; }
 function memStore(n){
@@ -2401,7 +2472,7 @@ function drawEnvPreview(n){
   else if (n.stage === 'R') t = A + D + hold + (n.relFrom > 0 ? (1 - L/n.relFrom) : 1)*R;
   if (t != null){ x.fillStyle = T.gate; x.beginPath(); x.arc(X(t), Y(L), 4*dpr, 0, Math.PI*2); x.fill(); }
 }
-const TINTED = new Set(['geo', 'shell', 'shards', 'strata', 'mixer', 'xfade', 'key', 'bloom', 'lineart', 'blobs', 'lines', 'osc', 'shapes', 'text', 'text3d', 'topo', 'iso']);
+const TINTED = new Set(['amoeba', 'vector3d', 'geo', 'shell', 'shards', 'strata', 'mixer', 'xfade', 'key', 'bloom', 'lineart', 'blobs', 'lines', 'osc', 'shapes', 'text', 'text3d', 'topo', 'iso']);
 function applyTint(n, v){
   if (v instanceof PortOut){ const o = Object.assign({}, v.p); if (o.out) o.out = applyTint(n, o.out); return new PortOut(o); }
   const amt = P(n, 'tntAmt'); if (amt <= 0.001) return v;
@@ -2435,6 +2506,8 @@ function pullNode(id){
   if (n._f === frameNo) return n._out;
   n._f = frameNo;
   const def = DEFS[n.type];
+  // Switched off: effects pass their input straight through; anything else goes quiet.
+  if (n.params.bypass){ n._out = def.ins.some(p => p.name === 'in' && p.kind === 'video') ? inputRaw(n, 'in') : (def.kind === 'video' ? null : 0); return n._out; }
   // Drawn generators redraw at most at the Generator frame rate, unless a trigger arrives.
   if (GEN_CAP.has(n.type) && genFps && n._gout){
     const now = performance.now();
@@ -2448,7 +2521,7 @@ function pullNode(id){
   if (GEN_CAP.has(n.type)){ n._gout = n._out; n._gt = performance.now(); gatesChanged(n); }
   return n._out;
 }
-const GEN_CAP = new Set(['bloom', 'shell', 'shards', 'strata', 'geo', 'topo', 'iso', 'lineart', 'blobs', 'lines', 'shapes', 'text', 'text3d']);
+const GEN_CAP = new Set(['amoeba', 'vector3d', 'bloom', 'shell', 'shards', 'strata', 'geo', 'topo', 'iso', 'lineart', 'blobs', 'lines', 'shapes', 'text', 'text3d']);
 let genFps = 30;
 // True when any trigger input changed since the last check, so pulses are never missed while redrawing less often.
 function gatesChanged(n){
@@ -2552,10 +2625,12 @@ async function startCam(n, retried){
   if (!hasMedia()){ n.status.textContent = 'This browser view can’t reach a camera.'; n.status.classList.add('err'); return; }
   n.status.textContent = 'Asking for camera access…';
   const [w, hh] = RES[n.params.res] || RES['720'];
+  n.camAsk = (n.camAsk || 0) + 1; const ask = n.camAsk;
   try {
     const s = await navigator.mediaDevices.getUserMedia({audio:false, video:{
       deviceId: n.params.deviceId ? {exact: n.params.deviceId} : undefined,
       width:{ideal:w}, height:{ideal:hh}, frameRate:{ideal:30}}});
+    if (ask !== n.camAsk || nodes.get(n.id) !== n){ s.getTracks().forEach(t => t.stop()); return; } // a newer start (or removal) replaced this one
     n.stream = s; n.video.srcObject = s;
     try { await n.video.play(); } catch(e){}
     n.btn.textContent = 'Stop camera'; n.btn.classList.add('on');
@@ -2570,6 +2645,7 @@ async function startCam(n, retried){
   }
 }
 function stopCam(n){
+  if (n.sharedOut){ n.sharedOut = false; n.stream = null; n.video.srcObject = null; return; }
   if (n.stream) n.stream.getTracks().forEach(t => t.stop());
   n.stream = null; n.video.srcObject = null;
   if (n.btn){ n.btn.textContent = 'Start camera'; n.btn.classList.remove('on'); }
@@ -2684,28 +2760,29 @@ const DEFS = {
       n.tmp = document.createElement('canvas'); n.tctx = n.tmp.getContext('2d');
       n.buf = []; n.pool = []; n.lastPush = 0;
       const ms = v => v + ' ms';
-      const rr = slider(n, 'r', 'Red', 0, 2000, 10, ms), rg = slider(n, 'g', 'Green', 0, 2000, 10, ms), rb = slider(n, 'b', 'Blue', 0, 2000, 10, ms);
+      const rr = slider(n, 'r', 'Red', 0, 5000, 10, ms), rg = slider(n, 'g', 'Green', 0, 5000, 10, ms), rb = slider(n, 'b', 'Blue', 0, 5000, 10, ms);
       return [rr, rg, rb, ...syncUI(n, [rr, rg, rb]),
         h('div', {class:'status', text:'When synced, red stays live, green trails by one step and blue by two.'})];
     },
     pull(n){
       const src = inputOf(n, 'in'); if (!src) return null;
       const [sw, sh] = dims(src); if (!sw) return null;
-      const sc = Math.min(1, 960/sw), W = Math.round(sw*sc), H = Math.round(sh*sc);
+      const longest = Math.max(n.params.r, n.params.g, n.params.b), cap = longest > 2200 ? 560 : 960;
+      const sc = Math.min(1, cap/sw), W = Math.round(sw*sc), H = Math.round(sh*sc);
       if (n.bw !== W || n.bh !== H){ n.buf = []; n.pool = []; n.bw = W; n.bh = H; }
       const now = performance.now();
-      if (!n.buf.length || now - n.lastPush >= 32){
+      if (!n.buf.length || now - n.lastPush >= (longest > 2200 ? 40 : 32)){
         const slot = n.pool.pop() || mkCanvas(W, H);
         slot.ctx.drawImage(src, 0, 0, W, H); slot.t = now; n.buf.push(slot); n.lastPush = now;
       }
       if (rising(n, 'clock')){ if (n.lastClk) n.clkPeriod = (now - n.lastClk)/1000; n.lastClk = now; }
-      const ss = syncSec(n), per = ss, stepMs = ss ? Math.min(1000, ss*1000) : 0;
+      const ss = syncSec(n), per = ss, stepMs = ss ? Math.min(2500, ss*1000) : 0;
       const d = per ? {r: 0, g: stepMs, b: stepMs*2} : {r: P(n,'r'), g: P(n,'g'), b: P(n,'b')};
       syncInfo(n, stepMs);
       const modded = per || ['r','g','b'].some(k => edgeInto(n.id, 'p:' + k));
-      const keep = (modded ? 2000 : Math.max(d.r, d.g, d.b)) + 80;
+      const keep = (modded ? 5000 : Math.max(d.r, d.g, d.b)) + 80;
       while (n.buf.length > 1 && n.buf[1].t < now - keep) n.pool.push(n.buf.shift());
-      while (n.buf.length > 70) n.pool.push(n.buf.shift());
+      while (n.buf.length > 170) n.pool.push(n.buf.shift());
       const at = t => { for (let i = n.buf.length - 1; i >= 0; i--) if (n.buf[i].t <= t) return n.buf[i]; return n.buf[0]; };
       fitCanvas(n.cv, W, H); fitCanvas(n.tmp, W, H);
       const o = n.ctx, tc = n.tctx;
@@ -2794,7 +2871,10 @@ const DEFS = {
     build(n){
       n.bufs = [mkCanvas(2, 2), mkCanvas(2, 2)]; n.cur = 0;
       const pct = v => Math.round(v*100) + '%';
+      const looks = h('select', {'aria-label':'Feedback look'}, ...[['','Choose a look…'],['camera','Camera at screen'],['tunnel','Spinning tunnel'],['smear','Smear'],['trails','Echo trails'],['bloom','Glowing bloom']].map(([v, l]) => h('option', {value: v, text: l})));
+      looks.addEventListener('change', () => { const L = FB_LOOKS[looks.value]; if (L){ for (const [k, v] of Object.entries(L)) setParam(n, k, v); save(); toast('Feedback look: ' + looks.selectedOptions[0].text + '. Adjust anything from here.'); } looks.value = ''; });
       const kids = [
+        row('Look', looks),
         choice(n, 'mode', 'Input', [['screen','Screen'],['lighter','Add'],['lighten','Lighten'],['difference','Difference'],['source-over','Over']]),
         slider(n, 'input', 'Input level', 0, 1, 0.01, pct),
         slider(n, 'feedback', 'Feedback', 0, 0.99, 0.01, pct),
@@ -2838,9 +2918,20 @@ const DEFS = {
     params:Object.assign({count:4, a:1}, ...'bcdefghij'.split('').map(k => ({['mode' + k.toUpperCase()]: 'source-over', [k]: 0.5}))),
     build(n){
       const pct = v => Math.round(v*100) + '%', L = 'abcdefghij'.split('');
-      n.mixRows = L.map((k, i) => i === 0 ? [slider(n, 'a', 'Level A', 0, 1, 0.01, pct)] : [choice(n, 'mode' + k.toUpperCase(), 'Blend ' + k.toUpperCase(), BLENDS), slider(n, k, 'Level ' + k.toUpperCase(), 0, 1, 0.01, pct)]);
+      // A key color per layer: that color turns see-through, so the layers below show.
+      const keyRow = (k, K) => {
+        if (typeof n.params['kc' + k] !== 'string') n.params['kc' + k] = '#00ff00';
+        if (typeof n.params['kt' + k] !== 'number') n.params['kt' + k] = 0;
+        const c = h('input', {type:'color', class:'kcol', 'aria-label':'Key color ' + K, value: n.params['kc' + k]});
+        c.addEventListener('input', () => { n.params['kc' + k] = c.value; save(); });
+        n.ctl = n.ctl || {}; n.ctl['kc' + k] = {set(v){ n.params['kc' + k] = v; c.value = v; }};
+        const r = slider(n, 'kt' + k, 'Key ' + K, 0, 0.8, 0.01, v => v ? Math.round(v*100) + '%' : 'Off');
+        r.querySelector('.rng').prepend(c); r.classList.add('keyrow');
+        return r;
+      };
+      n.mixRows = L.map((k, i) => { const K = k.toUpperCase(); const rows = i === 0 ? [slider(n, 'a', 'Level A', 0, 1, 0.01, pct)] : [choice(n, 'mode' + K, 'Blend ' + K, BLENDS), slider(n, k, 'Level ' + K, 0, 1, 0.01, pct)]; rows.push(keyRow(k, K)); return rows; });
       const cnt = slider(n, 'count', 'Inputs', 2, 10, 1, v => String(Math.round(v)), null, false);
-      return [cnt, ...n.mixRows.flat(), h('div', {class:'status', text:'Inputs stack A at the bottom, then B, C… on top. Each layer blends onto everything below it.'})];
+      return [cnt, ...n.mixRows.flat(), h('div', {class:'status', text:'Inputs stack A at the bottom, then B, C… on top. Each layer blends onto everything below it. Key: pick a color in a layer and raise its amount to make that color see-through.'})];
     },
     refresh(n){ mixerShow(n); },
     pull(n){
@@ -2860,7 +2951,10 @@ const DEFS = {
         const lvl = acc ? [1, ...idx.map(j => P(n, keys[j]))] : idx.map(j => P(n, keys[j])); while (lvl.length < 4) lvl.push(0);
         const md = acc ? [0, ...idx.map(j => ok.slice(0, j).some(Boolean) ? mode(keys[j], j) : 0)] : idx.map(j => mode(keys[j], j)); while (md.length < 4) md.push(0);
         const sz = ins.map(x => x ? dims(x) : [1, 1]);
-        acc = gpu(n, FS.mixer, ins, {has, lvl, md, s0: sz[0], s1: sz[1], s2: sz[2], s3: sz[3], bgc: colorRgb(n, 'bgc')}, W, H, 'mix' + (pass++ % 2));
+        const slotKeys = acc ? [null, ...idx] : idx, hx = v => [1, 3, 5].map(o => parseInt((v || '#000000').slice(o, o + 2), 16)/255);
+        const kt = [0, 1, 2, 3].map(q => { const j = slotKeys[q]; return j == null ? 0 : P(n, 'kt' + keys[j]); });
+        const kc = [0, 1, 2, 3].map(q => { const j = slotKeys[q]; return j == null ? [0, 0, 0] : hx(n.params['kc' + keys[j]]); });
+        acc = gpu(n, FS.mixer, ins, {has, lvl, md, kt, k0: kc[0], k1: kc[1], k2: kc[2], k3: kc[3], s0: sz[0], s1: sz[1], s2: sz[2], s3: sz[3], bgc: colorRgb(n, 'bgc')}, W, H, 'mix' + (pass++ % 2));
       }
       return acc;
     }
@@ -3246,7 +3340,7 @@ const DEFS = {
     mix:true, params:{time:500, sync:'off', mix:1},
     build(n){
       n.fb = new FrameBuf(960);
-      n.timeRow = slider(n, 'time', 'Delay', 0, 3000, 10, v => v < 1000 ? v + ' ms' : (v/1000).toFixed(2) + ' s');
+      n.timeRow = slider(n, 'time', 'Delay', 0, 20000, 10, v => v < 1000 ? v + ' ms' : (v/1000).toFixed(2) + ' s');
       return [n.timeRow,
         ...syncUI(n, [n.timeRow]),
         h('div', {class:'status', text:'Set Mix below 100% to see the live and delayed pictures together.'})];
@@ -3256,10 +3350,15 @@ const DEFS = {
       const now = performance.now();
       if (rising(n, 'clock')){ if (n.lastClk) n.clkPeriod = (now - n.lastClk)/1000; n.lastClk = now; }
       const ss = syncSec(n), per = ss;
-      const d = ss ? Math.min(3000, ss*1000) : P(n, 'time');
+      const d = ss ? Math.min(20000, ss*1000) : P(n, 'time');
       syncInfo(n, d);
+      // Long delays keep a smaller, slower copy of the past so memory stays reasonable.
+      const span = edgeInto(n.id, 'p:time') ? Math.max(3000, n.params.time*2) : d;
+      const tier = span <= 3200 ? [960, 32, 100] : span <= 8200 ? [640, 40, 220] : [420, 66, 330];
+      if (n.fb.maxW !== tier[0]){ n.fb = new FrameBuf(tier[0]); }
+      n.fb.gap = tier[1];
       n.fb.push(src, now);
-      n.fb.trim(now, (edgeInto(n.id, 'p:time') || per ? 3000 : d) + 80, 100);
+      n.fb.trim(now, Math.min(20000, span) + 120, tier[2]);
       return n.fb.at(now - d).cv;
     }
   },
@@ -3627,14 +3726,14 @@ const DEFS = {
     mix:true, params:{depth:1, bands:64, dir:'down', mix:1},
     build(n){
       n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d'); n.fb = new FrameBuf(640);
-      const spanRow = slider(n, 'depth', 'Time span', 0.1, 3, 0.01, v => v.toFixed(2) + ' s');
+      const spanRow = slider(n, 'depth', 'Time span', 0.1, 6, 0.01, v => v.toFixed(2) + ' s');
       return [spanRow, ...syncUI(n, [spanRow]),
         slider(n, 'bands', 'Slices', 8, 180, 1, v => String(Math.round(v))),
         choice(n, 'dir', 'Older toward', [['down','Bottom'],['up','Top'],['right','Right'],['left','Left']])];
     },
     pull(n){
       const s = inputOf(n, 'in'); if (!s || !dims(s)[0]) return null;
-      const sss = syncSec(n), now = performance.now(), depth = sss ? Math.min(3000, sss*1000) : P(n, 'depth')*1000, B = Math.max(2, Math.round(P(n, 'bands'))); syncInfo(n, depth);
+      const sss = syncSec(n), now = performance.now(), depth = sss ? Math.min(6000, sss*1000) : P(n, 'depth')*1000, B = Math.max(2, Math.round(P(n, 'bands'))); syncInfo(n, depth);
       n.fb.push(s, now); n.fb.trim(now, (edgeInto(n.id, 'p:depth') ? 3000 : depth) + 100, 120);
       const W = n.fb.w, H = n.fb.h, d = n.params.dir, vert = d === 'down' || d === 'up';
       fitCanvas(n.cv, W, H); const x = n.ctx;
@@ -4126,7 +4225,7 @@ const DEFS = {
         slider(n, 'layers', 'Layers', 1, 10, 1, v => String(Math.round(v))),
         slider(n, 'skip', 'Weave', 1, 30, 1, v => String(Math.round(v))),
         slider(n, 'jag', 'Jaggedness', 0, 1, 0.01, pct),
-        slider(n, 'inner', 'Inner size', 0.05, 0.8, 0.005, pct), slider(n, 'outer', 'Outer size', 0.3, 1.4, 0.005, pct),
+        slider(n, 'inner', 'Inner size', 0, 0.8, 0.005, pct), slider(n, 'outer', 'Outer size', 0.3, 1.4, 0.005, pct),
         slider(n, 'fill', 'Filled shards', 0, 1, 0.01, pct), slider(n, 'twist', 'Twist', 0, 1, 0.01, pct),
         slider(n, 'spin', 'Spin', -30, 30, 0.5, v => v + '°/s'), slider(n, 'lw', 'Line width', 0.3, 4, 0.05, v => v.toFixed(2) + ' px'),
         colorPick(n, 'line', 'Lines'), colorPick(n, 'fa', 'Fill A'), colorPick(n, 'fb', 'Fill B'), colorPick(n, 'bg', 'Background'), choice(n, 'res', 'Size', GEN_RES)];
@@ -4407,12 +4506,13 @@ const DEFS = {
       x.translate(W/2, H/2); x.scale(S, S); x.lineJoin = 'round'; x.lineWidth = P(n, 'lw')*H/720/S;
       const wav = (a, j) => { let w = 0; for (let i = 0; i < det; i++){ const hm = n.hm[i]; w += hm.a*Math.sin(hm.k*a + hm.ph + t*hm.s + j*hm.dj*tw); } return w; };
       x.strokeStyle = colorCss(n, 'col'); x.beginPath();
-      for (let j = 0; j < K; j++){ const base = inner + (j + 1)*sp;
+      const first = inner > 0.0005 ? sp : sp*0.12; // no gap: the first ring sits right at the center
+      for (let j = 0; j < K; j++){ const base = inner + first + j*sp;
         for (let k = 0; k <= 160; k++){ const a = k/160*Math.PI*2, r = base*(1 + dist*0.35*wav(a, j)); const px = Math.cos(a)*r, py = Math.sin(a)*r; k ? x.lineTo(px, py) : x.moveTo(px, py); } }
       x.stroke();
       const Sp = Math.round(P(n, 'spikes'));
       if (Sp > 0){
-        const Rs = inner + K*sp, L = P(n, 'spikelen'), layers = Math.round(P(n, 'layers'));
+        const Rs = inner + first + (K - 1)*sp, L = P(n, 'spikelen'), layers = Math.round(P(n, 'layers'));
         x.strokeStyle = colorCss(n, 'spcol'); x.beginPath();
         for (let l = 0; l < layers; l++){ const rot = l*Math.PI/Sp/layers*2 + t*0.04*(l % 2 ? 1 : -1);
           for (let i = 0; i <= Sp*2; i++){ const a = rot + i/(Sp*2)*Math.PI*2, out = i % 2;
@@ -4731,18 +4831,18 @@ const DEFS = {
     title:'Audio delay', kind:'audio', fam:'aud', w:260, ins:[{name:'in', kind:'audio', label:'In'},{name:'clock', kind:'gate', label:'Clock'}], outs:[{name:'out', kind:'audio', label:'Out'}],
     params:{time:375, fb:0.4, mix:0.4, sync:'off'},
     build(n){
-      n.timeRow = slider(n, 'time', 'Time', 1, 2000, 1, v => Math.round(v) + ' ms');
+      n.timeRow = slider(n, 'time', 'Time', 1, 10000, 1, v => v < 1000 ? Math.round(v) + ' ms' : (v/1000).toFixed(2) + ' s');
       const pct = v => Math.round(v*100) + '%';
       return [n.timeRow, ...syncUI(n, [n.timeRow]), slider(n, 'fb', 'Feedback', 0, 0.95, 0.01, pct), slider(n, 'mix', 'Mix', 0, 1, 0.01, pct)];
     },
     initAudio(n){
-      n.ain = stereoGain(); n.aout = stereoGain(); n.d = actx.createDelay(4); n.fbg = actx.createGain(); n.wet = actx.createGain(); n.dry = actx.createGain();
+      n.ain = stereoGain(); n.aout = stereoGain(); n.d = actx.createDelay(10); n.fbg = actx.createGain(); n.wet = actx.createGain(); n.dry = actx.createGain();
       n.ain.connect(n.d); n.d.connect(n.fbg); n.fbg.connect(n.d); n.d.connect(n.wet); n.wet.connect(n.aout); n.ain.connect(n.dry); n.dry.connect(n.aout);
     },
     audioIn(n, port){ return port === 'clock' ? null : n.ain; },
     pull(n){ if (rising(n, 'clock')){ const now = performance.now(); if (n.lastClk) n.clkPeriod = (now - n.lastClk)/1000; n.lastClk = now; } return null; },
     render(n){
-      pullNode(n.id); if (!n.d) return; const t = actx.currentTime, ss = syncSec(n), ms = ss ? Math.min(4000, ss*1000) : P(n, 'time'); syncInfo(n, ms);
+      pullNode(n.id); if (!n.d) return; const t = actx.currentTime, ss = syncSec(n), ms = ss ? Math.min(10000, ss*1000) : P(n, 'time'); syncInfo(n, ms);
       n.d.delayTime.setTargetAtTime(ms/1000, t, 0.05); n.fbg.gain.setTargetAtTime(P(n, 'fb'), t, 0.02);
       const m = P(n, 'mix'); n.wet.gain.setTargetAtTime(m, t, 0.02); n.dry.gain.setTargetAtTime(1 - m*0.5, t, 0.02);
     }
@@ -4794,6 +4894,209 @@ const DEFS = {
       if (m <= 0.001 && oa) return a; if (m >= 0.999 && ob) return b;
       return gpu(n, FS.mixer, [oa ? a : null, ob ? b : null, null, null], {has: [oa ? 1 : 0, ob ? 1 : 0, 0, 0], lvl: [1, m, 0, 0], md: [0, 0, 0, 0],
         s0: oa ? dims(a) : [1, 1], s1: ob ? dims(b) : [1, 1], s2: [1, 1], s3: [1, 1], bgc: [0, 0, 0]}, W, H);
+    }
+  },
+  gin: {
+    title:'Input', kind:'video', fam:'grp', w:220,
+    ins:[{name:'in', kind:'video', label:'Video'},{name:'cv', kind:'mod', label:'Control'},{name:'trig', kind:'gate', label:'Trigger'},{name:'aud', kind:'audio', label:'Audio'}],
+    outs:[{name:'out', kind:'video', label:'Video'},{name:'cv', kind:'mod', label:'Control'},{name:'trig', kind:'gate', label:'Trigger'},{name:'aud', kind:'audio', label:'Audio'}],
+    params:{label:'In'},
+    build(n){ return [textField(n, 'label', 'Name'), h('div', {class:'status', text:'Inside a custom module this becomes one of its inputs. Patch its outputs into the modules inside.'})]; },
+    initAudio(n){ n.ain = stereoGain(); n.aout = n.ain; }, audioIn(n){ return n.ain; },
+    pull(n){ return new PortOut({out: inputRaw(n, 'in'), cv: readIn(n, 'cv', 0), trig: readIn(n, 'trig', 0)}); }
+  },
+  gout: {
+    title:'Output', kind:'video', fam:'grp', w:220,
+    ins:[{name:'in', kind:'video', label:'Video'},{name:'cv', kind:'mod', label:'Control'},{name:'trig', kind:'gate', label:'Trigger'},{name:'aud', kind:'audio', label:'Audio'}],
+    outs:[{name:'out', kind:'video', label:'Video'},{name:'cv', kind:'mod', label:'Control'},{name:'trig', kind:'gate', label:'Trigger'},{name:'aud', kind:'audio', label:'Audio'}],
+    params:{label:'Out'},
+    build(n){ return [textField(n, 'label', 'Name'), h('div', {class:'status', text:'Inside a custom module this becomes one of its outputs. Patch the last module inside into it.'})]; },
+    initAudio(n){ n.ain = stereoGain(); n.aout = n.ain; }, audioIn(n){ return n.ain; },
+    pull(n){ return new PortOut({out: inputRaw(n, 'in'), cv: readIn(n, 'cv', 0), trig: readIn(n, 'trig', 0)}); }
+  },
+  image: {
+    title:'Image', kind:'video', fam:'src', w:260, ins:[{name:'next', kind:'gate', label:'Next'},{name:'prev', kind:'gate', label:'Previous'},{name:'rnd', kind:'gate', label:'Random'}],
+    outs:[{name:'out', kind:'video', label:'Video'}],
+    params:{hold:0, fade:0.3},
+    build(n){
+      n.imgs = []; n.idx = 0; n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
+      const file = h('input', {type:'file', accept:'image/*', multiple: true, hidden: true});
+      n.addFiles = async files => {
+        for (const f of files){ if (!f.type.startsWith('image/')) continue; try { const bmp = await createImageBitmap(f); n.imgs.push({bmp, name: f.name}); } catch(e){ toast('Couldn’t open ' + f.name); } }
+        n.idx = Math.min(n.idx, Math.max(0, n.imgs.length - 1)); n.changed = performance.now(); imgInfo(n);
+      };
+      file.addEventListener('change', () => { n.addFiles([...file.files]); file.value = ''; });
+      n.info = h('div', {class:'status', text:'No images. Load some, or drop them here.'});
+      return [h('div', {class:'btns'}, h('button', {class:'btn', text:'Load…', onclick: () => file.click()}), h('button', {class:'btn', text:'Next', onclick: () => imgStep(n, 1)}), h('button', {class:'btn', text:'Clear', onclick: () => { n.imgs = []; n.idx = 0; imgInfo(n); }})), file, n.info,
+        slider(n, 'hold', 'Auto-advance', 0, 30, 0.1, v => v ? v.toFixed(1) + ' s' : 'Off'), slider(n, 'fade', 'Crossfade', 0, 3, 0.05, v => v.toFixed(2) + ' s'),
+        h('div', {class:'status', text:'Images aren’t saved inside the patch file; load them again after opening a patch.'})];
+    },
+    afterBuild(n){
+      n.el.addEventListener('dragover', e => { if ([...(e.dataTransfer.items || [])].some(i => i.type.startsWith('image'))) e.preventDefault(); });
+      n.el.addEventListener('drop', e => { const fs = [...e.dataTransfer.files].filter(f => f.type.startsWith('image')); if (fs.length){ e.preventDefault(); e.stopPropagation(); n.addFiles(fs); } });
+    },
+    pull(n){
+      if (!n.imgs.length) return null;
+      if (rising(n, 'next')) imgStep(n, 1); if (rising(n, 'prev')) imgStep(n, -1); if (rising(n, 'rnd')) imgStep(n, 0);
+      const now = performance.now(), hold = P(n, 'hold');
+      if (hold > 0 && now - (n.changed || 0) > hold*1000) imgStep(n, 1);
+      const cur = n.imgs[n.idx].bmp, W = cur.width, H = cur.height, f = Math.max(0.0001, P(n, 'fade')*1000), k = Math.min(1, (now - (n.changed || 0))/f);
+      fitCanvas(n.cv, W, H); const x = n.ctx; x.globalAlpha = 1;
+      if (k < 1 && n.prevBmp){ drawCover(x, n.prevBmp, W, H); x.globalAlpha = k; drawCover(x, cur, W, H); x.globalAlpha = 1; }
+      else x.drawImage(cur, 0, 0);
+      return n.cv;
+    }
+  },
+  gif: {
+    title:'GIF player', kind:'video', fam:'src', w:260, ins:[{name:'restart', kind:'gate', label:'Restart'},{name:'step', kind:'gate', label:'Next frame'}],
+    outs:[{name:'out', kind:'video', label:'Video'}],
+    params:{speed:1, play:'loop'},
+    build(n){
+      n.frames = []; n.fi = 0; n.acc = 0; n.dir = 1;
+      const file = h('input', {type:'file', accept:'image/gif,image/webp,image/png,image/apng', hidden: true});
+      n.loadFile = async f => {
+        n.info.textContent = 'Loading ' + f.name + '…'; n.frames = []; n.fi = 0;
+        try {
+          if ('ImageDecoder' in window){
+            const dec = new ImageDecoder({data: await f.arrayBuffer(), type: f.type || 'image/gif'}); await dec.tracks.ready;
+            const count = dec.tracks.selectedTrack.frameCount || 1;
+            for (let i = 0; i < count; i++){ const r = await dec.decode({frameIndex: i}); n.frames.push({bmp: await createImageBitmap(r.image), dur: Math.max(20, (r.image.duration || 100000)/1000)}); r.image.close(); }
+            dec.close();
+          } else {
+            // Older browsers: show the animation the browser plays itself.
+            n.imgEl = new Image(); n.imgEl.src = URL.createObjectURL(f); await n.imgEl.decode(); n.imgEl.style.cssText = 'position:fixed; left:-9999px; width:1px; height:1px'; document.body.append(n.imgEl);
+          }
+          n.info.textContent = f.name + (n.frames.length ? ', ' + n.frames.length + ' frames' : '');
+        } catch(e){ n.info.textContent = 'Couldn’t play ' + f.name + ': ' + e.message; }
+      };
+      file.addEventListener('change', () => { if (file.files[0]) n.loadFile(file.files[0]); file.value = ''; });
+      n.info = h('div', {class:'status', text:'No GIF. Load one, or drop it here.'});
+      return [h('div', {class:'btns'}, h('button', {class:'btn', text:'Load…', onclick: () => file.click()}), h('button', {class:'btn', text:'Restart', onclick: () => { n.fi = 0; n.acc = 0; }})), file, n.info,
+        slider(n, 'speed', 'Speed', 0, 4, 0.01, v => v.toFixed(2) + '×'),
+        choice(n, 'play', 'Play', [['loop','Loop'],['bounce','Bounce'],['once','Once'],['step','Only on Next frame']])];
+    },
+    afterBuild(n){
+      n.el.addEventListener('dragover', e => { if ([...(e.dataTransfer.items || [])].some(i => i.type.startsWith('image'))) e.preventDefault(); });
+      n.el.addEventListener('drop', e => { const f = [...e.dataTransfer.files].find(f => f.type.startsWith('image')); if (f){ e.preventDefault(); e.stopPropagation(); n.loadFile(f); } });
+    },
+    pull(n){
+      if (n.imgEl && !n.frames.length) return n.imgEl;
+      if (!n.frames.length) return null;
+      const [, dt] = tdt(n), N = n.frames.length, mode = n.params.play;
+      if (rising(n, 'restart')){ n.fi = 0; n.acc = 0; n.dir = 1; }
+      if (rising(n, 'step')) n.fi = (n.fi + 1) % N;
+      if (mode !== 'step'){
+        n.acc += dt*1000*P(n, 'speed');
+        while (n.acc >= n.frames[n.fi].dur && N > 1){
+          n.acc -= n.frames[n.fi].dur;
+          if (mode === 'once'){ if (n.fi < N - 1) n.fi++; else { n.acc = 0; break; } }
+          else if (mode === 'bounce'){ if (n.fi + n.dir >= N || n.fi + n.dir < 0) n.dir = -n.dir; n.fi += n.dir; }
+          else n.fi = (n.fi + 1) % N;
+        }
+      }
+      return n.frames[n.fi].bmp;
+    }
+  },
+  amoeba: {
+    title:'Amoeba', kind:'video', w:270, ins:[{name:'new', kind:'gate', label:'New shape'},{name:'pulse', kind:'gate', label:'Pulse'}], outs:[{name:'out', kind:'video', label:'Video'}],
+    params:{count:4, size:0.3, pulse:0.25, rate:0.6, wobble:0.5, drift:0.3, nucleus:0.25, outline:2, glow:0.4, ca:'#7be0c3', cb:'#1f72b8', line:'#0d2a3a', nc:'#ec4f73', bg:'#f7f5f2', seed:11, res:'720'},
+    build(n){
+      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d'); n.time = 0; n.kick = 0;
+      const pct = v => Math.round(v*100) + '%';
+      return [h('div', {class:'btns'}, h('button', {class:'btn', text:'New shape', onclick: () => { setParam(n, 'seed', Math.floor(Math.random()*99999)); save(); }}), h('button', {class:'btn', text:'Pulse', onclick: () => { n.kick = 1; }})),
+        slider(n, 'count', 'Blobs', 1, 12, 1, v => String(Math.round(v))), slider(n, 'size', 'Size', 0.05, 0.8, 0.005, pct),
+        slider(n, 'pulse', 'Pulse', 0, 1, 0.01, pct), slider(n, 'rate', 'Pulse rate', 0, 4, 0.01, v => v.toFixed(2) + ' Hz'),
+        slider(n, 'wobble', 'Wobble', 0, 1.5, 0.01, pct), slider(n, 'drift', 'Drift', 0, 1, 0.01, pct),
+        slider(n, 'nucleus', 'Nucleus', 0, 0.6, 0.01, pct), slider(n, 'outline', 'Outline', 0, 8, 0.1, v => v.toFixed(1) + ' px'), slider(n, 'glow', 'Glow', 0, 1, 0.01, pct),
+        colorPick(n, 'ca', 'Inside'), colorPick(n, 'cb', 'Edge'), colorPick(n, 'line', 'Outline'), colorPick(n, 'nc', 'Nucleus'), colorPick(n, 'bg', 'Background'), choice(n, 'res', 'Size', GEN_RES)];
+    },
+    pull(n){
+      if (rising(n, 'new')) n.params.seed = Math.floor(Math.random()*99999);
+      if (rising(n, 'pulse')) n.kick = 1;
+      const [, dt] = tdt(n); n.time += dt; n.kick = Math.max(0, n.kick - dt*2.5);
+      const [W, H] = genSize(n); fitCanvas(n.cv, W, H);
+      const x = n.ctx; x.setTransform(1,0,0,1,0,0); x.globalAlpha = 1; x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H);
+      const S = H/2, t = n.time, R = k => hashRand(n.params.seed, k), K = Math.round(P(n, 'count'));
+      x.translate(W/2, H/2); x.scale(S, S);
+      const ca = colorCss(n, 'ca'), cb = colorCss(n, 'cb'), lw = P(n, 'outline')*H/720/S, glow = P(n, 'glow');
+      for (let b = 0; b < K; b++){
+        const ph = R(b*7)*6.28, sp = 0.4 + R(b*7 + 1)*1.2, dr = P(n, 'drift');
+        const cx = (R(b*7 + 2)*2 - 1)*0.55*W/H + Math.sin(t*0.13*sp + ph)*dr*0.3, cy = (R(b*7 + 3)*2 - 1)*0.45 + Math.cos(t*0.11*sp + ph*1.3)*dr*0.25;
+        const beat = 1 + P(n, 'pulse')*0.35*Math.sin(t*6.283*P(n, 'rate') + ph) + n.kick*0.25;
+        const rad = P(n, 'size')*(0.6 + R(b*7 + 4)*0.8)*beat, wob = P(n, 'wobble');
+        x.beginPath();
+        for (let k = 0; k <= 72; k++){
+          const a = k/72*6.283;
+          let r = 1; for (let j = 0; j < 4; j++) r += wob*0.12/(j + 1)*Math.sin((j + 2)*a + t*(0.6 + j*0.35)*sp + ph*(j + 1));
+          const px = cx + Math.cos(a)*rad*r, py = cy + Math.sin(a)*rad*r; k ? x.lineTo(px, py) : x.moveTo(px, py);
+        }
+        x.closePath();
+        const g = x.createRadialGradient(cx - rad*0.2, cy - rad*0.2, 0, cx, cy, rad*1.15); g.addColorStop(0, ca); g.addColorStop(1, cb);
+        if (glow > 0){ x.shadowColor = cb; x.shadowBlur = glow*40*H/720; }
+        x.fillStyle = g; x.globalAlpha = 0.9; x.fill(); x.globalAlpha = 1; x.shadowBlur = 0;
+        if (lw > 0){ x.strokeStyle = colorCss(n, 'line'); x.lineWidth = lw; x.stroke(); }
+        const nu = P(n, 'nucleus'); if (nu > 0){ x.beginPath(); x.arc(cx + Math.sin(t*0.7 + ph)*rad*0.2, cy + Math.cos(t*0.5 + ph)*rad*0.2, rad*nu*(0.9 + 0.1*Math.sin(t*3 + ph)), 0, 6.283); x.fillStyle = colorCss(n, 'nc'); x.fill(); }
+      }
+      x.setTransform(1,0,0,1,0,0);
+      return n.cv;
+    }
+  },
+  vector3d: {
+    title:'Vector shapes', kind:'video', w:280, ins:[{name:'new', kind:'gate', label:'New shape'},{name:'glitch', kind:'gate', label:'Glitch'}], outs:[{name:'out', kind:'video', label:'Video'}],
+    params:{family:'random', style:'wire', detail:0.5, size:1, spinX:12, spinY:20, spinZ:0, morph:0.2, glitch:0, persp:0.6, trails:0, lw:1.2, line:'#e8eef7', fill:'#2f56a6', bg:'#05050a', seed:303, res:'720'},
+    build(n){
+      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d'); n.time = 0; n.rx = 0.4; n.ry = 0.2; n.rz = 0; n.gl = 0;
+      const pct = v => Math.round(v*100) + '%', deg = v => v + '°/s';
+      n.info = h('div', {class:'status'});
+      return [h('div', {class:'btns'}, h('button', {class:'btn', text:'New shape', onclick: () => { setParam(n, 'seed', Math.floor(Math.random()*99999)); save(); }}), h('button', {class:'btn', text:'Glitch', onclick: () => { n.gl = 1; }})), n.info,
+        choice(n, 'family', 'Kind', [['random','Surprise me'],['poly','Polyhedra'],['super','Supershapes'],['knot','Knots'],['lattice','Wave lattice'],['spikes','Spiky forms'],['cloud','Point clouds'],['ribbon','Twisted ribbons'],['helix','Helices'],['rings','Ring stacks'],['shards','Shard clusters']]),
+        choice(n, 'style', 'Draw as', [['wire','Wireframe'],['hidden','Hidden lines'],['solid','Solid'],['points','Points'],['both','Solid with lines']]),
+        slider(n, 'detail', 'Detail', 0, 1, 0.01, pct), slider(n, 'size', 'Size', 0.2, 2, 0.01, pct),
+        slider(n, 'spinX', 'Spin X', -180, 180, 1, deg), slider(n, 'spinY', 'Spin Y', -180, 180, 1, deg), slider(n, 'spinZ', 'Spin Z', -180, 180, 1, deg),
+        slider(n, 'morph', 'Morph', 0, 1, 0.01, pct), slider(n, 'glitch', 'Glitch', 0, 1, 0.01, pct), slider(n, 'persp', 'Perspective', 0, 1, 0.01, pct),
+        slider(n, 'trails', 'Trails', 0, 0.97, 0.01, pct), slider(n, 'lw', 'Line width', 0.3, 5, 0.05, v => v.toFixed(2) + ' px'),
+        colorPick(n, 'line', 'Lines'), colorPick(n, 'fill', 'Faces'), colorPick(n, 'bg', 'Background'), choice(n, 'res', 'Size', GEN_RES)];
+    },
+    pull(n){
+      if (rising(n, 'new')) n.params.seed = Math.floor(Math.random()*99999);
+      if (rising(n, 'glitch')) n.gl = 1;
+      const key = n.params.seed + '|' + n.params.family + '|' + Math.round(P(n, 'detail')*10);
+      if (key !== n.mkey){ n.mkey = key; n.mesh = vecMesh(n.params.seed, n.params.family, P(n, 'detail')); n.info.textContent = n.mesh.name; }
+      const [, dt] = tdt(n); n.time += dt; n.gl = Math.max(0, n.gl - dt*3);
+      n.rx += dt*P(n, 'spinX')*Math.PI/180; n.ry += dt*P(n, 'spinY')*Math.PI/180; n.rz += dt*P(n, 'spinZ')*Math.PI/180;
+      const [W, H] = genSize(n); fitCanvas(n.cv, W, H);
+      const x = n.ctx; x.setTransform(1,0,0,1,0,0);
+      x.globalAlpha = 1 - P(n, 'trails'); x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H); x.globalAlpha = 1;
+      const m = n.mesh, S = H*0.44*P(n, 'size'), t = n.time, mo = P(n, 'morph'), gli = Math.min(1, P(n, 'glitch') + n.gl), per = P(n, 'persp');
+      const [cx, sx, cy, sy, cz, sz] = [Math.cos(n.rx), Math.sin(n.rx), Math.cos(n.ry), Math.sin(n.ry), Math.cos(n.rz), Math.sin(n.rz)];
+      const R = k => hashRand(n.params.seed + Math.floor(t*12), k);
+      const P2 = m.v.map((v, i) => {
+        let [a, b, c] = v;
+        if (mo > 0){ const f = 1 + mo*0.25*Math.sin(t*1.7 + a*3 + b*2.3) * Math.cos(t*1.1 + c*2.7); a *= f; b *= f; c *= f; }
+        if (gli > 0 && R(i) < gli*0.3){ a += (R(i + 7) - 0.5)*gli*0.6; b += (R(i + 13) - 0.5)*gli*0.6; }
+        let y1 = b*cx - c*sx, z1 = b*sx + c*cx; let x2 = a*cy + z1*sy, z2 = -a*sy + z1*cy; let x3 = x2*cz - y1*sz, y3 = x2*sz + y1*cz;
+        const k = 1/(1 + z2*per*0.45);
+        return [W/2 + x3*S*k, H/2 + y3*S*k, z2];
+      });
+      const style = n.params.style, line = colorCss(n, 'line'), lw = P(n, 'lw')*H/720;
+      x.lineJoin = 'round'; x.lineCap = 'round';
+      if ((style === 'solid' || style === 'both' || style === 'hidden') && m.f.length){
+        const fc = colorRgb(n, 'fill'), bgc = colorCss(n, 'bg');
+        const faces = m.f.map(f => { let z = 0; for (const i of f) z += P2[i][2]; return [f, z/f.length]; }).sort((p, q) => q[1] - p[1]);
+        for (const [f] of faces){
+          x.beginPath(); f.forEach((i, k) => k ? x.lineTo(P2[i][0], P2[i][1]) : x.moveTo(P2[i][0], P2[i][1])); x.closePath();
+          if (style === 'hidden') x.fillStyle = bgc;
+          else { const [a, b, c] = [P2[f[0]], P2[f[1]], P2[f[2]]]; const nz = (b[0] - a[0])*(c[1] - a[1]) - (b[1] - a[1])*(c[0] - a[0]); const sh = 0.45 + 0.55*Math.min(1, Math.abs(nz)/(S*S*0.02 + 1)); x.fillStyle = rgbCss([fc[0]*sh, fc[1]*sh, fc[2]*sh]); }
+          x.fill();
+          if (style !== 'solid'){ x.strokeStyle = line; x.lineWidth = lw; x.stroke(); }
+        }
+        if (style !== 'hidden' || m.f.length) { if (style === 'solid' || style === 'both' || style === 'hidden') { x.setTransform(1,0,0,1,0,0); return n.cv; } }
+      }
+      if (style === 'points'){ x.fillStyle = line; for (const p of P2){ x.beginPath(); x.arc(p[0], p[1], lw*1.6, 0, 6.283); x.fill(); } return n.cv; }
+      x.strokeStyle = line; x.lineWidth = lw; x.beginPath();
+      for (const [a, b] of m.e){ x.moveTo(P2[a][0], P2[a][1]); x.lineTo(P2[b][0], P2[b][1]); }
+      x.stroke();
+      return n.cv;
     }
   },
   lineart: {
@@ -5070,7 +5373,7 @@ const DEFS = {
     destroy(n){ stopMic(n); if (n.gain){ try { n.gain.disconnect(); n.aout.disconnect(); } catch(e){} } }
   },
   recorder: {
-    title:'Recorder', kind:'rec', ins:[{name:'video', kind:'video', label:'Rec. Video'},{name:'audio', kind:'audio', label:'Rec. Audio'},{name:'rtrig', kind:'gate', label:'Rec. on/off'}], outs:[],
+    title:'Recorder', kind:'rec', ins:[{name:'video', kind:'video', label:'Rec. Video'},{name:'audio', kind:'audio', label:'Rec. Audio'},{name:'rtrig', kind:'gate', label:'Rec. on/off'},{name:'rpause', kind:'gate', label:'Rec. pause'}], outs:[],
     params:{format:''},
     mount(n){
       n.rc = document.createElement('canvas'); n.rctx = n.rc.getContext('2d');
@@ -5096,7 +5399,10 @@ const DEFS = {
       if (localStorage.getItem(STORE + ':rcoll')) n.el.classList.add('rcoll');
       n.el.append(h('header', {}, rc, h('span', {class:'t', text:'Recorder'}), n.status),
         h('div', {class:'recrow'}, n.recBtn, n.time, n.recSum = h('button', {class:'recsum', title:'Change recording settings', onclick: () => { document.getElementById('setbtn').click(); }})), simpAudio,
-        h('div', {class:'meterwrap'}, n.mcv, n.pk), n.list);
+        h('div', {class:'meterwrap'}, n.mcv, n.pk), n.takesHead = h('div', {class:'takeshead', hidden: true}, h('span', {text:'Takes and stills'}), h('button', {class:'btn on headlive', text:'Back to live', hidden: true, onclick: () => hidePreview()}), h('button', {class:'btn', text:'Save all', title:'Save every take and still', onclick: async () => {
+          const rows = [...n.list.querySelectorAll('.take')].reverse();
+          for (const r of rows){ const t = n.takes.find(x => x.url === r.dataset.url); const b = [...r.querySelectorAll('.btn')].find(x => x.textContent === 'Save' || x.textContent === 'Saved'); if (t && b && b.textContent === 'Save'){ await saveTake(n, t, b); await new Promise(res => setTimeout(res, 350)); } }
+          toast('Saved all takes.'); }})), n.list);
       for (const p of DEFS.recorder.ins) dockPort(n, p, dockBot);
     },
     initAudio(n){
@@ -5107,10 +5413,18 @@ const DEFS = {
     audioIn(n){ return n.bus; },
     render(n){
       if (rising(n, 'rtrig')) isRec(n) ? stopRec(n) : startRec(n);
+      if (edgeInto(n.id, 'rpause')){
+        const g = readIn(n, 'rpause', 0) > 0.5, now = performance.now();
+        if (g && !n.pg){ n.pgT = now; n.pgMode = null; }
+        if (g && n.pg === true && !n.pgMode && now - n.pgT > 200){ n.pgMode = 'gate'; recPause(n, false); }
+        if (!g && n.pg){ if (n.pgMode === 'gate') recPause(n, true); else recPause(n, !n.paused); }
+        n.pg = g;
+      }
       const src = recSrc(n);
       if (isRec(n)){
         drawFit(n.rctx, src, n.rc.width, n.rc.height, '#000');
-        n.time.textContent = fmtTime((performance.now() - n.t0)/1000);
+
+        n.time.textContent = (n.paused ? 'Paused ' : '') + fmtTime((recElapsed(n))/1000);
       }
       drawMeter(n.mcv, n.meter, n.pk);
       // The Rec. Audio jack doubles as a tiny level meter.
@@ -5131,8 +5445,15 @@ const DEFS = {
 };
 
 function isRec(n){ return n.rec && n.rec.state === 'recording'; }
-function recSrc(n){ const s = inputOf(n, 'video'); return s ? conformOut(s) : s; }
-function startRec(n){
+function recElapsed(n){ return (n.paused ? n.pauseT0 : performance.now()) - n.t0 - (n.pausedMs || 0); }
+function recPause(n, on){
+  if (!isRec(n) || !!n.paused === !!on) return;
+  try { on ? n.rec.pause() : n.rec.resume(); } catch(e){ return; }
+  if (on){ n.paused = true; n.pauseT0 = performance.now(); } else { n.pausedMs = (n.pausedMs || 0) + performance.now() - n.pauseT0; n.paused = false; }
+  n.el.classList.toggle('paused', !!n.paused); if (n.pills && n.pills.rpause) n.pills.rpause.classList.toggle('lit', !!n.paused);
+}
+function recSrc(n){ const s = recMainOn() ? toDraw(pullNode('main')) : inputOf(n, 'video'); return s ? conformOut(s) : s; }
+function startRec(n, retry){
   ensureAudio();
   n.status.classList.remove('err');
   const src = recSrc(n);
@@ -5143,28 +5464,77 @@ function startRec(n){
   n.rc.width = w - (w % 2); n.rc.height = hh - (hh % 2);
   drawFit(n.rctx, src, n.rc.width, n.rc.height, '#000');
   let vs;
-  try { vs = n.rc.captureStream(+rs.fps); } catch(e){ n.status.textContent = 'This browser can’t capture canvas video.'; n.status.classList.add('err'); return; }
+  // A steady frame rate: video encoders (H.264 especially) need one, or they stop with "video encoding failed".
+  try { vs = n.rc.captureStream(+rs.fps || 30); } catch(e){ n.status.textContent = 'This browser can’t capture canvas video.'; n.status.classList.add('err'); return; }
+  n.vtrack = null;
   const tracks = [...vs.getVideoTracks()];
   if (n.dest) tracks.push(...n.dest.stream.getAudioTracks());
   const stream = new MediaStream(tracks);
-  const mime = rs.format;
+  // A format this computer can't record falls back to one it can.
+  let mime = retry && retry.mime != null ? retry.mime : rs.format;
+  if (!retry && /mp4/i.test(mime || '') && settings.mp4ok && MediaRecorder.isTypeSupported(settings.mp4ok)) mime = settings.mp4ok;
+  // H.264 needs a "level" big enough for the picture size and frame rate. The old fixed level only covered 720p at 30 fps,
+  // which Windows' encoder rejects for anything bigger ("video encoding failed"). Pick the right one for this recording.
+  if (mime && /avc1/i.test(mime) && !(retry && retry.exact)){
+    const px = n.rc.width*n.rc.height, fps = +rs.fps || 30, mbps = px/256*fps;
+    const lv = [[0x1F, 921600, 108000], [0x28, 2097152, 245760], [0x2A, 2228224, 522240], [0x32, 5652480, 589824], [0x33, 9437184, 983040], [0x34, 9437184, 2073600]]
+      .find(([, maxPx, maxMbps]) => px <= maxPx && mbps <= maxMbps) || [0x34];
+    const want = mime.replace(/avc1\.[0-9a-f]{6}/i, 'avc1.4D40' + lv[0].toString(16).toUpperCase().padStart(2, '0'));
+    if (MediaRecorder.isTypeSupported(want)) mime = want;
+    else if (MediaRecorder.isTypeSupported('video/mp4')) mime = 'video/mp4';
+  }
+  if (mime && window.MediaRecorder && MediaRecorder.isTypeSupported && !MediaRecorder.isTypeSupported(mime)){
+    const ok = FORMATS.map(f => f[0]).find(m => m && MediaRecorder.isTypeSupported(m)) || '';
+    toast('This computer can’t record ' + mime.split(';')[0] + ', so this take uses ' + (ok.split(';')[0] || 'the default format') + '.');
+    mime = ok;
+  }
   try {
     n.rec = new MediaRecorder(stream, mime ? {mimeType: mime, videoBitsPerSecond: +rs.vbr, audioBitsPerSecond: +rs.abr} : {videoBitsPerSecond: +rs.vbr, audioBitsPerSecond: +rs.abr});
-  } catch(e){ n.status.textContent = 'Couldn’t start recording: ' + e.message; n.status.classList.add('err'); return; }
+  } catch(e){
+    try { n.rec = new MediaRecorder(stream); mime = ''; } catch(e2){ n.status.textContent = 'Couldn’t start recording: ' + e.message; n.status.classList.add('err'); vs.getTracks().forEach(t => t.stop()); n.rec = null; return; }
+  }
   const chunks = [];
   n.discard = false;
   n.rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
   n.rec.onstop = () => {
     vs.getTracks().forEach(t => t.stop());
-    const dur = (performance.now() - n.t0)/1000;
+    if (n.retryWith){ const r = n.retryWith; n.retryWith = null; setRecUI(n, false); setTimeout(() => startRec(n, r), 60); return; }
+    const dur = recElapsed(n)/1000; n.paused = false; n.el.classList.remove('paused'); if (n.pills && n.pills.rpause) n.pills.rpause.classList.remove('lit');
     setRecUI(n, false);
     if (n.discard || !chunks.length) return;
+    if (/mp4/i.test(mime || '') && settings.mp4ok !== mime){ settings.mp4ok = mime; saveSettings(); }
     const type = n.rec.mimeType || mime || chunks[0].type || 'video/webm';
     const blob = new Blob(chunks, {type});
     addTake(n, blob, dur, /mp4/i.test(type) ? 'mp4' : 'webm');
   };
-  n.rec.start(500);
-  n.t0 = performance.now();
+  n.rec.onerror = ev => {
+    const msg = (ev.error && ev.error.message) || 'error';
+    // If the encoder fails, try once more with WebM, which works everywhere.
+    const webm = FORMATS.map(f => f[0]).find(m => m && /webm/i.test(m) && MediaRecorder.isTypeSupported(m));
+    const tried = (retry && retry.tried) || [mime];
+    if (/mp4/i.test(mime || '')){
+      const lv = (/avc1\.4D40([0-9A-F]{2})/i.exec(mime || '') || [, '1F'])[1];
+      const nextMp4 = ['video/mp4;codecs=avc1.4D40' + lv + ',opus', 'video/mp4;codecs=avc1.4D40' + lv, 'video/mp4;codecs=avc1.42E0' + lv + ',mp4a.40.2', 'video/mp4;codecs=avc3.4D40' + lv + ',mp4a.40.2', 'video/mp4']
+        .find(m => !tried.includes(m) && MediaRecorder.isTypeSupported(m));
+      if (nextMp4){
+        n.discard = true; n.retryWith = {mime: nextMp4, exact: true, tried: tried.concat([nextMp4])};
+        toast('Trying another MP4 setting…'); try { n.rec.stop(); } catch(e){}
+        return;
+      }
+    }
+    if (webm && webm !== mime && !(retry && retry.webm)){
+      retry = Object.assign({}, retry, {webm: true});
+      n.discard = true; n.retryWith = {mime: webm, webm: true, tried};
+      const diag = 'MP4 failed: “' + msg + '” (tried ' + tried.map(m => m.replace('video/mp4;codecs=', '')).join(' / ') + ') at ' + n.rc.width + '×' + n.rc.height + ', ' + (rs.fps || 30) + ' fps. Recording in WebM instead.';
+      toast(diag); n.lastDiag = diag;
+      setTimeout(() => { n.status.textContent = diag; n.status.title = diag; }, 400);
+      try { n.rec.stop(); } catch(e){}
+      return;
+    }
+    n.status.textContent = 'Recording stopped: ' + msg; n.status.classList.add('err'); try { n.rec.stop(); } catch(e){} setRecUI(n, false);
+  };
+  try { n.rec.start(500); } catch(e){ n.status.textContent = 'Couldn’t start recording: ' + e.message; n.status.classList.add('err'); vs.getTracks().forEach(t => t.stop()); n.rec = null; setRecUI(n, false); return; }
+  n.t0 = performance.now(); n.paused = false; n.pausedMs = 0;
   setRecUI(n, true);
 }
 function stopRec(n){ if (isRec(n)) n.rec.stop(); }
@@ -5191,9 +5561,10 @@ function addTake(n, blob, dur, ext, info){
   const el = h('div', {class:'take' + (still ? ' still' : ''), 'data-url': t.url}, nm, live, saveBtn, del);
   del.addEventListener('click', () => {
     if (pvUrl === t.url) hidePreview();
-    URL.revokeObjectURL(t.url); el.remove(); n.takes = n.takes.filter(x => x !== t); refreshStageSrc();
+    URL.revokeObjectURL(t.url); el.remove(); n.takes = n.takes.filter(x => x !== t); refreshStageSrc(); if (n.takesHead) n.takesHead.hidden = !n.takes.length;
   });
   n.list.prepend(el);
+  if (n.takesHead) n.takesHead.hidden = false;
   refreshStageSrc();
 }
 let dlP = null;
@@ -5205,7 +5576,7 @@ async function saveTake(n, t, btn){
   const filename = (t.ext === 'png' ? 'seeds-still-' : 'seeds-take-') + t.no + '.' + t.ext;
   const dl = await getDownloads();
   if (dl){
-    try { await dl.save({filename, data: t.blob}); btn.textContent = 'Saved'; }
+    try { await dl.save({filename, data: t.blob}); btn.textContent = 'Saved'; t.saved = true; }
     catch(e){
       if (e && e.code === 'declined') return;
       if (e && e.code === 'rate_limited') { toast('A save is already waiting for you to confirm.'); return; }
@@ -5214,7 +5585,7 @@ async function saveTake(n, t, btn){
     return;
   }
   const a = h('a', {href: t.url, download: filename}); document.body.append(a); a.click(); a.remove();
-  btn.textContent = 'Saved';
+  btn.textContent = 'Saved'; t.saved = true;
 }
 
 /* ---------- node DOM ---------- */
@@ -5241,7 +5612,8 @@ function addNode(type, x, y, params, id){
   fold.addEventListener('click', () => { setCollapsed(n, !n.collapsed); save(); });
   n.foldBtn = fold;
   const extra = def.headExtra ? def.headExtra(n) : null;
-  const head = h('header', {title:'Double-click to collapse or expand'}, fold, titleEl, extra,
+  const byp = canBypass(type) ? bypassBtn(n) : null;
+  const head = h('header', {title:'Double-click to collapse or expand'}, fold, titleEl, extra, byp,
     h('button', {class:'x', 'aria-label': 'Remove ' + def.title, title:'Remove', text:'×', onclick: () => removeNode(id)}));
   const hasPorts = def.ins.length || def.outs.length;
   const ports = hasPorts ? h('div', {class:'ports'},
@@ -5263,6 +5635,11 @@ function addNode(type, x, y, params, id){
       slider(n, 'tntAmt', 'Tint amount', 0, 1, 0.01, v => Math.round(v*100) + '%'));
   }
   if (def.mix) kids.push(slider(n, 'mix', 'Mix', 0, 1, 0.01, v => Math.round(v*100) + '% wet'));
+  if (def.outs.some(p => p.kind === 'mod') && !('offset' in def.params) && !['gin', 'gout', 'send', 'receive', 'midiclock', 'atrig'].includes(type)){
+    if (typeof n.params.modoff !== 'number') n.params.modoff = 0;
+    n.dflt = n.dflt || {}; n.dflt.modoff = 0;
+    kids.push(slider(n, 'modoff', 'Offset', -1, 1, 0.01, v => (v > 0 ? '+' : '') + Math.round(v*100) + '%'), h('div', {class:'status modhint', text:'Offset moves the swing up or down. With the slider at its bottom: Depth 25% + Offset +75% sweeps the top half; Depth 12.5% + Offset +87.5% sweeps only the top quarter.'}));
+  }
   if (MEM_TYPES.has(type)) kids.splice(1, 0, memUI(n));
   // Shared extras (tint, mix, edge colors) count as advanced in Simple mode.
   for (let i = baseCount; i < kids.length; i++) kids[i].classList.add('adv');
@@ -5311,6 +5688,7 @@ function addNode(type, x, y, params, id){
   nodes.set(id, n);
   if (scope) n.parent = scope;
   if (def.afterBuild) def.afterBuild(n);
+  if (type === 'camera' && !n.params.noAuto) setTimeout(() => { if (nodes.get(n.id) === n && !n.stream && !(simple.group && n.parent === simple.group)) startCam(n); }, 0);
   if (actx && def.initAudio) def.initAudio(n);
   if (scope) refreshGroups();
   return n;
@@ -5403,7 +5781,7 @@ function showPreview(url){
 }
 function hidePreview(){ pvVideo.pause(); pvVideo.removeAttribute('src'); pvVideo.load(); pvImg.removeAttribute('src'); pvWrap.hidden = true; pvUrl = null; stageSrc.value = 'live'; markPreviewRows(); }
 // The take being shown gets a "Back to live" button next to Save and Delete.
-function markPreviewRows(){ document.querySelectorAll('.take').forEach(r => { const on = r.dataset.url === pvUrl; r.classList.toggle('showing', on); r.querySelector('.livebtn').hidden = !on; }); }
+function markPreviewRows(){ document.querySelectorAll('.take').forEach(r => { const on = r.dataset.url === pvUrl; r.classList.toggle('showing', on); r.querySelector('.livebtn').hidden = true; }); const b = document.querySelector('.headlive'); if (b) b.hidden = !pvUrl; }
 // Snapshot: a full-size still of whatever the main view is showing.
 document.getElementById('snapbtn').addEventListener('click', () => {
   const src = conformOut(toDraw(pullNode('main'))); const [W, H] = dims(src);
@@ -5419,7 +5797,7 @@ function refreshStageSrc(){
 }
 stageSrc.addEventListener('change', () => stageSrc.value === 'live' ? hidePreview() : showPreview(stageSrc.value));
 function dockPort(n, p, host){
-  const pill = h('div', {class:'dockport' + (n.id === 'rec' ? ' recport' + (p.name === 'audio' ? ' recaudio' : '') + (p.name === 'rtrig' ? ' rtrigport' : '') : ''), 'data-jackhost':''}, h('span', {text: p.label}), makeJack(n, p, 'in'));
+  const pill = h('div', {class:'dockport' + (n.id === 'rec' ? ' recport' + (p.name === 'audio' ? ' recaudio' : '') + (p.name === 'rtrig' ? ' rtrigport' : '') + (p.name === 'video' ? ' recvideoport' : '') + (p.name === 'rpause' ? ' rpauseport' : '') : ''), 'data-jackhost':''}, h('span', {text: p.label}), makeJack(n, p, 'in'));
   if (n.id === 'rec') (n.pills = n.pills || {})[p.name] = pill;
   pill.addEventListener('pointerdown', e => e.stopPropagation());
   host.append(pill);
@@ -5712,8 +6090,12 @@ ws.addEventListener('wheel', e => {
     zoomAt(e.clientX, e.clientY, zoom * Math.exp(-e.deltaY*k*0.01));
     return;
   }
-  if (e.target.closest('.takes, select, video, .plist')) return;
+  if (e.target.closest('.takes, select, video, .plist, .bank')) return;
   e.preventDefault();
+  // A mouse wheel moves in big steps on one axis; a trackpad sends small, smooth amounts.
+  const mouse = e.deltaMode !== 0 || (e.deltaX === 0 && Math.abs(e.deltaY) >= 40 && Math.abs(e.deltaY) % 1 === 0);
+  if (e.shiftKey){ const d = e.deltaY || e.deltaX; pan.y -= d*k; applyPan(); save(); return; }
+  if (mouse && settings.wheel !== 'scroll'){ zoomAt(e.clientX, e.clientY, zoom * Math.exp(-e.deltaY*k*0.0018)); save(); return; }
   pan.x -= e.deltaX*k; pan.y -= e.deltaY*k; applyPan(); save();
 }, {passive:false});
 // Safari reports trackpad pinches as gesture events.
@@ -5778,8 +6160,8 @@ let saveT;
 function serialize(){
   return {app:'...Seeds', v:1, name: typeof patchName === 'string' ? patchName : 'Untitled', pan, zoom,
     recFormat: nodes.get('rec') && nodes.get('rec').params.format,
-    nodes: [...nodes.values()].filter(n => !n.fixed).map(n => ({id: n.id, type: n.type, x: n.x, y: n.y, params: n.params, collapsed: !!n.collapsed, parent: n.parent || undefined})),
-    edges, presets, activePreset, midiMap, decor: decor.map(d => d.data), perform: {locked: perf.locked, panels: perf.panels}, bg: patchBg || undefined, keyMap: keyMap.length ? keyMap : undefined, bank: (bank.maps.length || bank.count !== 8) ? {count: bank.count, vals: bank.vals, maps: bank.maps.map(({s, node, key}) => ({s, node, key}))} : undefined,
+    nodes: [...nodes.values()].filter(n => !n.fixed && !n.noSave).map(n => ({id: n.id, type: n.type, x: n.x, y: n.y, params: n.params, collapsed: !!n.collapsed, parent: n.parent || undefined})),
+    edges: edges.filter(e => !(nodes.get(e.from.node) || {}).noSave && !(nodes.get(e.to.node) || {}).noSave), presets, activePreset, midiMap, decor: decor.map(d => d.data), perform: {locked: perf.locked, panels: perf.panels}, bg: patchBg || undefined, keyMap: keyMap.length ? keyMap : undefined, bank: (bank.maps.length || bank.count !== 8) ? {count: bank.count, vals: bank.vals, maps: bank.maps.map(({s, node, key}) => ({s, node, key}))} : undefined,
     simple: {group: simple.group, input: simple.input, mic: simple.mic, micDev: simple.micDev || '', count: simpleCount(), slots: simple.slots, bypass: simple.bypass, saved: simple.saved}};
 }
 let quotaWarned = false;
@@ -5787,12 +6169,14 @@ function save(){
   clearTimeout(saveT);
   saveT = setTimeout(() => {
     histPush();
-    if (live.on) return;
-    try { localStorage.setItem(STORE, JSON.stringify(serialize())); }
+    if (live.fadeState) return;
+    const sd = serialize(); saveActiveClip(sd);
+    try { localStorage.setItem(STORE, JSON.stringify(sd)); }
     catch(e){ if (!quotaWarned){ quotaWarned = true; toast('This patch is too big to autosave in the browser. Use Save to keep it.'); } }
   }, 300);
 }
 function clearPatch(){
+  live.active = -1; live.pending = null; live.fadeState = null; live.out = null; live.bpmId = null;
   bank.maps = []; bank.vals = Array(16).fill(0); bank.count = 8;
   keyMap = [];
   setPatchBg(null);
@@ -5878,8 +6262,8 @@ const plist = document.getElementById('plist'), palette = document.getElementByI
 const drawer = document.getElementById('drawer'), dtoggle = document.getElementById('dtoggle');
 const PALETTE = [
   ['§Video', []],
-  ['Video inputs', [['camera','Camera'],['player','Video player']]],
-  ['Generators', [['bloom','Contour bloom'],['shell','Contour shell'],['shards','Shard burst'],['strata','Strata'],['geo','Geo composer'],['topo','Contour rings'],['iso','Iso geometry'],['lineart','Line art'],['blobs','Blobs'],['lines','Lines & Grids'],['osc','Pattern generator'],['shapes','Shapes'],['text3d','3D text'],['text','Text']]],
+  ['Video inputs', [['camera','Camera'],['player','Video player'],['image','Image'],['gif','GIF player']]],
+  ['Generators', [['vector3d','Vector shapes'],['amoeba','Amoeba'],['bloom','Contour bloom'],['shell','Contour shell'],['shards','Shard burst'],['strata','Strata'],['geo','Geo composer'],['topo','Contour rings'],['iso','Iso geometry'],['lineart','Line art'],['blobs','Blobs'],['lines','Lines & Grids'],['osc','Pattern generator'],['shapes','Shapes'],['text3d','3D text'],['text','Text']]],
   ['Video manipulation', [['kaleido','Kaleidoscope'],['mirror','Mirror'],['rotate','Rotate'],['vzoom','Zoom'],['crop','Crop'],['tile','Tile'],['warp','Wave warp']]],
   ['Color', [['cadj','Color adjust'],['bw','Black and white'],['poster','Posterize'],['gmap','Gradient map']]],
   ['Texture', [['edge','Edge detect'],['pixelate','Pixelate'],['crt','CRT / VHS']]],
@@ -6069,7 +6453,7 @@ function midiDevices(){
 }
 function midiMsg(e, inp){
   const st = e.data[0], d1 = e.data[1] || 0, d2 = e.data[2] || 0;
-  if (st === 0xF8 || st === 0xFA || st === 0xFB || st === 0xFC){ for (const n of nodes.values()) if (n.type === 'midiclock') midiClockMsg(n, st, inp); return; }
+  if (st === 0xF8 || st === 0xFA || st === 0xFB || st === 0xFC){ clipsClock(st); for (const n of nodes.values()) if (n.type === 'midiclock') midiClockMsg(n, st, inp); return; }
   if (st >= 0xf0) return;
   const type = st & 0xf0, ch = (st & 15) + 1;
   for (const n of nodes.values()) if (n.type === 'midi') midiToNode(n, type, ch, d1, d2, inp);
@@ -6198,6 +6582,17 @@ function renderPresets(){
   }));
   if (!presets.length) chipsEl.append(h('span', {class:'chipempty', text:'None yet. Set things up, then press Capture.'}));
   document.getElementById('pupd').disabled = activePreset < 0;
+  // The dropdown always shows which preset is active, by name.
+  const sel = document.getElementById('psel');
+  sel.replaceChildren(h('option', {value:'-1', text: presets.length ? '— choose a preset —' : 'No presets yet: press Capture'}), ...presets.map((p, i) => h('option', {value: String(i), text: (i + 1) + '. ' + p.name})));
+  sel.value = String(activePreset); sel.disabled = !presets.length;
+  document.getElementById('pren').disabled = document.getElementById('pdel').disabled = activePreset < 0;
+}
+{
+  const sel = document.getElementById('psel');
+  sel.addEventListener('change', () => { const i = +sel.value; if (i >= 0) recallPreset(i); });
+  document.getElementById('pren').addEventListener('click', async () => { const p = presets[activePreset]; if (!p) return; const nm = await askDialog('Rename the preset:', {input: p.name, ok: 'Rename'}); if (nm && nm.trim()){ p.name = nm.trim(); renderPresets(); save(); } });
+  document.getElementById('pdel').addEventListener('click', async () => { const p = presets[activePreset]; if (!p) return; if (!await askDialog('Delete the preset “' + p.name + '”?', {ok: 'Delete'})) return; presets.splice(activePreset, 1); activePreset = -1; renderPresets(); save(); });
 }
 document.getElementById('pcap').addEventListener('click', () => {
   let i = presets.length + 1; while (presets.some(p => p.name === 'Preset ' + i)) i++;
@@ -6388,7 +6783,7 @@ const perfEl = document.getElementById('perf'), perfSurf = document.getElementBy
 const perfLockBtn = document.getElementById('plock'), perfBadge = document.getElementById('pbadge'), perfArrBtn = document.getElementById('parrange');
 const perfHidBtn = document.getElementById('phidden'), perfMenu = document.getElementById('pmenu');
 const modePatch = document.getElementById('mpatch'), modePerf = document.getElementById('mperf');
-const perfMods = () => [...nodes.values()].filter(n => !n.fixed && n.type !== 'group' && !(simple.group && isInside(n.id, simple.group)));
+const perfMods = () => [...nodes.values()].filter(n => !n.fixed && !n.noSave && !n.params.sys && n.type !== 'group' && !(simple.group && isInside(n.id, simple.group)));
 function perfState(n){ return perf.panels[n.id] || (perf.panels[n.id] = {x: null, y: 0, w: null, min: false, hide: false, off: []}); }
 function perfTitle(n){ return n.params.label || DEFS[n.type].title; }
 // Name shown in Perform mode: a custom name if one was given, otherwise the module's own title.
@@ -6418,7 +6813,7 @@ function perfBuildPanel(n){
   const st = perfState(n), body = n.el.querySelector(':scope > .body'); if (!body) return;
   const minB = h('button', {class:'hx', title:'Minimize', 'aria-label':'Minimize ' + perfName(n), text:'–'});
   const hideB = h('button', {class:'x hidebtn', title:'Hide this module (bring it back from Hidden modules)', 'aria-label':'Hide ' + perfName(n), text:'Hide'});
-  const head = h('header', {}, h('span', {class:'tw'}, ...perfTitleEls(n, st)), minB, hideB);
+  const head = h('header', {}, h('span', {class:'tw'}, ...perfTitleEls(n, st)), canBypass(n.type) ? bypassBtn(n) : null, minB, hideB);
   const slot = h('div', {class:'pslot'});
   const rz = h('div', {class:'rz', 'aria-hidden':'true'});
   const pan = h('div', {class:'ppanel fam-' + famOf(n.type)}, head, slot, rz);
@@ -6558,6 +6953,16 @@ function groupExposures(g){
     out.push({node, port, dir, kind: pi.kind, label: (n.params.label || DEFS[n.type].title) + ' ' + pi.label});
   };
   for (const p of g.params.ports || []) addX(p.node, p.port, p.dir);
+  const PAIR = {in: 'out', cv: 'cv', trig: 'trig', aud: 'aud'}, WORD = {in: '', cv: ' control', trig: ' trigger', aud: ' audio'};
+  for (const m of nodes.values()){
+    if (m.parent !== g.id || (m.type !== 'gin' && m.type !== 'gout')) continue;
+    for (const [a, b] of Object.entries(PAIR)){
+      const k0 = out.length;
+      if (m.type === 'gin' && edges.some(e => e.from.node === m.id && e.from.port === b && isInside(e.to.node, g.id))) addX(m.id, a, 'in');
+      if (m.type === 'gout' && edges.some(e => e.to.node === m.id && e.to.port === a && isInside(e.from.node, g.id))) addX(m.id, b, 'out');
+      if (out.length > k0) out[out.length - 1].label = m.params.label + WORD[a];
+    }
+  }
   for (const e of edges){
     const fi = isInside(e.from.node, g.id), ti = isInside(e.to.node, g.id);
     if (fi && !ti) addX(e.from.node, e.from.port, 'out');
@@ -6595,6 +7000,14 @@ function applyScope(){
 function openGroup(g){ scopeStack.push(scope); scope = g.id; applyScope(); requestAnimationFrame(() => fitAll()); }
 function closeGroup(){ if (scope === null) return; scope = scopeStack.length ? scopeStack.pop() : null; applyScope(); requestAnimationFrame(() => fitAll()); }
 document.getElementById('crumbback').addEventListener('click', closeGroup);
+document.getElementById('crumbsave').addEventListener('click', async () => {
+  // Save the outermost open group (the custom module you're editing).
+  let g = nodes.get(scope); while (g && g.parent && nodes.get(g.parent) && nodes.get(g.parent).type === 'group' && !nodes.get(g.parent).params.sys) g = nodes.get(g.parent);
+  if (!g) return;
+  if (!g.params.libName){ const nm = await askDialog('Name this custom module:', {input: g.params.name, ok: 'Save'}); if (!nm || !nm.trim()) return; g.params.name = nm.trim(); g.titleEl.textContent = g.params.name; }
+  saveCustom(g); applyScope();
+});
+document.getElementById('crumbclose').addEventListener('click', () => { while (scope) closeGroup(); });
 function encapsulate(list){
   list = list.filter(n => !n.fixed && visibleNode(n)); if (!list.length) return;
   const cx = list.reduce((a, n) => a + n.x, 0)/list.length, cy = list.reduce((a, n) => a + n.y, 0)/list.length;
@@ -6603,6 +7016,7 @@ function encapsulate(list){
   for (const n of list) n.parent = g.id;
   g.params.ports = groupExposures(g).map(({node, port, dir}) => ({node, port, dir}));
   applyScope(); afterEdges(); toast('Made “' + g.params.name + '”. Double-click its title to open it.');
+  return g;
 }
 function ungroup(g){
   for (const n of nodes.values()) if (n.parent === g.id) n.parent = g.parent || undefined;
@@ -6619,17 +7033,18 @@ function renameGroup(g){
 }
 function saveCustom(g){
   const D = descendants(g), ids = new Set(D.map(n => n.id));
-  const entry = {name: g.params.name, gid: g.id,
+  const entry = {name: g.params.libName || g.params.name, gid: g.id,
     nodes: D.map(n => ({id: n.id, type: n.type, x: n.x, y: n.y, parent: n.parent, params: JSON.parse(JSON.stringify(n.params))})),
     edges: edges.filter(e => ids.has(e.from.node) && ids.has(e.to.node)).map(e => JSON.parse(JSON.stringify(e))),
     ports: JSON.parse(JSON.stringify(g.params.ports || []))};
   const i = customLib.findIndex(c => c.name === entry.name);
   if (i >= 0) customLib[i] = entry; else customLib.push(entry);
-  saveLib(); renderCustom(); toast('Saved “' + entry.name + '” to Custom modules.');
+  g.params.libName = entry.name;
+  saveLib(); renderCustom(); toast((i >= 0 ? 'Updated “' : 'Saved “') + entry.name + '” in Custom modules.');
 }
 function addCustom(entry, x, y){
   const map = {};
-  const g = addNode('group', x, y, {name: entry.name, ports: []}); map[entry.gid] = g.id;
+  const g = addNode('group', x, y, {name: entry.name, ports: [], libName: entry.name}); map[entry.gid] = g.id;
   const depth = s => { let d = 0, p = s.parent; while (p && p !== entry.gid){ d++; const q = entry.nodes.find(z => z.id === p); p = q && q.parent; } return d; };
   for (const s of entry.nodes.slice().sort((a, b) => depth(a) - depth(b))){
     const nn = addNode(s.type, s.x, s.y, JSON.parse(JSON.stringify(s.params))); if (!nn) continue;
@@ -6640,17 +7055,20 @@ function addCustom(entry, x, y){
   for (const s of entry.nodes) if (s.type === 'group' && map[s.id]) nodes.get(map[s.id]).params.ports = remap(s.params.ports);
   for (const e of entry.edges) if (map[e.from.node] && map[e.to.node]) edges.push({from: {node: map[e.from.node], port: e.from.port}, to: {node: map[e.to.node], port: e.to.port}, kind: e.kind});
   applyScope(); afterEdges();
+  return g;
 }
 function renderCustom(){
   const host = document.getElementById('customgrid'), cnt = document.getElementById('customcount');
   if (!host) return;
-  cnt.textContent = String(customLib.length);
-  host.replaceChildren(...(customLib.length ? customLib.map((c, i) => {
+  cnt.textContent = String(customLib.length + 2);
+  const io = ['gin', 'gout'].map(t => h('div', {class:'pwrap'}, paletteItem(t, DEFS[t].title, false)));
+  host.replaceChildren(...io, ...(customLib.length ? customLib.map((c, i) => {
     const b = paletteItem('c:' + i, c.name, false);
+    b.addEventListener('contextmenu', e => { e.preventDefault(); showMenu(e.clientX, e.clientY, [['Export “' + c.name + '”…', () => exportCustom([c], c.name)], ['Delete “' + c.name + '”', () => { customLib.splice(i, 1); saveLib(); renderCustom(); }]]); });
     const del = h('button', {class:'qx', title:'Delete this custom module', 'aria-label':'Delete ' + c.name, text:'×'});
     del.addEventListener('click', () => { customLib.splice(i, 1); saveLib(); renderCustom(); });
     return h('div', {class:'pwrap'}, b, del);
-  }) : [h('div', {class:'qempty', text:'Right-click a group and choose Save as custom module.'})]));
+  }) : [h('div', {class:'qempty', text:'Select modules (Shift-click), right-click and choose Make custom module. Use Input and Output inside to set its jacks.'})]));
 }
 
 /* selection, lasso and the right-click menu */
@@ -6672,6 +7090,10 @@ ws.addEventListener('contextmenu', e => {
   const el = e.target.closest('.node'), n = el && [...nodes.values()].find(m => m.el === el);
   if (n && !selected.has(n.id)){ clearSel(); setSel(n, true); }
   const sel = selNodes(), items = [];
+  if (sel.length) items.push(['Make custom module from ' + (sel.length === 1 ? 'this module' : 'these ' + sel.length + ' modules') + '…', async () => {
+    const nm = await askDialog('Name the new custom module:', {input: 'My effect', ok: 'Make it'}); if (!nm || !nm.trim()) return;
+    const g = encapsulate(sel); if (!g) return; g.params.name = nm.trim(); g.titleEl.textContent = g.params.name; saveCustom(g); applyScope();
+  }]);
   if (sel.length) items.push(['Encapsulate ' + (sel.length === 1 ? 'module' : sel.length + ' modules') + ' into a group', () => encapsulate(sel)]);
   if (n && n.type === 'group'){
     items.push(['Open group', () => openGroup(n)], ['Rename group', () => renameGroup(n)], ['Save as custom module', () => saveCustom(n)], ['Ungroup', () => ungroup(n)]);
@@ -6729,13 +7151,20 @@ function simpleEnsure(){
   simple.slots = simple.slots.map(id => nodes.get(id) ? id : null);
 }
 // Wire the chain: input → each filled, active slot → main view and recorder.
+// Where a slot's picture goes in and comes out (custom modules use their own Input and Output jacks).
+function slotIO(id){
+  const n = nodes.get(id); if (!n) return {};
+  if (n.type !== 'group') return {in: {node: id, port: 'in'}, out: {node: id, port: 'out'}};
+  const ex = groupExposures(n), vi = ex.find(x => x.dir === 'in' && x.kind === 'video'), vo = ex.find(x => x.dir === 'out' && x.kind === 'video');
+  return {in: vi && {node: vi.node, port: vi.port}, out: vo && {node: vo.node, port: vo.port}};
+}
 function simpleWire(){
-  const chain = [simple.input, ...simple.slots.filter((id, i) => id && !simple.bypass[i] && i < simpleCount())];
+  const chain = [simple.input, ...simple.slots.filter((id, i) => id && !simple.bypass[i] && i < simpleCount() && (() => { const io = slotIO(id); return io.in && io.out; })())];
   const mine = new Set([simple.input, ...simple.slots.filter(Boolean)]);
-  edges = edges.filter(e => !(e.kind === 'video' && ((mine.has(e.to.node) && e.to.port === 'in') || (e.to.node === 'main' && e.to.port === 'in') || (e.to.node === 'rec' && e.to.port === 'video'))));
-  for (let i = 1; i < chain.length; i++) edges.push({from: {node: chain[i - 1], port: 'out'}, to: {node: chain[i], port: 'in'}, kind: 'video'});
-  const last = chain[chain.length - 1];
-  edges.push({from: {node: last, port: 'out'}, to: {node: 'main', port: 'in'}, kind: 'video'}, {from: {node: last, port: 'out'}, to: {node: 'rec', port: 'video'}, kind: 'video'});
+  edges = edges.filter(e => !e.sw && !(e.kind === 'video' && ((mine.has(e.to.node) && e.to.port === 'in') || (e.to.node === 'main' && e.to.port === 'in') || (e.to.node === 'rec' && e.to.port === 'video'))));
+  for (let i = 1; i < chain.length; i++){ const a = chain[i - 1] === simple.input ? {node: simple.input, port: 'out'} : slotIO(chain[i - 1]).out, b = slotIO(chain[i]).in; edges.push({from: a, to: b, kind: 'video', sw: true}); }
+  const lastId = chain[chain.length - 1], last = lastId === simple.input ? {node: simple.input, port: 'out'} : slotIO(lastId).out;
+  edges.push({from: last, to: {node: 'main', port: 'in'}, kind: 'video', sw: true}, {from: last, to: {node: 'rec', port: 'video'}, kind: 'video', sw: true});
   if (simple.mic && nodes.get(simple.mic)){
     edges = edges.filter(e => !(e.to.node === 'rec' && e.to.port === 'audio'));
     edges.push({from: {node: simple.mic, port: 'out'}, to: {node: 'rec', port: 'audio'}, kind: 'audio'});
@@ -6750,7 +7179,8 @@ function simpleReturnBody(n){
 }
 function fxPicker(current, onPick){
   const sel = h('select', {'aria-label':'Choose an effect'}, h('option', {value:'', text: current ? 'Change effect…' : 'Add an effect…'}),
-    ...SIMPLE_FX.map(([g, items]) => { const og = document.createElement('optgroup'); og.label = g; items.forEach(([t, l]) => og.append(h('option', {value: t, text: l}))); return og; }));
+    ...SIMPLE_FX.map(([g, items]) => { const og = document.createElement('optgroup'); og.label = g; items.forEach(([t, l]) => og.append(h('option', {value: t, text: l}))); return og; }),
+    ...(customLib.length ? [(() => { const og = document.createElement('optgroup'); og.label = 'Custom'; customLib.forEach((c, i) => og.append(h('option', {value: 'c:' + i, text: c.name}))); return og; })()] : []));
   sel.addEventListener('change', () => { if (sel.value) onPick(sel.value); });
   return sel;
 }
@@ -6778,7 +7208,7 @@ function simpleRender(){
     byp.addEventListener('click', () => { simple.bypass[i] = !simple.bypass[i]; simpleWire(); simpleRender(); save(); });
     const del = h('button', {class:'x', title:'Remove this effect', 'aria-label':'Remove ' + DEFS[n.type].title, text:'×'});
     del.addEventListener('click', () => simpleSet(i, null));
-    const card = simpleCard((i + 1) + '. ' + DEFS[n.type].title, '', 'fam-' + famOf(n.type) + (simple.bypass[i] ? ' bypassed' : '') + (simple.more[i] ? ' showmore' : ''), [], [byp, del]);
+    const card = simpleCard((i + 1) + '. ' + (n.type === 'group' ? n.params.name : DEFS[n.type].title), '', 'fam-' + famOf(n.type) + (simple.bypass[i] ? ' bypassed' : '') + (simple.more[i] ? ' showmore' : ''), [], [byp, del]);
     const body = simpleBody(n), sb = card.querySelector('.sbody');
     sb.append(body);
     // Only the first few controls show; the rest sit behind "More controls".
@@ -6803,7 +7233,11 @@ function simpleSet(i, type){
   const old = nodes.get(simple.slots[i]);
   if (old){ simpleReturnBody(old); removeNode(old.id); }
   simple.slots[i] = null; simple.bypass[i] = false;
-  if (type){ const n = addNode(type, 300 + i*290, 40); n.parent = simple.group; simple.slots[i] = n.id; }
+  if (type && type.startsWith('c:')){
+    const entry = customLib[+type.slice(2)];
+    if (entry){ const g = addCustom(entry, 300 + i*290, 40); g.parent = simple.group; simple.slots[i] = g.id;
+      const io = slotIO(g.id); if (!io.in || !io.out) toast('“' + entry.name + '” needs a video input and output (use Input and Output modules inside it) to work as an effect.'); }
+  } else if (type){ const n = addNode(type, 300 + i*290, 40); n.parent = simple.group; simple.slots[i] = n.id; }
   simpleWire(); applyScope(); simpleRender(); save();
 }
 function simpleMic(on){
@@ -6862,7 +7296,7 @@ function setMode(m){
   if (m === 'live') liveEnter();
   if (m === 'sliders') slidersEnter(); else slidersExit();
   if (typeof paintStrips === 'function') paintStrips();
-  for (const [b, k] of [[modePatch, 'patch'], [modePerf, 'perform'], [document.getElementById('mlive'), 'live'], [document.getElementById('msliders'), 'sliders']]){ b.classList.toggle('on', m === k); b.setAttribute('aria-pressed', String(m === k)); }
+  for (const [b, k] of [[modePatch, 'patch'], [modePerf, 'perform'], [document.getElementById('mlive'), 'live'], [document.getElementById('msliders'), 'sliders'], [document.getElementById('msimple'), 'simple']]){ b.classList.toggle('on', m === k); b.setAttribute('aria-pressed', String(m === k)); }
   if (m === 'patch' && pendingFit){ pendingFit = false; requestAnimationFrame(() => fitAll()); }
 }
 
@@ -6927,13 +7361,14 @@ function recSummary(){
 function setSimpleMode(on){
   settings.simple = on; saveSettings();
   document.body.classList.toggle('simplemode', on);
-  document.getElementById('setsimple').checked = on;
   setMode(on ? 'simple' : 'patch');
 }
 const setBtn = document.getElementById('setbtn'), setMenu = document.getElementById('setmenu');
 setBtn.addEventListener('click', () => { setMenu.hidden = !setMenu.hidden; setBtn.setAttribute('aria-expanded', String(!setMenu.hidden)); });
 window.addEventListener('pointerdown', e => { if (!setMenu.hidden && !setMenu.contains(e.target) && e.target !== setBtn){ setMenu.hidden = true; setBtn.setAttribute('aria-expanded', 'false'); } }, true);
-document.getElementById('setsimple').addEventListener('change', e => setSimpleMode(e.target.checked));
+document.getElementById('msimple').addEventListener('click', () => setSimpleMode(true));
+// Leaving Simple: any other mode button turns it off first.
+for (const id of ['mpatch', 'mperf', 'msliders', 'mlive']) document.getElementById(id).addEventListener('click', () => { if (settings.simple){ settings.simple = false; saveSettings(); document.body.classList.remove('simplemode'); } }, true);
 const tipsBox = document.getElementById('settips');
 tipsBox.checked = settings.tips !== false;
 tipsBox.addEventListener('change', () => { settings.tips = tipsBox.checked; saveSettings(); document.getElementById('hint').hidden = !settings.tips; try { localStorage.setItem(STORE + ':hint', settings.tips ? 'on' : 'off'); } catch(e){} });
@@ -7010,6 +7445,10 @@ const MODULE_HELP = {
   areverb:'Adds space: a small room to a huge hall, with size, decay and mix.',
   amix:'Mixes four audio inputs with a level for each and a master level.',
   atrig:'Sends a trigger when the sound gets louder than a threshold, a gate while it stays loud, and the level as modulation.',
+  image:'Shows still images (load or drop several). Next, Previous and Random step through them, and Auto-advance turns them into a slideshow with a crossfade.',
+  gif:'Plays animated GIFs (and animated WebP or PNG) at any speed, looping, bouncing, once, or one frame per Next trigger.',
+  amoeba:'Soft, organic blobs that pulse and drift, with a glowing edge and an optional nucleus. Pulse can be triggered on the beat.',
+  vector3d:'Random 3D vector forms: polyhedra, supershapes, knots, wave lattices, spiky forms, point clouds, twisted ribbons, helices, ring stacks and shard clusters, drawn as wireframes, hidden lines, solids or points, spinning in 3D with morphing, glitches and trails. New shape (or a trigger) makes a fresh one; store and recall your favorites.',
   bpm:'The patch’s main tempo, from 20 to 2000 BPM, with Start, Stop and Tap. Every Sync BPM button in the patch follows it, and its outputs send beats, eighths, sixteenths and bars.',
   attenuator:'Turns a control signal up, down or upside down before it reaches a slider. Put it between an LFO (or any modulator) and the slider to set how far it moves.',
   scale:'Maps one range of a control signal onto another, with a choice of curves. Useful for using only part of an LFO’s swing.',
@@ -7038,7 +7477,7 @@ function helpDoc(){
       <li>Press <b>Start camera</b> on a Camera module, or load a video into a Video player.</li></ol>
       <p>If you just want something quick, turn on <b>Simple mode</b> in Settings: a camera, up to six effects and the recorder, with no patching.</p>`],
     ['screen', 'The screen', `<p><b>Top bar:</b> switch between Patch, Presentation, Control and Clips, and name your patch. The <b>File</b> menu has New, Open, Save, Save as, Undo, Redo and a save folder; Save uses the name you typed and asks before replacing another patch with the same name. Then Settings, Help, <b>Examples</b>, the frame rate, MIDI learn and zoom.</p><p><b>Collapsing:</b> the arrow on the patch (or Presentation, Control, Clips, Simple) heading and the arrow next to Main view fold that side into a strip, like the module list, and the other side fills the window. Click the strip to bring it back. Double-click the divider for the usual layout. The arrow next to Recorder folds the recorder.</p>
-      <p><b>Presets bar:</b> Capture stores every setting in the patch as a preset; click a preset to recall it, double-click to rename, Update to overwrite it.</p>
+      <p><b>Presets bar:</b> Capture stores every setting in the patch as a preset. Pick one from the menu to recall it; Rename, Delete and Update (overwrite it with the current settings) act on the one shown.</p><p><b>ON / OFF</b> on a module’s title bar switches it off: an effect then passes its input straight through, so you can compare with and without it.</p>
       <p><b>Left:</b> the module list (open and close it with the Modules strip). Quick access sits at the top; star any module to add it there. Categories open and close; <b>All modules</b> lists everything alphabetically, and <b>Custom modules</b> holds groups you have saved.</p>
       <p><b>Middle:</b> the patch. Drag the background or scroll with two fingers to move around; pinch to zoom, or use the zoom buttons (click the percentage to type one).</p>
       <p><b>Right:</b> the main view and the recorder. Drag the divider to resize them.</p>`],
@@ -7048,24 +7487,36 @@ function helpDoc(){
       <li>Double-click a module’s title bar to collapse it. Drag the corner of resizable modules (like the step sequencer) to resize.</li>
       <li>Double-click any number next to a slider to type a value. Double-click a slider to reset it.</li>
       <li><b>Shift-click</b> titles or <b>Shift-drag</b> on the background to select several modules; drag one to move them all; press Delete to remove them.</li></ul>`],
-    ['mod', 'Modulation and triggers', `<p>Every slider and most menus have a small <b>purple jack</b> on their left edge. Patch an LFO, envelope, sequencer, audio follower or MIDI knob into it and that control moves on its own. The slider sets the center; the modulator’s Depth sets how far it swings (100% can reach every part of the slider).</p>
+    ['mod', 'Modulation and triggers', `<p><b>Offset</b> on every modulation source (LFO, envelope, sequencer…) moves its swing up or down. An LFO swings both ways from its center, by its Depth. With the slider set to its bottom: Depth 25% and Offset +75% sweeps the top half of the slider; Depth 12.5% and Offset +87.5% sweeps only the top quarter.</p><p>Every slider and most menus have a small <b>purple jack</b> on their left edge. Patch an LFO, envelope, sequencer, audio follower or MIDI knob into it and that control moves on its own. The slider sets the center; the modulator’s Depth sets how far it swings (100% can reach every part of the slider).</p>
       <p>Pink <b>trigger</b> inputs (Next, New shape, Record, Clear…) fire on each pulse from a Button, Clock, sequencer gate or beat detector.</p>
       <p>Colors have <b>Mod</b> buttons that reveal hue, saturation and brightness sliders, so colors can be modulated too.</p>`],
-    ['groups', 'Groups and custom modules', `<p>Select modules, right-click and choose <b>Encapsulate into a group</b>. The group shows a jack for every cable that crosses its edge. Double-click its title to open it; <b>‹ Back</b> returns. Right-click a group to rename, ungroup, or <b>Save as custom module</b>, which adds it to Custom modules in the list so you can drop it into any patch.</p>`],
+    ['groups', 'Groups and custom modules', `<p><b>Make a custom module:</b> Shift-click (or Shift-drag) to select modules, right-click and choose <b>Make custom module…</b>. Anything cabled from outside to those modules becomes a jack on the custom module. For effects you want to reuse, put an <b>Input</b> module (where the picture comes in) and an <b>Output</b> module (where it goes out) inside: both are at the top of Custom modules in the module list, and their names become the jack names.</p>
+      <p><b>Edit:</b> double-click a custom module’s title to open it. Change anything inside, then press <b>Save custom module</b> in the bar at the top to update it in the list, or <b>Close</b> to go back. Custom modules with a video input and output also appear in Simple mode’s effect menus, under Custom.</p>
+      <p><b>Share:</b> File → <b>Export custom modules…</b> saves all of them as one file (right-click one in the list to export just that one); File → <b>Import custom modules…</b> adds them on another computer. File → <b>Save as Example…</b> adds the current patch to the Examples menu under Your examples.</p>`],
     ['perform', 'Presentation mode', `<p>Presentation mode shows each module as a plain panel of controls, without cables, next to the main view. While <b>editing</b> (yellow background) you can drag panels, resize them, hide controls you don’t need, minimize or remove panels and rename them (double-click a title). Press <b>Lock layout</b> (or Cmd+E) to lock it for performing; the background turns lilac and nothing moves by accident.</p>`],
-    ['live', 'Clips mode', `<p><b>Clips</b> (next to Patch, Presentation and Control) is for performing with several patches, like clips in a live set. It has 16 slots: give each one a patch with <b>Load patch…</b> (a saved .seeds.json file) or <b>Use my patch</b> (the patch you had open). Click a slot to switch to it. Each slot sets how it comes in: <b>Crossfade</b> (with its own fade time), <b>Fade in beats</b> (1 beat to 4 bars at the Clips tempo) or <b>Cut</b>. The <b>Tempo</b> box (with Tap) sets the Clips BPM, which also drives every Sync BPM effect inside the slot patches. Only the playing patch runs, plus the outgoing one during a fade, and cameras and microphones in a slot start by themselves.</p>
-      <p><b>Learn note</b> on a slot, then play a note on your MIDI controller: that note (on that channel) now switches to the slot. Slot notes never move sliders, so you can keep slot notes on one channel (say the MPC’s pads on channel 10) and knob mappings on another. Right-click a note button to clear it. Each slot patch keeps its own MIDI knob mappings. <b>Export set…</b> and <b>Import set…</b> save and load all 16 slots as one file. Leaving Clips mode brings back the patch you had open.</p>`],
+    ['live', 'Clips mode', `<p><b>Clips</b> launches whole patches like clips in a live set. Every mode except Simple shares one patch: the clip that’s playing <i>is</i> the patch you see in Patch, Presentation and Control mode, and anything you change there (sliders, faders, MIDI mappings) is saved into that clip. So you can launch clips from your controller and still play their sliders by mouse or MIDI.</p>
+      <p>Give a clip a patch with <b>Load patch…</b> or <b>Use current patch</b>, then click it (or play its note) to launch it. Each clip sets how it comes in: <b>Crossfade</b> (its own time), <b>Fade in beats</b>, or <b>Cut</b>. A running camera is handed over to the next clip, so the picture never drops out.</p>
+      <p><b>Tempo</b> (with Tap) is the Clips BPM; it drives beat-length fades, quantized launches and every Sync BPM effect. Press <b>Sync</b> (it turns pink) to follow MIDI clock from a drum machine or sequencer instead. <b>Launch</b> quantizes launches to the next 1/32 note up to 16 bars. <b>Clips</b> sets how many clips show, from 2 to 32.</p>
+      <p><b>Notes:</b> press <b>Learn note</b> on a clip and hit a pad (right-click to clear), or pick a ready-made layout for Launchpad (Programmer mode), Push (User mode), MPC pads or MPK/MPC mini pads. <b>Save layout…</b> names the current notes for your controller; <b>Export</b> and <b>Import layout…</b> move them between computers. Clip notes never move sliders, so knob mappings on another channel keep working. <b>Export set…</b> and <b>Import set…</b> save and load all the clips.</p>`],
     ['sliders', 'Control mode', `<p><b>Control</b> shows your patch without cables and a bank of 1 to 16 faders along the bottom (use − and + to change how many). Drag a fader’s jack onto the purple jack of any slider in a module to link them; a small F badge shows which faders control it. One fader can move many controls, and a control can take several faders. A fader only takes over once you move it past the control’s current value (the ▲/▼ hint shows where), so nothing jumps. Right-click a fader to unlink.</p>`],
     ['simple', 'Simple mode', `<p>Turn on <b>Simple mode</b> in Settings for a camera, up to six effect slots and the recorder, with patching and the other modes hidden. Pick an effect in any slot; <b>More controls</b> shows the rest of its settings; <b>On/Off</b> bypasses it. Use <b>Effect slots − +</b> to show fewer slots. In the recorder, tick <b>Record audio</b> and choose the audio source. Your full patch is kept safe and returns when you turn Simple mode off.</p>`],
-    ['record', 'Recording and snapshots', `<p>Press <b>Record</b> in the recorder, then Stop. Takes appear in the list: click one to watch it in the main view, <b>Back to live</b> returns to the live picture, <b>Save</b> downloads it. <b>Snapshot</b> (above the main view) saves a still image of the main view as a PNG. Format, quality, frame rate, size and audio quality are in <b>Settings → Recording</b>.</p>
+    ['record', 'Recording and snapshots', `<p>By default the recorder records whatever the main view shows (Settings → <b>Patch main view to record video</b>; turn it off to patch Rec. Video yourself). <b>Rec. pause</b> pauses and resumes a recording: a short trigger toggles pause, and a held gate records while high and pauses while low, so recording can be sequenced. Press <b>Record</b> in the recorder, then Stop. Takes appear in the list: click one to watch it in the main view, <b>Back to live</b> returns to the live picture, <b>Save</b> downloads it. <b>Snapshot</b> (above the main view) saves a still image of the main view as a PNG. Format, quality, frame rate, size and audio quality are in <b>Settings → Recording</b>.</p>
       <p><b>Picture shape:</b> under the main view, <b>Shape</b> sets the aspect ratio (16:9, 4:3, 3:2, square, 4:5, 9:16 vertical, 21:9 or the video’s own), <b>Size</b> the resolution (480p to 4K) and <b>Fit</b> whether the picture is cropped to fill the frame or fitted with black bars. The main view, output windows, snapshots and recordings all use it.</p><p><b>Output window</b> opens the main view in its own window you can put full screen on a second display or projector.</p>`],
     ['shapes', 'Presets and stored shapes', `<p><b>Presets</b> (top bar) store the settings of every module. <b>Preset morph</b> can slide between two.</p>
       <p>Shape generators (Contour bloom, Contour shell, Shard burst, Strata, Geo composer, Contour rings, Iso geometry, Line art, Blobs) can <b>store shapes</b>: press New shape until you like it, then Store shape. Click a number to recall it; right-click to delete or replace. Their inputs let you make a new shape, store a shape and <b>Recall</b> one with a trigger or a <b>Counter</b>.</p>`],
     ['midi', 'MIDI', `<p>Press <b>MIDI learn</b>, click a slider or Button pad, then move a knob or hit a pad on your controller. Mapped controls show a small pink dot. Use the <b>MIDI input</b> module for notes and knobs as modulation, and <b>MIDI clock</b> to follow an external tempo. MIDI works in Chrome, Edge and the desktop app.</p>`],
     ['settings', 'Settings and skins', `<p>Settings holds Simple mode, tips, recording options, <b>Performance</b> (Draft quality renders effects at half resolution; Generators sets how often drawn generators redraw, 30 times a second by default, which keeps everything else smooth), <b>Backups</b> (earlier versions saved automatically every few minutes, which you can restore) and <b>skins</b>. Click a skin to try it; right-click to make it the default that opens every time.</p>`],
-    ['keys', 'Keyboard shortcuts', `<table><tr><td>Cmd/Ctrl + N</td><td>New empty patch</td></tr><tr><td>Cmd/Ctrl + Z</td><td>Undo</td></tr><tr><td>Cmd/Ctrl + Shift + Z</td><td>Redo</td></tr><tr><td>Cmd/Ctrl + C / V</td><td>Copy and paste selected modules</td></tr><tr><td>Cmd/Ctrl + D</td><td>Duplicate selected modules</td></tr><tr><td>Cmd/Ctrl + S</td><td>Save</td></tr><tr><td>Cmd/Ctrl + Shift + S</td><td>Save as</td></tr><tr><td>Cmd/Ctrl + O</td><td>Load</td></tr>
+    ['keys', 'Keyboard shortcuts', `<table><tr><td>Mouse wheel</td><td>Zoom the patch in and out</td></tr><tr><td>Shift + mouse wheel</td><td>Scroll the patch up and down</td></tr><tr><td>Cmd/Ctrl + N</td><td>New empty patch</td></tr><tr><td>Cmd/Ctrl + Z</td><td>Undo</td></tr><tr><td>Cmd/Ctrl + Shift + Z</td><td>Redo</td></tr><tr><td>Cmd/Ctrl + C / V</td><td>Copy and paste selected modules</td></tr><tr><td>Cmd/Ctrl + D</td><td>Duplicate selected modules</td></tr><tr><td>Cmd/Ctrl + S</td><td>Save</td></tr><tr><td>Cmd/Ctrl + Shift + S</td><td>Save as</td></tr><tr><td>Cmd/Ctrl + O</td><td>Load</td></tr>
       <tr><td>Cmd/Ctrl + E</td><td>Lock or unlock the Presentation layout</td></tr><tr><td>Option / Alt</td><td>Draw and edit cable bends</td></tr><tr><td>Keys button</td><td>Click a button or pad, then press a key to play it from the keyboard</td></tr><tr><td>Shift + click or drag</td><td>Select modules</td></tr>
       <tr><td>Delete</td><td>Remove the selected modules or canvas item</td></tr><tr><td>Escape</td><td>Cancel drawing a cable, close menus</td></tr></table>`],
+    ['blends', 'Blend modes', `<p>Blend modes decide how a layer combines with what’s underneath (in the Video mixer and Feedback). <b>Normal</b> is traditional video layering: the top picture simply covers the one below, and its Level fades it in and out.</p>
+      <table><tr><td>Normal</td><td>Covers what’s below (traditional layering)</td></tr><tr><td>Add</td><td>Adds the light of both; bright and glowing, can blow out to white</td></tr>
+      <tr><td>Screen</td><td>Like two projectors on one wall: brightens, never gets darker</td></tr><tr><td>Multiply</td><td>Like stacked slides: darkens, white disappears</td></tr>
+      <tr><td>Overlay</td><td>Adds contrast: lights get lighter, darks darker</td></tr><tr><td>Darken / Lighten</td><td>Keeps whichever is darker / lighter at each point</td></tr>
+      <tr><td>Color dodge / Color burn</td><td>Strong brightening / darkening, very punchy</td></tr><tr><td>Hard light / Soft light</td><td>Strong / gentle contrast driven by the top layer</td></tr>
+      <tr><td>Difference</td><td>Subtracts one from the other: psychedelic inversions, black where they match</td></tr><tr><td>Exclusion</td><td>A softer, grayer Difference</td></tr>
+      <tr><td>Hue / Saturation / Color / Luminosity</td><td>Takes only that quality from the top layer (for example Color recolors the picture below)</td></tr><tr><td>XOR</td><td>Graphic cut-out effect</td></tr></table>
+      <p><b>Key</b> on each mixer layer makes one color see-through (pick it with the swatch, raise the amount), like a green screen.</p>`],
     ['canvas', 'Canvas items', `<p>Under Canvas in the module list: <b>Box</b> (a colored area to group modules visually), <b>Comment</b> (a note) and <b>Logo</b> (an image). Click one to show its tools; drag its corner to resize.</p>`],
     ['builtin', 'Built-in parts', `<p><b>Main view</b> shows whatever is patched into its jack. <b>Recorder</b> records the video and audio patched into its jacks; Record on/off can be triggered. <b>Group</b> holds modules you encapsulated.</p>`]
   ];
@@ -7154,7 +7605,7 @@ for (const t of MEM_TYPES){ const def = DEFS[t]; if (def && !def.ins.some(p => p
 let histStack = [], redoStack = [], histLast = null, histBusy = false;
 function histState(){ const d = serialize(); delete d.pan; delete d.zoom; return JSON.stringify(d); }
 function histPush(){
-  if (histBusy || live.on) return;
+  if (histBusy || live.fadeState) return;
   const st = histState(); if (st === histLast) return;
   if (histLast !== null){ histStack.push(histLast); if (histStack.length > 120) histStack.shift(); redoStack = []; }
   histLast = st; updUndo();
@@ -7256,6 +7707,9 @@ function pasteClip(){
 }
 
 /* ---------- Examples ---------- */
+const UEX_KEY = STORE + ':examples';
+let userExamples = []; try { userExamples = JSON.parse(localStorage.getItem(UEX_KEY) || '[]') || []; } catch(e){ userExamples = []; }
+const saveUserExamples = () => { try { localStorage.setItem(UEX_KEY, JSON.stringify(userExamples)); } catch(e){ toast('Not enough room to keep that example in the app.'); } };
 const EX_N = (id, type, x, y, params) => ({id, type, x, y, params: params || {}});
 const EX_E = (a, ap, b, bp, kind) => ({from: {node: a, port: ap}, to: {node: b, port: bp}, kind: kind || 'video'});
 const EXAMPLES = [
@@ -7288,7 +7742,7 @@ function loadExample(ex){
   const spec = ex.build();
   if (settings.simple) setSimpleMode(false);
   clearPatch();
-  applyPatch({v: 1, nodes: spec.nodes, edges: spec.edges});
+  applyPatch(Object.assign({v: 1}, spec, {nodes: spec.nodes, edges: spec.edges}));
   patchName = ex.name; pnameEl.value = patchName; fileHandle = null;
   applyPan(); syncCableEls(); requestAnimationFrame(() => fitAll()); save();
   toast('Loaded “' + ex.name + '”. Press Cmd+Z to go back to your patch.');
@@ -7304,8 +7758,18 @@ function loadSimpleExample(ex){
 {
   const menu = document.getElementById('exmenu'), btn = document.getElementById('exbtn');
   const item = (ex, fn) => { const b = h('button', {class:'exitem'}, h('b', {text: ex.name}), h('span', {text: ex.desc})); b.addEventListener('click', () => { menu.hidden = true; fn(ex); }); return b; };
-  menu.replaceChildren(h('div', {class:'sethead', text:'Patches'}), ...EXAMPLES.map(ex => item(ex, loadExample)),
-    h('div', {class:'sethead', text:'Simple mode'}), ...SIMPLE_EXAMPLES.map(ex => item(ex, loadSimpleExample)));
+  window.renderExamples = () => {
+    const mine = userExamples.map((ex, i) => {
+      const b = item({name: ex.name, desc: ex.desc, build: () => ex.patch}, e2 => { loadExample(e2); const d = ex.patch; if (d.presets){ presets = JSON.parse(JSON.stringify(d.presets)); renderPresets(); } });
+      const x = h('button', {class:'qx exdel', title:'Delete this example', 'aria-label':'Delete ' + ex.name, text:'×'});
+      x.addEventListener('click', e => { e.stopPropagation(); userExamples.splice(i, 1); saveUserExamples(); renderExamples(); });
+      return h('div', {class:'exwrapitem'}, b, x);
+    });
+    menu.replaceChildren(...(mine.length ? [h('div', {class:'sethead', text:'Your examples'}), ...mine] : []),
+      h('div', {class:'sethead', text:'Patches'}), ...EXAMPLES.map(ex => item(ex, loadExample)),
+      h('div', {class:'sethead', text:'Simple mode'}), ...SIMPLE_EXAMPLES.map(ex => item(ex, loadSimpleExample)));
+  };
+  renderExamples();
   btn.addEventListener('click', () => { menu.hidden = !menu.hidden; });
   window.addEventListener('pointerdown', e => { if (!menu.hidden && !menu.contains(e.target) && e.target !== btn) menu.hidden = true; }, true);
 }
@@ -7438,6 +7902,7 @@ function paintStrips(){ document.querySelectorAll('.lefttitle').forEach(el => el
 setInterval(paintStrips, 500);
 // Double-click the divider: back to the resting layout (main view about a third of the window).
 divider.addEventListener('dblclick', () => { setLeftCol(false); setViewCol(false); setSw(Math.round(split.clientWidth/3)); });
+{ const cb = document.getElementById('setrecmain'); cb.checked = recMainOn(); document.body.classList.toggle('recmain', recMainOn()); cb.addEventListener('change', () => { settings.recMain = cb.checked; saveSettings(); document.body.classList.toggle('recmain', cb.checked); syncCableEls(); }); }
 for (const [id, key, cls] of [['setnoex', 'noExamples', 'noexamples'], ['setnorec', 'noRec', 'norec']]){
   const cb = document.getElementById(id); cb.checked = !!settings[key]; document.body.classList.toggle(cls, !!settings[key]);
   cb.addEventListener('change', () => { settings[key] = cb.checked; saveSettings(); document.body.classList.toggle(cls, cb.checked); });
@@ -7507,6 +7972,159 @@ function cpuTick(busyMs){
 /* fonts are set up after the storage helpers below */
 document.getElementById('mlive').addEventListener('click', () => setMode('live'));
 document.getElementById('msliders').addEventListener('click', () => setMode('sliders'));
+
+/* ---------- On/off (bypass) on module title bars ---------- */
+const NO_BYPASS = new Set(['group', 'liveout', 'send', 'receive', 'bpm', 'clock', 'midiclock', 'midi', 'button', 'screen', 'macro', 'morph']);
+const canBypass = t => DEFS[t] && DEFS[t].kind !== 'audio' && DEFS[t].kind !== 'rec' && !NO_BYPASS.has(t);
+function bypassBtn(n){
+  const b = h('button', {class:'hx bypass', title:'On: the module works. Off: it passes its input straight through.'});
+  const paint = () => { const off = !!n.params.bypass; b.textContent = off ? 'OFF' : 'ON'; b.classList.toggle('isoff', off); b.setAttribute('aria-pressed', String(!off)); document.querySelectorAll('.bypass[data-nid="' + n.id + '"]').forEach(x => { x.textContent = b.textContent; x.classList.toggle('isoff', off); }); n.el && n.el.classList.toggle('bypassed', off); };
+  b.dataset.nid = n.id;
+  b.addEventListener('click', e => { e.stopPropagation(); n.params.bypass = !n.params.bypass; paint(); save(); });
+  b.addEventListener('pointerdown', e => e.stopPropagation());
+  b.addEventListener('dblclick', e => e.stopPropagation());
+  n.ctl = n.ctl || {}; n.ctl.bypass = {set(v){ n.params.bypass = !!v; paint(); }};
+  setTimeout(paint, 0);
+  return b;
+}
+
+/* ---------- Recorder: record the main view, pause input, save all ---------- */
+function recMainOn(){ return settings.recMain !== false; }
+
+
+/* ---------- Sharing custom modules ---------- */
+function downloadJson(obj, filename){
+  const blob = new Blob([JSON.stringify(obj, null, 1)], {type:'application/json'});
+  const a = h('a', {href: URL.createObjectURL(blob), download: filename}); document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+function exportCustom(list, name){
+  if (!list.length){ toast('There are no custom modules to export yet.'); return; }
+  downloadJson({seedsCustomModules: 1, modules: list}, slug(name || 'custom-modules') + '.seedsmods.json');
+  toast('Exported ' + list.length + (list.length === 1 ? ' custom module.' : ' custom modules.'));
+}
+document.getElementById('fexpmods').addEventListener('click', () => exportCustom(customLib, 'custom-modules'));
+{
+  const f = h('input', {type:'file', accept:'.json,application/json', hidden: true}); document.body.append(f);
+  document.getElementById('fimpmods').addEventListener('click', () => f.click());
+  f.addEventListener('change', async () => {
+    const file = f.files[0]; f.value = ''; if (!file) return;
+    try {
+      const d = JSON.parse(await file.text()), list = Array.isArray(d.modules) ? d.modules : (Array.isArray(d.nodes) && d.name ? [d] : null);
+      if (!list) throw new Error('this isn’t a custom modules file');
+      let added = 0;
+      for (const m of list){
+        if (!m || !Array.isArray(m.nodes)) continue;
+        let nm = m.name || 'Imported', k = 2; while (customLib.some(c => c.name === nm)) nm = (m.name || 'Imported') + ' ' + k++;
+        customLib.push(Object.assign({}, m, {name: nm})); added++;
+      }
+      saveLib(); renderCustom(); toast('Imported ' + added + (added === 1 ? ' custom module.' : ' custom modules.') + ' Find them under Custom modules.');
+    } catch(e){ toast('Couldn’t import: ' + e.message); }
+  });
+}
+
+/* ---------- Your own examples ---------- */
+document.getElementById('fsaveex').addEventListener('click', async () => {
+  const nm = await askDialog('Name this example:', {input: patchName && patchName !== 'Untitled' ? patchName : 'My example', ok: 'Save'}); if (!nm || !nm.trim()) return;
+  const d = serialize(); delete d.pan; delete d.zoom;
+  const i = userExamples.findIndex(x => x.name === nm.trim()), ex = {name: nm.trim(), desc: 'Saved ' + new Date().toLocaleDateString(), patch: d};
+  if (i >= 0) userExamples[i] = ex; else userExamples.push(ex);
+  saveUserExamples(); renderExamples(); toast('Saved “' + ex.name + '” to Examples.');
+});
+
+// Ready-made Feedback settings. "Camera at screen" is the classic look of pointing a camera at its own monitor.
+const FB_LOOKS = {
+  camera: {mode:'screen', input:0.55, feedback:0.93, zoom:1.04, rotate:1.2, shiftX:0, shiftY:0, hue:1.5, blur:0.6, gain:1.08, mix:1},
+  tunnel: {mode:'lighten', input:0.8, feedback:0.95, zoom:0.96, rotate:3, shiftX:0, shiftY:0, hue:4, blur:0, gain:1, mix:1},
+  smear: {mode:'source-over', input:0.25, feedback:0.97, zoom:1.003, rotate:0, shiftX:0.004, shiftY:0, hue:0, blur:0.4, gain:1, mix:1},
+  trails: {mode:'lighten', input:1, feedback:0.88, zoom:1, rotate:0, shiftX:0, shiftY:0, hue:0, blur:0, gain:1, mix:1},
+  bloom: {mode:'lighter', input:0.4, feedback:0.9, zoom:1.02, rotate:0.3, shiftX:0, shiftY:0, hue:6, blur:2, gain:1.02, mix:1}
+};
+function imgStep(n, d){
+  if (!n.imgs.length) return;
+  n.prevBmp = n.imgs[n.idx].bmp;
+  n.idx = d === 0 ? Math.floor(Math.random()*n.imgs.length) : (n.idx + d + n.imgs.length) % n.imgs.length;
+  n.changed = performance.now(); imgInfo(n);
+}
+function imgInfo(n){ n.info.textContent = n.imgs.length ? (n.idx + 1) + ' of ' + n.imgs.length + ': ' + n.imgs[n.idx].name : 'No images. Load some, or drop them here.'; }
+/* ---------- Vector shapes: a wide range of random 3D forms ---------- */
+function vecMesh(seed, family, detail){
+  const R = seededRng(seed*31 + 7), FAM = ['poly','super','knot','lattice','spikes','cloud','ribbon','helix','rings','shards'];
+  const fam = family === 'random' ? FAM[Math.floor(R()*FAM.length)] : family;
+  const v = [], e = [], f = [], D = detail;
+  const grid = (U, V, fn, wrapU, wrapV) => {
+    const base = v.length;
+    for (let i = 0; i <= U; i++) for (let j = 0; j <= V; j++) v.push(fn(i/U, j/V));
+    const id = (i, j) => base + i*(V + 1) + j;
+    for (let i = 0; i < U; i++) for (let j = 0; j < V; j++){ f.push([id(i, j), id(i + 1, j), id(i + 1, j + 1), id(i, j + 1)]); e.push([id(i, j), id(i + 1, j)], [id(i, j), id(i, j + 1)]); }
+    for (let j = 0; j < V; j++) e.push([id(U, j), id(U, j + 1)]); for (let i = 0; i < U; i++) e.push([id(i, V), id(i + 1, V)]);
+  };
+  const norm = p => { const l = Math.hypot(...p) || 1; return p.map(c => c/l); };
+  let name = '';
+  if (fam === 'poly'){
+    const kinds = ['Tetrahedron','Cube','Octahedron','Icosahedron','Geodesic sphere','Stellated form'], k = Math.floor(R()*kinds.length); name = kinds[k];
+    const phi = (1 + Math.sqrt(5))/2;
+    let V0, F0;
+    if (k === 0){ V0 = [[1,1,1],[-1,-1,1],[-1,1,-1],[1,-1,-1]]; F0 = [[0,1,2],[0,3,1],[0,2,3],[1,3,2]]; }
+    else if (k === 1){ V0 = [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]]; F0 = [[0,1,2,3],[4,5,6,7],[0,1,5,4],[2,3,7,6],[1,2,6,5],[0,3,7,4]]; }
+    else if (k === 2){ V0 = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]; F0 = [[0,2,4],[2,1,4],[1,3,4],[3,0,4],[2,0,5],[1,2,5],[3,1,5],[0,3,5]]; }
+    else { V0 = [[-1,phi,0],[1,phi,0],[-1,-phi,0],[1,-phi,0],[0,-1,phi],[0,1,phi],[0,-1,-phi],[0,1,-phi],[phi,0,-1],[phi,0,1],[-phi,0,-1],[-phi,0,1]];
+      F0 = [[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]]; }
+    V0 = V0.map(p => norm(p)); let FF = F0;
+    if (k === 4){ // subdivide the icosahedron
+      for (let it = 0; it < 1 + Math.round(D); it++){ const mid = {}, nf = [];
+        const m = (a, b) => { const kk = a < b ? a + '_' + b : b + '_' + a; if (mid[kk] == null){ mid[kk] = V0.length; V0.push(norm(V0[a].map((c, q) => (c + V0[b][q])/2))); } return mid[kk]; };
+        for (const [a, b, c] of FF){ const ab = m(a, b), bc = m(b, c), ca = m(c, a); nf.push([a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]); } FF = nf; } }
+    if (k === 5){ const nf = []; for (const fc of FF){ const cen = norm(fc.reduce((s, i) => s.map((c, q) => c + V0[i][q]), [0,0,0])).map(c => c*(1.4 + R()*0.8)); const ci = V0.length; V0.push(cen); for (let q = 0; q < fc.length; q++) nf.push([fc[q], fc[(q + 1) % fc.length], ci]); } FF = nf; }
+    v.push(...V0); f.push(...FF); const seen = new Set();
+    for (const fc of FF) for (let q = 0; q < fc.length; q++){ const a = fc[q], b = fc[(q + 1) % fc.length], kk = a < b ? a + '_' + b : b + '_' + a; if (!seen.has(kk)){ seen.add(kk); e.push([a, b]); } }
+  } else if (fam === 'super'){
+    name = 'Supershape';
+    const sf = (a, m, n1, n2, n3) => Math.pow(Math.pow(Math.abs(Math.cos(m*a/4)), n2) + Math.pow(Math.abs(Math.sin(m*a/4)), n3), -1/n1);
+    const p1 = [Math.floor(R()*9), 0.3 + R()*3, 0.3 + R()*3, 0.3 + R()*3], p2 = [Math.floor(R()*9), 0.3 + R()*3, 0.3 + R()*3, 0.3 + R()*3];
+    const U = 14 + Math.round(D*26), V = 10 + Math.round(D*16);
+    grid(U, V, (a, b) => { const th = a*2*Math.PI - Math.PI, ph = b*Math.PI - Math.PI/2, r1 = sf(th, ...p1), r2 = sf(ph, ...p2);
+      return [r1*Math.cos(th)*r2*Math.cos(ph), r1*Math.sin(th)*r2*Math.cos(ph), r2*Math.sin(ph)].map(c => c*0.8); });
+  } else if (fam === 'knot'){
+    const p = 2 + Math.floor(R()*4), q = 3 + Math.floor(R()*5); name = 'Torus knot ' + p + ':' + q;
+    const U = 60 + Math.round(D*120), V = 6 + Math.round(D*6), tube = 0.12 + R()*0.15;
+    const c = a => { const r = 0.6 + 0.3*Math.cos(q*a); return [r*Math.cos(p*a), r*Math.sin(p*a), 0.3*Math.sin(q*a)]; };
+    grid(U, V, (a, b) => { const A = a*2*Math.PI, P0 = c(A), P1 = c(A + 0.01), T = norm(P1.map((x, i) => x - P0[i])), N = norm([-T[1], T[0], 0.3]), B = norm([T[1]*N[2] - T[2]*N[1], T[2]*N[0] - T[0]*N[2], T[0]*N[1] - T[1]*N[0]]); const ang = b*2*Math.PI;
+      return P0.map((x, i) => x + tube*(Math.cos(ang)*N[i] + Math.sin(ang)*B[i])); });
+  } else if (fam === 'lattice'){
+    name = 'Wave lattice'; const U = 10 + Math.round(D*24), fx = 1 + R()*4, fy = 1 + R()*4, amp = 0.2 + R()*0.4;
+    grid(U, U, (a, b) => { const X = a*2 - 1, Y = b*2 - 1; return [X, Y, amp*Math.sin(X*fx*Math.PI + R()*0)*Math.cos(Y*fy*Math.PI)]; });
+    f.length = 0;
+  } else if (fam === 'spikes'){
+    name = 'Spiky form'; const N = 40 + Math.round(D*160);
+    v.push([0, 0, 0]);
+    for (let i = 0; i < N; i++){ const z = 1 - 2*(i + 0.5)/N, r = Math.sqrt(1 - z*z), a = i*2.39996, len = 0.4 + R()*(0.8 + R()); v.push([r*Math.cos(a)*len, r*Math.sin(a)*len, z*len]); e.push([0, v.length - 1]); if (i) e.push([v.length - 2, v.length - 1]); }
+  } else if (fam === 'cloud'){
+    name = 'Point cloud'; const N = 40 + Math.round(D*120), k = 2 + Math.floor(R()*3), shape = Math.floor(R()*3);
+    for (let i = 0; i < N; i++){ const a = R()*6.283, b = Math.acos(R()*2 - 1), r = shape === 0 ? Math.cbrt(R()) : shape === 1 ? 0.9 : 0.4 + R()*0.6; v.push([r*Math.sin(b)*Math.cos(a), r*Math.sin(b)*Math.sin(a)*(shape === 2 ? 0.35 : 1), r*Math.cos(b)]); }
+    for (let i = 0; i < N; i++){ const d = v.map((p, j) => [j, Math.hypot(p[0] - v[i][0], p[1] - v[i][1], p[2] - v[i][2])]).sort((a, b) => a[1] - b[1]); for (let q = 1; q <= k; q++) if (d[q][0] > i) e.push([i, d[q][0]]); }
+  } else if (fam === 'ribbon'){
+    name = 'Twisted ribbon'; const tw = 1 + Math.floor(R()*5), U = 40 + Math.round(D*80), loops = 1 + Math.floor(R()*3);
+    grid(U, 3, (a, b) => { const A = a*2*Math.PI*loops, w = (b - 0.5)*0.5, tw2 = A*tw/loops/2; const cx = Math.cos(A)*0.7, cy = Math.sin(A)*0.7, cz = Math.sin(A*0.5)*0.4;
+      return [cx + w*Math.cos(tw2)*Math.cos(A), cy + w*Math.cos(tw2)*Math.sin(A), cz + w*Math.sin(tw2)]; });
+  } else if (fam === 'helix'){
+    const strands = 2 + Math.floor(R()*4), turns = 2 + R()*5; name = strands + '-strand helix'; const N = 60 + Math.round(D*140);
+    for (let s = 0; s < strands; s++){ const base = v.length; for (let i = 0; i <= N; i++){ const a = i/N*turns*6.283 + s*6.283/strands; v.push([Math.cos(a)*0.6, Math.sin(a)*0.6, i/N*2 - 1]); if (i) e.push([base + i - 1, base + i]); } }
+    for (let i = 0; i <= N; i += 4) for (let s = 1; s < strands; s++) e.push([i, s*(N + 1) + i]);
+  } else if (fam === 'rings'){
+    const nR = 4 + Math.round(D*14), seg = 12 + Math.round(D*24); name = 'Ring stack';
+    for (let r = 0; r < nR; r++){ const base = v.length, z = r/(nR - 1)*2 - 1, rad = 0.3 + 0.6*Math.abs(Math.sin(r*0.7 + R()*3)), tilt = (R() - 0.5)*0.8;
+      for (let i = 0; i < seg; i++){ const a = i/seg*6.283; v.push([Math.cos(a)*rad, Math.sin(a)*rad, z + Math.sin(a)*tilt*rad]); e.push([base + i, base + (i + 1) % seg]); if (r) e.push([base + i, base - seg + i]); } }
+  } else {
+    name = 'Shard cluster'; const N = 6 + Math.round(D*24);
+    for (let s = 0; s < N; s++){ const dir = norm([R()*2 - 1, R()*2 - 1, R()*2 - 1]), len = 0.4 + R()*0.9, w = 0.05 + R()*0.15, base = v.length;
+      const side = norm([dir[1], -dir[0], dir[2]*0.3]); const up = norm([dir[1]*side[2] - dir[2]*side[1], dir[2]*side[0] - dir[0]*side[2], dir[0]*side[1] - dir[1]*side[0]]);
+      v.push(dir.map(c => c*len), side.map((c, i) => c*w + dir[i]*0.1), up.map((c, i) => c*w + dir[i]*0.1), side.map((c, i) => -c*w + dir[i]*0.1), up.map((c, i) => -c*w + dir[i]*0.1));
+      for (let q = 1; q <= 4; q++){ f.push([base, base + q, base + (q % 4) + 1]); e.push([base, base + q], [base + q, base + (q % 4) + 1]); } }
+  }
+  return {v, e, f, name: name + (family === 'random' ? ' (surprise)' : '')};
+}
+
 /* ---------- Tempo sync helpers ---------- */
 // Steps per second, or one step per musical division when synced to the BPM.
 function rateOf(n){ const ss = syncSec(n); if (ss){ syncInfo(n, ss*1000); return 1/ss; } return P(n, 'rate'); }
@@ -7659,113 +8277,149 @@ idb('readonly', st => st.get('fonts')).then(async list => {
   (window.fontPickers || []).forEach(f => f());
 }).catch(() => {});
 
-/* ---------- Live mode: patch slots you switch between, by click or MIDI note ---------- */
+/* ---------- Clips: launch whole patches like clips (click, MIDI note, or on the beat) ---------- */
 const LIVE_KEY = STORE + ':liveset';
-const live = {on: false, slots: [], fade: 1.5, trans: 'fade', bpm: 120, saved: null, inst: null, prev: null, out: null, learnSlot: -1, mixFrom: 0, mixTo: 0, t0: 0};
-try { const v = JSON.parse(localStorage.getItem(LIVE_KEY) || 'null'); if (v){ live.slots = v.slots || []; live.fade = v.fade ?? 1.5; live.trans = v.trans || 'fade'; live.bpm = v.bpm || 120; } } catch(e){}
-while (live.slots.length < 16) live.slots.push({name: '', patch: null, note: null, ch: null});
+const live = {on: false, slots: [], count: 16, bpm: 120, quant: '0', extSync: false, layout: 'learned', learnSlot: -1, active: -1, pending: null, fadeState: null,
+  out: null, bpmId: null, t0: performance.now(), ticks: 0, mixFrom: 0, mixTo: 0, t0f: 0, dur: 0};
+try { const v = JSON.parse(localStorage.getItem(LIVE_KEY) || 'null'); if (v){ live.slots = v.slots || []; live.bpm = v.bpm || 120; live.count = v.count || 16; live.quant = v.quant || '0'; live.layout = v.layout || 'learned'; } } catch(e){}
+while (live.slots.length < 32) live.slots.push({name: '', patch: null, note: null, ch: null});
+let liveSaveT = null;
 function liveSave(){
-  const data = JSON.stringify({slots: live.slots, fade: live.fade, trans: live.trans, bpm: live.bpm});
-  try { localStorage.setItem(LIVE_KEY, data); } catch(e){ toast('This set is too big to keep in the app. Use Export set… to save it as a file.'); }
+  clearTimeout(liveSaveT);
+  liveSaveT = setTimeout(() => {
+    const data = JSON.stringify({slots: live.slots, bpm: live.bpm, count: live.count, quant: live.quant, layout: live.layout});
+    try { localStorage.setItem(LIVE_KEY, data); } catch(e){ toast('This set is too big to keep in the app. Use Export set… to save it as a file.'); }
+  }, 250);
 }
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const noteName = n => NOTE_NAMES[n % 12] + (Math.floor(n/12) - 1);
 const liveEl = document.getElementById('live'), liveGrid = document.getElementById('livegrid');
-// Build a slot's patch inside the running app, with its own ids, and return where its picture and sound come out.
-function liveInstance(i){
-  const spec = live.slots[i].patch; if (!spec) return null;
-  const map = {}, ids = [];
-  const keep = scope; scope = null;
-  for (const s of spec.nodes || []){
-    if (!DEFS[s.type] || s.type === 'main' || s.type === 'recorder') continue;
-    const nn = addNode(s.type, s.x, s.y, JSON.parse(JSON.stringify(s.params || {}))); if (!nn) continue;
-    map[s.id] = nn.id; ids.push(nn.id); nn.liveOwned = true;
+const QUANTS = [['0','No quantize'],['0.125','1/32 note'],['0.25','1/16 note'],['0.5','1/8 note'],['1','1/4 note'],['2','1/2 note'],['4','1 bar'],['8','2 bars'],['16','4 bars'],['32','8 bars'],['64','16 bars']];
+
+// Give a saved patch fresh module ids (so it can run next to the patch it replaces), fixing every reference.
+function remapPatch(src){
+  const d = JSON.parse(JSON.stringify(src)), map = {};
+  for (const s of d.nodes || []) map[s.id] = 'n' + (nextId++);
+  const R = id => map[id] || id;
+  for (const s of d.nodes || []){ s.id = R(s.id); if (s.parent) s.parent = map[s.parent]; if (s.type === 'group' && s.params && Array.isArray(s.params.ports)) s.params.ports.forEach(p => p.node = R(p.node)); }
+  d.edges = (d.edges || []).map(e => Object.assign({}, e, {from: {node: R(e.from.node), port: e.from.port}, to: {node: R(e.to.node), port: e.to.port}}));
+  (d.midiMap || []).forEach(m => m.node = R(m.node)); (d.keyMap || []).forEach(m => m.node = R(m.node));
+  if (d.bank) (d.bank.maps || []).forEach(m => m.node = R(m.node));
+  if (d.perform && d.perform.panels){ const p = {}; for (const [k, v] of Object.entries(d.perform.panels)) p[R(k)] = v; d.perform.panels = p; }
+  (d.presets || []).forEach(pr => { const sn = {}; for (const [k, v] of Object.entries(pr.snap || {})) sn[R(k)] = v; pr.snap = sn; });
+  return d;
+}
+// Beats since the Clips transport started (from MIDI clock ticks when synced).
+function clipPos(){ return live.extSync && live.ticks > 0 ? live.ticks/24 : (performance.now() - live.t0)/1000*live.bpm/60; }
+function clipTrigger(i){
+  const sl = live.slots[i]; if (!sl || !sl.patch) return;
+  clipsBpm();
+  const q = +live.quant;
+  if (q > 0 && live.active >= 0){ const pos = clipPos(); live.pending = {i, at: Math.ceil(pos/q + 1e-6)*q}; liveRender(); return; }
+  clipLaunch(i);
+}
+// The playing clip's patch keeps every change you make, in any mode.
+function saveActiveClip(d){ if (live.active < 0 || !live.slots[live.active] || live.fadeState) return; live.slots[live.active].patch = d || serialize(); liveSave(); }
+function clipLaunch(i){
+  const sl = live.slots[i]; if (!sl || !sl.patch) return;
+  live.pending = null;
+  if (live.fadeState) clipFinish();
+  saveActiveClip();
+  const d = remapPatch(sl.patch);
+  const oldIds = [...nodes.values()].filter(n => !n.fixed && !n.noSave).map(n => n.id);
+  const oldMain = (edges.find(e => e.to.node === 'main' && e.to.port === 'in') || {}).from;
+  const wasPerf = perf.on; if (wasPerf) perfExit();
+  while (scope) closeGroup();
+  for (const s of d.nodes || []){
+    if (!DEFS[s.type]) continue;
+    const nn = addNode(s.type, s.x, s.y, s.params, s.id); if (!nn) continue;
+    nn.parent = s.parent || undefined; if (s.collapsed) setCollapsed(nn, true);
+    // A camera that's already running keeps running: the new clip borrows its picture, so there's no black flash.
+    if (nn.type === 'camera'){
+      const o = oldIds.map(id => nodes.get(id)).find(m => m && m.type === 'camera' && m.stream && !m.sharedOut && (m.params.deviceId || '') === (nn.params.deviceId || ''));
+      if (o){ nn.stream = o.stream; nn.video.srcObject = o.stream; nn.video.play().catch(() => {}); o.sharedOut = true; if (nn.btn){ nn.btn.textContent = 'Stop camera'; nn.btn.classList.add('on'); } if (nn.status) nn.status.textContent = (o.status && o.status.textContent !== 'Off') ? o.status.textContent : 'On'; }
+    }
   }
-  scope = keep;
-  for (const s of spec.nodes || []) if (map[s.id]){ const nn = nodes.get(map[s.id]); nn.parent = s.parent && map[s.parent] ? map[s.parent] : live.group; if (nn.type === 'group') nn.params.ports = (nn.params.ports || []).filter(p => map[p.node]).map(p => Object.assign({}, p, {node: map[p.node]})); }
-  let out = null, aud = null;
-  for (const e of spec.edges || []){
-    const f = map[e.from.node];
-    if (e.to.node === 'main' && e.to.port === 'in' && f){ out = {node: f, port: e.from.port}; continue; }
-    if (e.to.node === 'rec' && e.to.port === 'video' && f){ if (!out) out = {node: f, port: e.from.port}; continue; }
-    if (e.to.node === 'rec' && e.to.port === 'audio' && f){ aud = {node: f, port: e.from.port}; continue; }
-    if (f && map[e.to.node]) edges.push({from: {node: f, port: e.from.port}, to: {node: map[e.to.node], port: e.to.port}, kind: e.kind, pts: e.pts});
-  }
-  // Cameras and microphones in the slot start by themselves.
-  for (const id of ids){ const n = nodes.get(id); if (n.type === 'camera') startCam(n); if (n.type === 'audioin') startMic(n); }
-  const mm = (spec.midiMap || []).filter(m => map[m.node]).map(m => Object.assign({}, m, {node: map[m.node]}));
-  return {i, ids, out, aud, midiMap: mm};
+  const ok = id => id === 'main' || id === 'rec' || nodes.has(id);
+  const newEdges = (d.edges || []).filter(e => ok(e.from.node) && ok(e.to.node));
+  const newMain = (newEdges.find(e => e.to.node === 'main' && e.to.port === 'in') || {}).from;
+  // The patch-wide settings switch to the new clip straight away.
+  presets = d.presets || []; activePreset = typeof d.activePreset === 'number' ? d.activePreset : -1; midiMap = d.midiMap || []; keyMap = d.keyMap || [];
+  if (d.bank){ bank.count = d.bank.count || 8; bank.vals = (d.bank.vals || []).concat(Array(16).fill(0)).slice(0, 16); bank.maps = d.bank.maps || []; } else { bank.maps = []; }
+  perf.panels = (d.perform && d.perform.panels) || {}; perf.locked = !!(d.perform && d.perform.locked);
+  setPatchBg(d.bg || null);
+  for (const x of decor) x.el.remove(); decor = []; for (const dt of d.decor || []) addDecor(dt);
+  patchName = sl.name || d.name || 'Clip ' + (i + 1); pnameEl.value = patchName; fileHandle = null;
+  edges = edges.filter(e => e.to.node !== 'main' && !(e.to.node === 'rec'));
+  edges.push(...newEdges.filter(e => e.to.node !== 'main'));
+  const ms = !oldIds.length || sl.trans === 'cut' ? 0 : sl.trans === 'sync' ? +(sl.beats || 4)*60/live.bpm*1000 : (sl.fade ?? 1.5)*1000;
+  live.fadeState = {oldIds, newEdges};
+  live.active = i;
+  if (ms > 0 && oldMain){
+    const o = addNode('liveout', 0, 0, {sys: true}); o.noSave = true; live.out = o.id;
+    edges.push({from: oldMain, to: {node: o.id, port: 'a'}, kind: 'video'}, {from: {node: o.id, port: 'out'}, to: {node: 'main', port: 'in'}, kind: 'video'});
+    if (newMain) edges.push({from: newMain, to: {node: o.id, port: 'b'}, kind: 'video'});
+    live.mixFrom = 0; live.mixTo = 1; live.t0f = performance.now(); live.dur = ms;
+    afterEdges();
+  } else clipFinish();
+  applyScope(); renderPresets(); markMapped(); markKeys(); if (document.body.classList.contains('sliders')) bankRender(); else bankMarks();
+  if (wasPerf) perfEnter();
+  liveRender(); save();
 }
-function liveRemove(inst){ if (!inst) return; for (const id of inst.ids.slice().reverse()){ const n = nodes.get(id); if (n){ n.ungrouping = true; removeNode(id); } } }
-function liveWire(){
-  const outSide = s => edges.filter(e => e.to.node === live.out && e.to.port === s);
-  edges = edges.filter(e => !(e.to.node === live.out) && !(e.to.node === 'rec' && e.to.port === 'audio'));
-  const put = (inst, side) => { if (inst && inst.out) edges.push({from: {node: inst.out.node, port: inst.out.port}, to: {node: live.out, port: side}, kind: 'video'}); };
-  put(live.inst, live.side); put(live.prev, live.side === 'a' ? 'b' : 'a');
-  if (live.inst && live.inst.aud) edges.push({from: live.inst.aud, to: {node: 'rec', port: 'audio'}, kind: 'audio'});
-  afterEdges();
+function currentMix(){ const d = live.dur || 0, k = d ? Math.min(1, (performance.now() - live.t0f)/d) : 1; return live.mixFrom + (live.mixTo - live.mixFrom)*(k*k*(3 - 2*k)); }
+// End of a crossfade: the old patch stops, and the new one is wired straight to the main view.
+function clipFinish(){
+  const f = live.fadeState; if (!f) return; live.fadeState = null;
+  if (live.out){ const o = nodes.get(live.out); live.out = null; if (o) removeNode(o.id); }
+  for (const id of f.oldIds){ const n = nodes.get(id); if (n){ n.ungrouping = true; removeNode(id); } }
+  edges = edges.filter(e => e.to.node !== 'main');
+  edges.push(...f.newEdges.filter(e => e.to.node === 'main'));
+  afterEdges(); applyScope(); liveRender();
 }
-function liveTrigger(i){
-  if (!live.on || !live.slots[i] || !live.slots[i].patch) return;
-  if (live.inst && live.inst.i === i && !live.prev) return;
-  if (live.prev){ liveRemove(live.prev); live.prev = null; }
-  const inst = liveInstance(i); if (!inst) return;
-  if (!inst.out) toast('“' + (live.slots[i].name || 'Slot ' + (i + 1)) + '” has nothing patched into the Main view.');
-  live.prev = live.inst; live.inst = inst;
-  live.side = live.side === 'a' ? 'b' : 'a';
-  midiMap = inst.midiMap; markMapped();
-  const sl = live.slots[i], tr = sl.trans || 'fade', cut = tr === 'cut' || !live.prev;
-  const ms = tr === 'sync' ? +(sl.beats || 4)*60/live.bpm*1000 : (sl.fade ?? 1.5)*1000;
-  live.mixFrom = currentMix(); live.mixTo = live.side === 'b' ? 1 : 0; live.t0 = performance.now(); live.dur = cut ? 0 : ms;
-  liveWire(); liveRender();
-}
-function currentMix(){ const d = live.dur || 0, k = d ? Math.min(1, (performance.now() - live.t0)/d) : 1; return live.mixFrom + (live.mixTo - live.mixFrom)*(k*k*(3 - 2*k)); }
-// Finish a crossfade: the old patch stops running.
 function liveTick(){
-  if (!live.on || !live.prev) return;
-  if (!live.dur || performance.now() - live.t0 >= live.dur){ liveRemove(live.prev); live.prev = null; liveWire(); liveRender(); }
+  if (live.fadeState && live.out && performance.now() - live.t0f >= live.dur) clipFinish();
+  if (live.pending && clipPos() >= live.pending.at - 0.01) clipLaunch(live.pending.i);
+  if (live.on && live.pending && frameNo % 8 === 0){ const el = liveGrid.children[live.pending.i]; if (el) el.classList.toggle('blink'); }
 }
-function liveEnter(){
-  if (live.on) return;
-  live.saved = JSON.stringify(serialize());
-  live.on = true; document.body.classList.add('live');
-  live.keptMap = midiMap;
-  for (const id of [...nodes.keys()]){ const n = nodes.get(id); if (n && !n.fixed){ n.ungrouping = true; removeNode(id); } }
-  edges = []; for (const d of decor) d.el.style.display = 'none';
-  const g = addNode('group', 0, 0, {name: 'Live', ports: [], sys: true}); live.group = g.id;
-  const o = addNode('liveout', 0, 0); o.parent = live.group; live.out = o.id;
-  const bp = addNode('bpm', 0, 0, {bpm: live.bpm}); bp.parent = live.group; live.bpmId = bp.id;
-  edges.push({from: {node: o.id, port: 'out'}, to: {node: 'main', port: 'in'}, kind: 'video'}, {from: {node: o.id, port: 'out'}, to: {node: 'rec', port: 'video'}, kind: 'video'});
-  live.inst = live.prev = null; live.side = 'a'; live.mixFrom = live.mixTo = 0; live.dur = 0;
-  midiMap = []; markMapped(); afterEdges(); applyScope(); liveRender();
+function clipsBpm(){
+  let b = nodes.get(live.bpmId);
+  if (!b){ b = addNode('bpm', 0, 0, {bpm: live.bpm, sys: true}); b.noSave = true; b.params.sys = true; live.bpmId = b.id; applyScope(); }
+  return b;
 }
-function liveExit(){
-  if (!live.on) return;
-  live.on = false; document.body.classList.remove('live');
-  liveRemove(live.prev); liveRemove(live.inst); live.prev = live.inst = null;
-  for (const id of [...nodes.keys()]){ const n = nodes.get(id); if (n && !n.fixed){ n.ungrouping = true; removeNode(id); } }
-  edges = [];
-  const d = JSON.parse(live.saved || 'null'); live.saved = null;
-  if (d){ histBusy = true; try { reconcile(d); } finally { histBusy = false; } }
-  for (const x of decor) x.el.style.display = '';
-  applyScope(); afterEdges();
+function liveEnter(){ if (live.on) return; live.on = true; document.body.classList.add('live'); clipsBpm(); liveRender(); }
+function liveExit(){ if (!live.on) return; live.on = false; document.body.classList.remove('live'); }
+// Ready-made note layouts for common controllers (slot 1 is the top-left pad).
+const LAYOUTS = {
+  launchpad: {name: 'Launchpad (Programmer mode)', note: i => (8 - Math.floor(i/8))*10 + (i % 8) + 1},
+  push: {name: 'Push (User mode)', note: i => 36 + (7 - Math.floor(i/8))*8 + (i % 8)},
+  mpc: {name: 'MPC pads (banks A and B)', note: i => i < 16 ? 37 + [12,13,14,15,8,9,10,11,4,5,6,7,0,1,2,3][i] : 53 + [12,13,14,15,8,9,10,11,4,5,6,7,0,1,2,3][i - 16]},
+  mini: {name: 'MPK / MPC mini pads', note: i => 36 + i}
+};
+let userLayouts = []; try { userLayouts = JSON.parse(localStorage.getItem(STORE + ':cliplayouts') || '[]') || []; } catch(e){ userLayouts = []; }
+const saveUserLayouts = () => { try { localStorage.setItem(STORE + ':cliplayouts', JSON.stringify(userLayouts)); } catch(e){} };
+function applyLayout(id){
+  live.layout = id;
+  if (LAYOUTS[id]) live.slots.forEach((s, i) => { s.note = LAYOUTS[id].note(i); s.ch = null; });
+  else if (id.startsWith('u:')){ const L = userLayouts.find(x => 'u:' + x.name === id); if (L) live.slots.forEach((s, i) => { const m = L.notes[i] || {}; s.note = m.note ?? null; s.ch = m.ch ?? null; }); }
+  liveSave(); liveRender();
 }
 function liveRender(){
+  const cnt = Math.max(2, Math.min(32, live.count));
   const card = (s, i) => {
-    const on = live.inst && live.inst.i === i, going = live.prev && live.prev.i === i;
-    const name = h('input', {class:'lname', value: s.name || '', placeholder: 'Slot ' + (i + 1), 'aria-label':'Slot ' + (i + 1) + ' name'});
+    const on = live.active === i && !live.fadeState, coming = live.active === i && live.fadeState, queued = live.pending && live.pending.i === i;
+    const name = h('input', {class:'lname', value: s.name || '', placeholder: 'Clip ' + (i + 1), 'aria-label':'Clip ' + (i + 1) + ' name'});
     name.addEventListener('change', () => { s.name = name.value.trim(); liveSave(); });
-    name.addEventListener('pointerdown', e => e.stopPropagation());
-    const note = h('button', {class:'btn lnote' + (live.learnSlot === i ? ' on' : ''), text: live.learnSlot === i ? 'Play a note…' : s.note != null ? noteName(s.note) + ', ch ' + s.ch : 'Learn note', title:'Map a MIDI note to this slot'});
+    name.addEventListener('pointerdown', e => e.stopPropagation()); name.addEventListener('click', e => e.stopPropagation());
+    const note = h('button', {class:'btn lnote' + (live.learnSlot === i ? ' on' : ''), text: live.learnSlot === i ? 'Play a note…' : s.note != null ? noteName(s.note) + (s.ch ? ', ch ' + s.ch : '') : 'Learn note', title:'Map a MIDI note to this clip. Right-click to clear.'});
     note.addEventListener('click', e => { e.stopPropagation(); live.learnSlot = live.learnSlot === i ? -1 : i; if (live.learnSlot >= 0) midiInit().catch(err => toast(err.message)); liveRender(); });
-    note.addEventListener('contextmenu', e => { e.preventDefault(); s.note = s.ch = null; liveSave(); liveRender(); });
+    note.addEventListener('contextmenu', e => { e.preventDefault(); e.stopPropagation(); s.note = s.ch = null; liveSave(); liveRender(); });
     const file = h('input', {type:'file', accept:'.json,application/json', hidden: true});
     file.addEventListener('change', async () => { const f = file.files[0]; file.value = ''; if (!f) return; try { const d = JSON.parse(await f.text()); if (!Array.isArray(d.nodes)) throw new Error('not a ...Seeds patch'); s.patch = d; if (!s.name) s.name = (d.name || f.name.replace(/(\.seeds)?\.json$/i, '')); liveSave(); liveRender(); } catch(err){ toast('Couldn’t load that patch: ' + err.message); } });
     const menu = h('div', {class:'lbtns'},
       h('button', {class:'btn', text:'Load patch…', onclick: e => { e.stopPropagation(); file.click(); }}),
-      h('button', {class:'btn', text:'Use my patch', title:'The patch you had open before Clips mode', onclick: e => { e.stopPropagation(); s.patch = JSON.parse(live.saved); if (!s.name) s.name = s.patch.name || 'My patch'; liveSave(); liveRender(); }}),
-      s.patch ? h('button', {class:'btn', text:'Clear', onclick: e => { e.stopPropagation(); s.patch = null; liveSave(); liveRender(); }}) : null);
-    const trans = h('select', {class:'ltrans', 'aria-label':'How this slot comes in'}, h('option', {value:'fade', text:'Crossfade'}), h('option', {value:'sync', text:'Fade in beats'}), h('option', {value:'cut', text:'Cut'}));
+      h('button', {class:'btn', text:'Use current patch', title:'Put the patch that’s running now into this clip', onclick: e => { e.stopPropagation(); s.patch = serialize(); if (!s.name) s.name = patchName !== 'Untitled' ? patchName : 'Clip ' + (i + 1); liveSave(); liveRender(); }}),
+      s.patch ? h('button', {class:'btn', text:'Clear', onclick: e => { e.stopPropagation(); if (live.active === i) live.active = -1; s.patch = null; liveSave(); liveRender(); }}) : null);
+    const trans = h('select', {class:'ltrans', 'aria-label':'How this clip comes in'}, h('option', {value:'fade', text:'Crossfade'}), h('option', {value:'sync', text:'Fade in beats'}), h('option', {value:'cut', text:'Cut'}));
     trans.value = s.trans || 'fade';
     const fade = h('input', {type:'range', min: 0.1, max: 10, step: 0.1, value: s.fade ?? 1.5, 'aria-label':'Fade time'});
     const beats = h('select', {'aria-label':'Fade length in beats'}, ...[['1','1 beat'],['2','2 beats'],['4','1 bar'],['8','2 bars'],['16','4 bars']].map(([v, l]) => h('option', {value: v, text: l})));
@@ -7777,39 +8431,67 @@ function liveRender(){
     beats.addEventListener('change', () => { s.beats = +beats.value; liveSave(); });
     [trans, fade, beats].forEach(c => { c.addEventListener('click', e => e.stopPropagation()); c.addEventListener('pointerdown', e => e.stopPropagation()); });
     paintT();
-    const tctl = h('div', {class:'ltctl'}, trans, fade, beats, fv);
-    const el = h('div', {class:'lslot' + (s.patch ? ' full' : '') + (on ? ' on' : '') + (going ? ' going' : ''), role:'button', tabindex: 0, 'aria-label':'Play slot ' + (i + 1)},
-      h('div', {class:'lnum', text: String(i + 1)}), name, h('div', {class:'lstate', text: s.patch ? (on ? 'Playing' : going ? 'Fading out' : 'Ready') : 'Empty'}), tctl, note, menu, file);
-    el.addEventListener('click', () => { if (s.patch) liveTrigger(i); });
-    el.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target === el) liveTrigger(i); });
+    const state = s.patch ? (queued ? 'Waiting for the beat…' : on ? 'Playing' : coming ? 'Fading in' : 'Ready') : 'Empty';
+    const el = h('div', {class:'lslot' + (s.patch ? ' full' : '') + (on ? ' on' : '') + (coming ? ' going' : '') + (queued ? ' queued' : ''), role:'button', tabindex: 0, 'aria-label':'Play clip ' + (i + 1)},
+      h('div', {class:'lnum', text: String(i + 1)}), name, h('div', {class:'lstate', text: state}), h('div', {class:'ltctl'}, trans, fade, beats, fv), note, menu, file);
+    el.addEventListener('click', () => { if (s.patch) clipTrigger(i); });
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target === el) clipTrigger(i); });
     return el;
   };
-  liveGrid.replaceChildren(...live.slots.map(card));
-  document.getElementById('lbpm').value = live.bpm;
+  liveGrid.replaceChildren(...live.slots.slice(0, cnt).map(card));
+  document.getElementById('lbpm').value = live.bpm; document.getElementById('lcount').value = cnt; document.getElementById('lquant').value = live.quant;
+  const sync = document.getElementById('lsync'); sync.classList.toggle('pink', live.extSync); sync.textContent = live.extSync ? 'Synced to MIDI clock' : 'Sync';
+  const lay = document.getElementById('llayout');
+  lay.replaceChildren(h('option', {value:'learned', text:'Learned notes'}), ...Object.entries(LAYOUTS).map(([k, L]) => h('option', {value: k, text: L.name})), ...userLayouts.map(L => h('option', {value: 'u:' + L.name, text: L.name + ' (saved)'})));
+  lay.value = live.layout;
 }
-// Live tempo: drives synced crossfades and every Sync BPM effect inside the slot patches.
+// Clips tempo: drives quantized launches, beat-length fades and every Sync BPM effect in the clips.
+function setClipsBpm(v){ live.bpm = Math.max(20, Math.min(2000, +v || 120)); const b = nodes.get(live.bpmId); if (b) setParam(b, 'bpm', live.bpm); document.getElementById('lbpm').value = (+live.bpm).toFixed(1); liveSave(); }
 {
   const inp = document.getElementById('lbpm'); inp.value = live.bpm;
-  const set = v => { live.bpm = Math.max(20, Math.min(2000, +v || 120)); inp.value = live.bpm; const b = nodes.get(live.bpmId); if (b) setParam(b, 'bpm', live.bpm); liveSave(); };
-  inp.addEventListener('change', () => set(inp.value));
+  inp.addEventListener('change', () => setClipsBpm(inp.value));
   let taps = [];
-  document.getElementById('ltap').addEventListener('click', () => { const now = performance.now(); taps = taps.filter(t => now - t < 2500); taps.push(now); if (taps.length >= 2) set((60000/((taps[taps.length-1] - taps[0])/(taps.length - 1))).toFixed(1)); });
+  document.getElementById('ltap').addEventListener('click', () => { const now = performance.now(); taps = taps.filter(t => now - t < 2500); taps.push(now); if (taps.length >= 2) setClipsBpm((60000/((taps[taps.length-1] - taps[0])/(taps.length - 1))).toFixed(1)); });
+  document.getElementById('lsync').addEventListener('click', () => { live.extSync = !live.extSync; if (live.extSync){ midiInit().catch(err => toast(err.message)); toast('Following MIDI clock. Start your drum machine or sequencer.'); } liveRender(); });
+  const q = document.getElementById('lquant'); q.replaceChildren(...QUANTS.map(([v, l]) => h('option', {value: v, text: l}))); q.value = live.quant;
+  q.addEventListener('change', () => { live.quant = q.value; liveSave(); });
+  const c = document.getElementById('lcount'); c.addEventListener('change', () => { live.count = Math.max(2, Math.min(32, Math.round(+c.value) || 16)); liveSave(); liveRender(); });
+  document.getElementById('llayout').addEventListener('change', e => applyLayout(e.target.value));
+  document.getElementById('lsavelay').addEventListener('click', async () => {
+    const nm = await askDialog('Name this note layout (for example the controller it’s for):', {input: 'My controller', ok: 'Save'}); if (!nm || !nm.trim()) return;
+    const L = {name: nm.trim(), notes: live.slots.map(s => ({note: s.note, ch: s.ch}))};
+    userLayouts = userLayouts.filter(x => x.name !== L.name).concat([L]); saveUserLayouts(); live.layout = 'u:' + L.name; liveSave(); liveRender(); toast('Saved the layout “' + L.name + '”.');
+  });
+  document.getElementById('lexplay').addEventListener('click', () => downloadJson({seedsClipLayout: 1, name: 'Clip layout', notes: live.slots.map(s => ({note: s.note, ch: s.ch}))}, 'clip-layout.seedsmidi.json'));
+  const fi = h('input', {type:'file', accept:'.json,application/json', hidden: true}); document.body.append(fi);
+  document.getElementById('limplay').addEventListener('click', () => fi.click());
+  fi.addEventListener('change', async () => { const f = fi.files[0]; fi.value = ''; if (!f) return; try { const d = JSON.parse(await f.text()); if (!Array.isArray(d.notes)) throw new Error('not a layout file'); const nm = d.name && d.name !== 'Clip layout' ? d.name : f.name.replace(/(\.seedsmidi)?\.json$/i, ''); userLayouts = userLayouts.filter(x => x.name !== nm).concat([{name: nm, notes: d.notes}]); saveUserLayouts(); applyLayout('u:' + nm); toast('Imported the layout “' + nm + '”.'); } catch(e){ toast('Couldn’t import: ' + e.message); } });
 }
-document.getElementById('lexport').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify({seedsLiveSet: 1, slots: live.slots, bpm: live.bpm}, null, 1)], {type:'application/json'});
-  const a = h('a', {href: URL.createObjectURL(blob), download: 'live-set.seedsset.json'}); document.body.append(a); a.click(); a.remove();
-});
+document.getElementById('lexport').addEventListener('click', () => downloadJson({seedsLiveSet: 1, slots: live.slots, bpm: live.bpm, count: live.count, quant: live.quant}, 'clips-set.seedsset.json'));
 {
   const f = document.getElementById('limportf');
   document.getElementById('limport').addEventListener('click', () => f.click());
-  f.addEventListener('change', async () => { const file = f.files[0]; f.value = ''; if (!file) return; try { const d = JSON.parse(await file.text()); if (!Array.isArray(d.slots)) throw new Error('not a live set'); live.slots = d.slots.slice(0, 16); while (live.slots.length < 16) live.slots.push({name:'', patch:null, note:null, ch:null}); live.bpm = d.bpm || live.bpm; liveSave(); liveRender(); toast('Loaded the live set.'); } catch(e){ toast('Couldn’t load that set: ' + e.message); } });
+  f.addEventListener('change', async () => { const file = f.files[0]; f.value = ''; if (!file) return; try { const d = JSON.parse(await file.text()); if (!Array.isArray(d.slots)) throw new Error('not a clips set'); live.slots = d.slots.slice(0, 32); while (live.slots.length < 32) live.slots.push({name:'', patch:null, note:null, ch:null}); live.bpm = d.bpm || live.bpm; live.count = d.count || Math.max(2, Math.min(32, d.slots.length)); live.quant = d.quant || live.quant; live.active = -1; liveSave(); liveRender(); toast('Loaded the clips set.'); } catch(e){ toast('Couldn’t load that set: ' + e.message); } });
 }
-// MIDI notes for slots are handled before control mappings, so they never move sliders.
+// MIDI clock: counts ticks for quantizing and works out the tempo when Sync is on.
+let clkTimes = [];
+function clipsClock(st){
+  if (st === 0xFA){ live.ticks = 0; clkTimes = []; if (live.extSync){ live.t0 = performance.now(); } return; }
+  if (st === 0xFC) return;
+  if (st !== 0xF8) return;
+  live.ticks++;
+  const now = performance.now(); clkTimes.push(now); if (clkTimes.length > 48) clkTimes.shift();
+  if (live.extSync && clkTimes.length >= 24 && live.ticks % 12 === 0){
+    const iv = (clkTimes[clkTimes.length - 1] - clkTimes[0])/(clkTimes.length - 1), bpm = 60000/(iv*24);
+    if (bpm > 19 && bpm < 2001 && Math.abs(bpm - live.bpm) > 0.05) setClipsBpm(bpm.toFixed(1));
+  }
+}
+// Clip notes work in every mode (except Simple) and are checked before knob mappings, so they never move sliders.
 function liveMidi(type, ch, d1, d2){
-  if (!live.on || type !== 0x90 || d2 === 0) return false;
-  if (live.learnSlot >= 0){ const s = live.slots[live.learnSlot]; live.slots.forEach(o => { if (o !== s && o.note === d1 && o.ch === ch){ o.note = o.ch = null; } }); s.note = d1; s.ch = ch; live.learnSlot = -1; liveSave(); liveRender(); return true; }
-  const i = live.slots.findIndex(s => s.patch && s.note === d1 && s.ch === ch);
-  if (i >= 0){ liveTrigger(i); return true; }
+  if (settings.simple || type !== 0x90 || d2 === 0) return false;
+  if (live.learnSlot >= 0){ const s = live.slots[live.learnSlot]; live.slots.forEach(o => { if (o !== s && o.note === d1 && (o.ch === ch || o.ch == null)){ o.note = o.ch = null; } }); s.note = d1; s.ch = ch; live.learnSlot = -1; live.layout = 'learned'; liveSave(); liveRender(); return true; }
+  const i = live.slots.slice(0, live.count).findIndex(s => s.patch && s.note === d1 && (s.ch == null || s.ch === ch));
+  if (i >= 0){ clipTrigger(i); return true; }
   return false;
 }
 
@@ -7946,6 +8628,14 @@ function conformOut(src){
   const set = () => { OUT.aspect = a.value; OUT.res = r.value; OUT.fit = f.value; outKey = null; paint(); try { localStorage.setItem(STORE + ':outfmt', JSON.stringify(OUT)); } catch(e){} };
   [a, r, f].forEach(el => el.addEventListener('change', set)); paint();
 }
+
+/* ---------- Warn before closing with unsaved takes ---------- */
+function unsavedTakes(){ const r = nodes.get('rec'); return r && r.takes ? r.takes.filter(t => !t.saved).length : 0; }
+window.seedsUnsaved = unsavedTakes;   // the desktop app asks this before closing
+window.addEventListener('beforeunload', e => {
+  const r = nodes.get('rec');
+  if (unsavedTakes() || (r && isRec(r))){ e.preventDefault(); e.returnValue = 'You have recordings or stills that haven’t been saved.'; return e.returnValue; }
+});
 
 /* ---------- boot ---------- */
 renderCustom();
