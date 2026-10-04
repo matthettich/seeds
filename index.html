@@ -1031,6 +1031,17 @@ body.leftcol .split > .pbar, body.simple .split > .pbar, body.live .split > .pba
 .bstrip > b, .bstrip > .bcount, .bstrip > .bhint{line-height:1; pointer-events:none}
 .bank{height:230px}
 body.sliders .dock.bottom{bottom:240px}
+
+/* Control mode only links faders: no module list, no moving, deleting or re-patching modules */
+body.sliders .drawer{display:none !important}
+body.sliders .split{grid-template-columns:0 minmax(240px,1fr) 8px min(var(--sw, 42%), calc(100vw - 300px)) !important}
+body.sliders.viewcol .split{grid-template-columns:0 minmax(0,1fr) 8px 38px !important}
+body.sliders.leftcol .split{grid-template-columns:0 38px 8px minmax(0,1fr) !important}
+body.sliders .ws .node .jack{pointer-events:none}
+body.sliders .ws .node > header{pointer-events:none}
+body.sliders .ws .node > header .bypass{pointer-events:auto}
+body.sliders .ws .node > header .x, body.sliders .ws .node > header .fold, body.sliders .ws .rz, body.sliders .ws .decor .x{display:none !important}
+body.sliders .dock .jack{pointer-events:none}
 </style>
 </head>
 <body>
@@ -6292,11 +6303,26 @@ function closeOutput(n){
   n.popup = null; n.pcv = null; n.pctx = null;
   setOutBtns(n);
 }
+// The output window draws on its own refresh (no tearing lines) and at its exact pixel size (no resampling stripes).
 function drawOutput(n, src){
   const w = n.popup;
   if (!w || w.closed){ closeOutput(n); return; }
   const dpr = w.devicePixelRatio || 1, W = Math.max(2, Math.round(w.innerWidth*dpr)), H = Math.max(2, Math.round(w.innerHeight*dpr));
-  try { fitCanvas(n.pcv, W, H); drawFit(n.pctx, src, W, H, '#000'); } catch(e){}
+  // Copy this frame now (the shared picture changes on the next frame), then show it when that window refreshes.
+  if (!n.pbuf) n.pbuf = mkCanvas(2, 2);
+  try { fitCanvas(n.pbuf.cv, W, H); n.pbuf.ctx.imageSmoothingQuality = 'high'; drawFit(n.pbuf.ctx, src, W, H, '#000'); } catch(e){ return; }
+  const show = () => {
+    n.pPending = false;
+    try {
+      fitCanvas(n.pcv, W, H); n.pcv.style.width = (W/dpr) + 'px'; n.pcv.style.height = (H/dpr) + 'px';
+      n.pctx.imageSmoothingEnabled = false; n.pctx.drawImage(n.pbuf.cv, 0, 0);
+    } catch(e){}
+  };
+  const now = performance.now();
+  // If that window isn't refreshing (hidden, or a system that pauses it), draw straight away so it never goes blank.
+  if (n.pPending && now - n.pT > 150){ show(); return; }
+  if (n.pPending) return; n.pPending = true; n.pT = now;
+  (w.requestAnimationFrame || window.requestAnimationFrame).call(w, show);
 }
 window.addEventListener('pagehide', () => { for (const n of nodes.values()) if (n.popup) try { n.popup.close(); } catch(e){} });
 
@@ -7658,6 +7684,7 @@ function showMenu(x, y, items){
 function hideMenu(){ ctx.hidden = true; }
 window.addEventListener('pointerdown', e => { if (!ctx.hidden && !ctx.contains(e.target)) hideMenu(); }, true);
 ws.addEventListener('contextmenu', e => {
+  if (document.body.classList.contains('sliders')){ e.preventDefault(); return; } // Control mode doesn't edit the patch
   e.preventDefault();
   const el = e.target.closest('.node'), n = el && [...nodes.values()].find(m => m.el === el);
   if (n && !selected.has(n.id)){ clearSel(); setSel(n, true); }
@@ -7681,7 +7708,7 @@ ws.addEventListener('contextmenu', e => {
 });
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !ctx.hidden) hideMenu();
-  if ((e.key === 'Delete' || e.key === 'Backspace') && selected.size && !(e.target.closest && e.target.closest('input, select, textarea, [contenteditable="true"]')) && !(learn.on && learn.target)){
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selected.size && !document.body.classList.contains('sliders') && !(e.target.closest && e.target.closest('input, select, textarea, [contenteditable="true"]')) && !(learn.on && learn.target)){
     e.preventDefault(); for (const m of selNodes()) removeNode(m.id); clearSel();
   }
 });
@@ -8266,6 +8293,7 @@ window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (k === 'z' && !e.shiftKey){ e.preventDefault(); undo(); }
   else if ((k === 'z' && e.shiftKey) || k === 'y'){ e.preventDefault(); redo(); }
+  else if (document.body.classList.contains('sliders') && 'cvdxz'.includes(k)){ /* Control mode: the patch can't be changed */ }
   else if (k === 'c' && !perf.on && !simple.on){ if (copySel()) e.preventDefault(); }
   else if (k === 'v' && !perf.on && !simple.on && clip){ e.preventDefault(); pasteClip(); }
   else if (k === 'd' && !perf.on && !simple.on){ e.preventDefault(); if (copySel(true)) pasteClip(); }
