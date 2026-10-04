@@ -1042,6 +1042,7 @@ body.sliders .ws .node > header{pointer-events:none}
 body.sliders .ws .node > header .bypass{pointer-events:auto}
 body.sliders .ws .node > header .x, body.sliders .ws .node > header .fold, body.sliders .ws .rz, body.sliders .ws .decor .x{display:none !important}
 body.sliders .dock .jack{pointer-events:none}
+.row.sl.banktarget{outline:2px solid var(--mod); outline-offset:2px; border-radius:4px; background:color-mix(in srgb, var(--mod) 14%, transparent)}
 </style>
 </head>
 <body>
@@ -1101,7 +1102,7 @@ body.sliders .dock .jack{pointer-events:none}
         <div class="sethead">Performance</div>
         <label class="setsel"><span>Quality</span><select id="setquality"><option value="full">Full quality</option><option value="draft">Draft (faster, half resolution)</option></select></label>
         <div class="setsub" id="gpuinfo"></div>
-        <label class="setrow" id="gfxrow" hidden><input type="checkbox" id="setgfx"><span><b>Smooth external display</b><br><span class="setsub">Try this if an external monitor or projector shows lines or tearing. Lets Windows choose the graphics chip for the screen it’s connected to. Needs a restart.</span></span></label>
+        <label class="setrow" id="gfxrow" hidden><input type="checkbox" id="setgfx"><span><b>Smooth external display</b><br><span class="setsub">On: Windows chooses the graphics chip for each screen, which avoids lines and tearing on external monitors and projectors. Off: always use the powerful (Nvidia) chip, which can be faster. Needs a restart.</span></span></label>
         <label class="setrow" id="hwrow" hidden><input type="checkbox" id="sethw"><span><b>Record with the graphics card</b><br><span class="setsub">Faster recording using the Nvidia/AMD encoder. Some drivers refuse it (“video encoding failed”); if that happens, turn this off. Needs a restart.</span></span></label>
         <label class="setsel"><span>Generators</span><select id="setgenfps"><option value="0">Redraw every frame</option><option value="30">Redraw 30 times a second</option><option value="20">Redraw 20 times a second</option><option value="15">Redraw 15 times a second</option></select></label>
         <div class="setsub">The frame rate and CPU load are shown in the top bar. Drawn generators (Contour bloom, Geo composer, Strata…) are the heaviest part of a patch: redrawing them less often keeps everything else smooth. Draft quality makes effects and generators lighter. Recordings use the same settings.</div>
@@ -1923,6 +1924,9 @@ void main(){
    prev = hueRot(prev, hue)*gain;
  }
  vec3 base = clamp(prev, 0., 1.)*fb, inp = texture(tex1, uv).rgb, bl;
+ // Camera at screen: the room everywhere, and inside the "screen" the previous picture, smaller (an endless tunnel).
+ // Input level is how much of the room reflects on the screen glass.
+ if (mode > 4.5){ bool inside = t.x >= 0. && t.x <= 1. && t.y >= 0. && t.y <= 1.; o = vec4(inside ? mix(base, inp, inl*.35) : inp, 1.); return; }
  if (mode < .5) bl = 1. - (1. - base)*(1. - inp);
  else if (mode < 1.5) bl = min(base + inp, 1.);
  else if (mode < 2.5) bl = max(base, inp);
@@ -3152,7 +3156,7 @@ const DEFS = {
       looks.addEventListener('change', () => { const L = FB_LOOKS[looks.value]; if (L){ for (const [k, v] of Object.entries(L)) setParam(n, k, v); save(); toast('Feedback look: ' + looks.selectedOptions[0].text + '. Adjust anything from here.'); } looks.value = ''; });
       const kids = [
         row('Look', looks),
-        choice(n, 'mode', 'Input', [['screen','Screen'],['lighter','Add'],['lighten','Lighten'],['difference','Difference'],['source-over','Over']]),
+        choice(n, 'mode', 'Input', [['screen','Screen'],['lighter','Add'],['lighten','Lighten'],['difference','Difference'],['source-over','Over'],['nest','Camera at screen (nested)']]),
         slider(n, 'input', 'Input level', 0, 1, 0.01, pct),
         slider(n, 'feedback', 'Feedback', 0, 0.99, 0.01, pct),
         slider(n, 'zoom', 'Zoom', 0.9, 1.1, 0.001, v => v.toFixed(3) + '×'),
@@ -3183,7 +3187,7 @@ const DEFS = {
         if (n.clear){ n.clear = false; GLX.pass(FS.black, prev, [], {}); }
         GLX.pass(FS.fb, out, [prev, src], {fb: Math.pow(P(n, 'feedback'), k), z: Math.pow(P(n, 'zoom'), k), rot: P(n, 'rotate')*k*Math.PI/180,
           sh: [P(n, 'shiftX')*W*k, P(n, 'shiftY')*H*k], hue: P(n, 'hue')*k*Math.PI/180, blur: P(n, 'blur'), gain: P(n, 'gain'), inl: P(n, 'input'),
-          mode: ['screen','lighter','lighten','difference','source-over'].indexOf(n.params.mode)});
+          mode: ['screen','lighter','lighten','difference','source-over','nest'].indexOf(n.params.mode)});
       } catch(e){ console.error(e); return src; }
       return out;
     }
@@ -8698,11 +8702,11 @@ document.getElementById('fsaveex').addEventListener('click', async () => {
 // Ready-made Feedback settings. "Camera at screen" is the classic look of pointing a camera at its own monitor.
 const FB_LOOKS = {
   // Each frame keeps under 100% of the last one (feedback × gain < 1), so the picture settles instead of burning to white.
-  camera: {mode:'source-over', input:0.6, feedback:0.9, zoom:0.94, rotate:1.5, shiftX:0, shiftY:0, hue:2, blur:0.6, gain:1.06, mix:1},
+  camera: {mode:'nest', input:0.15, feedback:0.97, zoom:0.86, rotate:2, shiftX:0, shiftY:0, hue:1.5, blur:0.5, gain:1.04, mix:1},
   tunnel: {mode:'lighten', input:0.8, feedback:0.95, zoom:0.96, rotate:3, shiftX:0, shiftY:0, hue:4, blur:0, gain:1, mix:1},
   smear: {mode:'source-over', input:0.25, feedback:0.97, zoom:1.003, rotate:0, shiftX:0.004, shiftY:0, hue:0, blur:0.4, gain:1, mix:1},
   trails: {mode:'lighten', input:1, feedback:0.88, zoom:1, rotate:0, shiftX:0, shiftY:0, hue:0, blur:0, gain:1, mix:1},
-  bloom: {mode:'screen', input:0.5, feedback:0.85, zoom:1.02, rotate:0.3, shiftX:0, shiftY:0, hue:6, blur:2, gain:1, mix:1}
+  bloom: {mode:'lighter', input:0.18, feedback:0.82, zoom:1.02, rotate:0.3, shiftX:0, shiftY:0, hue:6, blur:2, gain:1, mix:1}
 };
 function imgStep(n, d){
   if (!n.imgs.length) return;
@@ -9225,11 +9229,26 @@ function bankDrag(e, i, jack){
   const r0 = jack.getBoundingClientRect(), x0 = r0.left + r0.width/2, y0 = r0.top + r0.height/2;
   const svgEl = document.createElementNS(SVGNS, 'svg'); svgEl.setAttribute('class', 'bankline');
   const ln = document.createElementNS(SVGNS, 'line'); ln.setAttribute('x1', x0); ln.setAttribute('y1', y0); ln.setAttribute('x2', x0); ln.setAttribute('y2', y0); svgEl.append(ln); document.body.append(svgEl);
-  const mv = ev => { ln.setAttribute('x2', ev.clientX); ln.setAttribute('y2', ev.clientY); };
+  // Find the slider under the pointer by position: its row, or its purple jack (jacks can't be clicked in Control mode).
+  const rowAt = (x, y) => {
+    let best = null, bestD = 1e9;
+    for (const r of document.querySelectorAll('.ws .node .row.sl[data-node][data-key]')){
+      if (!r.offsetParent) continue;
+      const b = r.getBoundingClientRect(), jk = r.querySelector('.jack'), jb = jk ? jk.getBoundingClientRect() : b;
+      const inRow = x >= b.left && x <= b.right && y >= b.top - 2 && y <= b.bottom + 2;
+      const dj = Math.hypot(x - (jb.left + jb.width/2), y - (jb.top + jb.height/2));
+      if (inRow){ return r; }
+      if (dj < 16 && dj < bestD){ best = r; bestD = dj; }
+    }
+    return best;
+  };
+  let hov = null;
+  const mv = ev => { ln.setAttribute('x2', ev.clientX); ln.setAttribute('y2', ev.clientY); const r = rowAt(ev.clientX, ev.clientY); if (r !== hov){ if (hov) hov.classList.remove('banktarget'); hov = r; if (hov) hov.classList.add('banktarget'); } };
   const up = ev => {
     window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); svgEl.remove();
-    const el = document.elementFromPoint(ev.clientX, ev.clientY), row = el && el.closest && el.closest('.row.sl[data-node][data-key]');
-    if (!row){ return; }
+    if (hov) hov.classList.remove('banktarget');
+    const row = rowAt(ev.clientX, ev.clientY);
+    if (!row){ toast('Drop the line onto a slider (or its purple jack) in a module.'); return; }
     const n = nodes.get(row.dataset.node), key = row.dataset.key;
     if (!n || !n.meta || !n.meta[key]){ toast('That control can’t be linked to a fader.'); return; }
     if (!bank.maps.some(m => m.s === i && m.node === n.id && m.key === key)) bank.maps.push({s: i, node: n.id, key});
