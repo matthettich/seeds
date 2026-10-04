@@ -944,6 +944,7 @@ body.sliders svg.cables *{pointer-events:none !important}
 #psel{max-width:280px; min-width:180px}
 /* record the main view: hide the Rec. Video jack */
 body.recmain .recvideoport{display:none !important}
+.rpauseport{display:none !important}
 .dockport.rpauseport{border:2px solid var(--rec) !important}
 .dockport.rpauseport.lit{background:#f0c23a !important; color:#111}
 .recdock.paused .recbtn{background:#f0c23a}
@@ -954,6 +955,40 @@ body.recmain .recvideoport{display:none !important}
 .takes .take .livebtn{display:none !important}
 @media (pointer: coarse){ body.simplemode .seg button{font-size:14px; padding:7px 9px} }
 @media (pointer: coarse) and (max-width: 760px){ body.simplemode .seg{display:none} }
+
+body.simpleonly #mpatch, body.simpleonly #mperf, body.simpleonly #msliders, body.simpleonly #mlive{display:none}
+.exrestore{margin:6px 4px 2px; font-size:12px}
+.stempo .lbpm{width:68px}
+
+.ports.padports{display:grid; grid-template-columns:1fr auto; align-items:stretch; gap:8px}
+.ports.padports > .pad{grid-row:1 / span 3; min-height:36px; width:100%}
+.node.nofold > header{cursor:grab}
+svg.banklinks{position:fixed; inset:0; width:100vw; height:100vh; pointer-events:none; z-index:1000003}
+svg.banklinks path{fill:none; stroke:var(--mod); stroke-width:2; opacity:.55}
+svg.banklinks circle{fill:var(--mod); opacity:.8}
+
+.togrow{min-width:0}
+.togglebtn{width:100%; height:54px; font-size:18px; font-weight:700; letter-spacing:.05em; border:2px solid var(--edge); border-radius:10px; background:var(--panel-2); color:var(--muted); cursor:pointer}
+.togglebtn.on{background:var(--edge); color:var(--panel)}
+:root[data-skinbase="minimal"] .togglebtn, :root[data-skin="neon"] .togglebtn{border-radius:0}
+.ledlamp{width:100%; height:34px; margin:2px 0; border-radius:4px; background:color-mix(in srgb, var(--panel-2) 70%, #000 30%); border:2px solid var(--edge); cursor:context-menu}
+.node.fam-mon .ledlamp{min-width:60px}
+.numbox{width:100%; font:inherit; font-size:24px; font-weight:700; text-align:center; padding:6px; border:1px solid var(--edge); border-radius:6px; background:var(--panel-2); color:var(--ink); font-variant-numeric:tabular-nums}
+.numsmall{width:80px; font:inherit; padding:3px 6px; border:1px solid var(--edge); border-radius:5px; background:var(--panel-2); color:var(--ink)}
+
+.onoffj{display:inline-flex; align-items:center; margin-left:-4px; margin-right:2px}
+.onoffj .jack{position:static !important; transform:scale(.85)}
+
+/* audio modules colored by type: inputs (orange), effects (magenta), mix and output (deep blue); audio-to-visuals stays rose */
+.fam-ain{--edge:#e07a3f; --panel:#fbe6d8; --panel-2:#f5d4bd} .fam-afx{--edge:#b24fb0; --panel:#f3def3; --panel-2:#e9c8e8} .fam-aout{--edge:#3f6fb5; --panel:#dce8f7; --panel-2:#c8d9f0}
+:root[data-skinbase="minimal"] .fam-ain, :root[data-skinbase="minimal"] .fam-afx, :root[data-skinbase="minimal"] .fam-aout{--panel:#ffffff; --panel-2:#f3f3f3}
+:root[data-skinbase="minimal"] .fam-ain{--edge:#e07a3f} :root[data-skinbase="minimal"] .fam-afx{--edge:#b24fb0} :root[data-skinbase="minimal"] .fam-aout{--edge:#3f6fb5}
+:root[data-skin="mincolor"] .fam-ain{--panel:#fbe6d8; --panel-2:#f5d4bd} :root[data-skin="mincolor"] .fam-afx{--panel:#f3def3; --panel-2:#e9c8e8} :root[data-skin="mincolor"] .fam-aout{--panel:#dce8f7; --panel-2:#c8d9f0}
+:root[data-theme="dark"] .fam-ain, :root[data-skin="neon"] .fam-ain, :root[data-skin="minblack"] .fam-ain, :root[data-skin="mincolorblack"] .fam-ain{--edge:#ff9a55; --panel:#2e1a0e; --panel-2:#3d2312}
+:root[data-theme="dark"] .fam-afx, :root[data-skin="neon"] .fam-afx, :root[data-skin="minblack"] .fam-afx, :root[data-skin="mincolorblack"] .fam-afx{--edge:#e36fe0; --panel:#2b112b; --panel-2:#3a173a}
+:root[data-theme="dark"] .fam-aout, :root[data-skin="neon"] .fam-aout, :root[data-skin="minblack"] .fam-aout, :root[data-skin="mincolorblack"] .fam-aout{--edge:#6f9cff; --panel:#101d33; --panel-2:#162744}
+:root[data-skin="minblack"] .fam-ain, :root[data-skin="minblack"] .fam-afx, :root[data-skin="minblack"] .fam-aout{--panel:#000; --panel-2:#141414}
+:root[data-skin="monotone"] .fam-ain, :root[data-skin="monotone"] .fam-afx, :root[data-skin="monotone"] .fam-aout{--edge:#111 !important; --panel:#fff; --panel-2:#f2f2f2}
 </style>
 </head>
 <body>
@@ -985,6 +1020,7 @@ body.recmain .recvideoport{display:none !important}
     <div class="setmenu setleft" id="setmenu" hidden>
       <div class="setsec">
         <label class="setrow"><input type="checkbox" id="settips"><span><b>Show tips</b><br><span class="setsub">The help note in the corner of the patch.</span></span></label>
+        <label class="setrow"><input type="checkbox" id="setsimpleonly"><span><b>Simple mode only</b><br><span class="setsub">Hides Patch, Presentation, Control and Clips. ...Seeds always opens in Simple mode.</span></span></label>
         <label class="setrow"><input type="checkbox" id="setrecmain"><span><b>Patch main view to record video</b><br><span class="setsub">The recorder always records what the main view shows, and the Rec. Video jack is hidden.</span></span></label>
         <label class="setrow"><input type="checkbox" id="setnoex"><span><b>Hide Examples</b><br><span class="setsub">Removes the Examples menu from the top bar.</span></span></label>
         <label class="setrow"><input type="checkbox" id="setnorec"><span><b>Hide recorder</b><br><span class="setsub">The main view fills the whole right side.</span></span></label>
@@ -1056,7 +1092,7 @@ body.recmain .recvideoport{display:none !important}
   </div>
   <div class="livegrid" id="livegrid"></div>
 </div>
-<div class="simplev" id="simple"><div class="simplebar"><button class="collbtn" data-coll="left" title="Collapse this section"><span class="dchev"></span></button><span class="sttl">Simple mode</span><span class="pbadge">Camera, then your effects, then the screen and recorder.</span><span class="spacer"></span><span class="slotctl"><span>Effect slots</span><button class="tb" id="slotminus" aria-label="Fewer effect slots">−</button><b id="slotnum">6</b><button class="tb" id="slotplus" aria-label="More effect slots">+</button></span></div><div class="simplerow" id="simplerow"></div></div>
+<div class="simplev" id="simple"><div class="simplebar"><button class="collbtn" data-coll="left" title="Collapse this section"><span class="dchev"></span></button><span class="sttl">Simple mode</span><span class="pbadge">Camera, then your effects, then the screen and recorder.</span><span class="spacer"></span><label class="srcsel stempo">Tempo <input type="number" id="sbpm" min="20" max="2000" step="0.1" class="lbpm"> BPM</label><button class="tb" id="stap">Tap</button><span class="slotctl"><span>Effect slots</span><button class="tb" id="slotminus" aria-label="Fewer effect slots">−</button><b id="slotnum">6</b><button class="tb" id="slotplus" aria-label="More effect slots">+</button></span></div><div class="simplerow" id="simplerow"></div></div>
 <div class="perf" id="perf">
   <div class="perfbar"><button class="collbtn" data-coll="left" title="Collapse this section"><span class="dchev"></span></button>
     <button class="tb" id="plock" aria-pressed="false">Lock layout</button>
@@ -1216,8 +1252,8 @@ function slider(n, key, label, min, max, step, fmt, onchange, modable = true){
   return r;
 }
 const FAMILY = {
-  camera:'src', player:'src', audioin:'aud', midi:'midi', midiclock:'midi',
-  osc:'gen', shapes:'gen', text:'gen', lineart:'gen', bloom:'gen', text3d:'gen', topo:'gen', iso:'gen', geo:'gen', shell:'gen', shards:'gen', strata:'gen', amoeba:'gen', vector3d:'gen', liveout:'mix', gin:'grp', gout:'grp', image:'src', gif:'src', counter:'gate', bpm:'gate', aplayer:'aud', speakers:'aud', ameter:'aud', again:'aud', apan:'aud', afilter:'aud', aeq:'aud', acomp:'aud', adist:'aud', adelay:'aud', areverb:'aud', amix:'aud', atrig:'aud', attenuator:'util', scale:'util', send:'util', receive:'util', blobs:'gen', lines:'gen', audioctl:'aud',
+  camera:'src', player:'src', audioin:'ain', midi:'midi', midiclock:'midi',
+  osc:'gen', shapes:'gen', text:'gen', lineart:'gen', bloom:'gen', text3d:'gen', topo:'gen', iso:'gen', geo:'gen', shell:'gen', shards:'gen', strata:'gen', ramp:'gen', vecpat:'gen', vosc:'gen', displace:'geo', chromab:'geo', rutt:'geo', colorama:'tex', wfold:'tex', vfilter:'tex', halftone:'tex', ascii:'tex', mosaic:'tex', edgeglow:'tex', framerate:'time', smear:'time', lumakey:'mix', chromakey:'mix', toggle:'gate', led:'mon', intbox:'util', floatbox:'util', selnum:'gate', amoeba:'gen', vector3d:'gen', liveout:'mix', gin:'grp', gout:'grp', image:'src', gif:'src', counter:'gate', bpm:'gate', aplayer:'ain', speakers:'aout', ameter:'aout', again:'afx', apan:'afx', afilter:'afx', aeq:'afx', acomp:'afx', adist:'afx', adelay:'afx', areverb:'afx', amix:'aout', atrig:'aud', attenuator:'util', scale:'util', send:'util', receive:'util', blobs:'gen', lines:'gen', audioctl:'aud',
   kaleido:'geo', mirror:'geo', rotate:'geo', vzoom:'geo', crop:'geo', tile:'geo', warp:'geo',
   cadj:'tex', bw:'tex', poster:'tex', gmap:'tex', edge:'tex', pixelate:'tex', crt:'tex',
   rgbdelay:'time', vdelay:'time', slitscan:'time', feedback:'time', stutter:'time', looper:'time',
@@ -1479,7 +1515,7 @@ async function playerLoadPath(n){
   n.video.onerror = () => { n.st.textContent = 'Couldn’t find “' + n.params.file + '”. Load it again.'; n.st.classList.add('err'); n.url = null; };
   n.video.src = n.url; n.video.loop = !!n.params.loop;
   n.st.textContent = n.params.file; n.st.classList.remove('err');
-  try { await n.video.play(); } catch(e){}
+  if (n.params.autoplay !== false){ try { await n.video.play(); } catch(e){} }
 }
 async function playerLoad(n, file){
   ensureAudio();
@@ -1546,6 +1582,8 @@ vec2 cov(vec2 u, vec2 s){ float ar = s.x/s.y, ao = res.x/res.y; vec2 k = ar > ao
     gl.viewport(0, 0, W, H); gl.useProgram(p.pr);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     const L = name => (name in p.loc) ? p.loc[name] : (p.loc[name] = gl.getUniformLocation(p.pr, name));
+    // Empty texture slots are cleared, so a shader never reads the picture it's drawing into (a feedback loop the GPU rejects).
+    for (let i = 0; i < 4; i++) if (!(inputs || [])[i]){ gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, null); }
     (inputs || []).forEach((v, i) => {
       if (!v) return;
       gl.activeTexture(gl.TEXTURE0 + i);
@@ -1880,6 +1918,111 @@ void main(){ vec3 c = texture(tex0, uv).rgb; float l = dot(c, vec3(.299,.587,.11
   gmap: `uniform vec3 c0, c1, c2; uniform float con;
 void main(){ float l = dot(texture(tex0, uv).rgb, vec3(.299,.587,.114)); l = clamp((l - .5)*con + .5, 0., 1.);
  vec3 c = l < .5 ? mix(c0, c1, l*2.) : mix(c1, c2, (l - .5)*2.); o = vec4(c, 1.); }`,
+  ramp: `uniform float kind, ang, rep, ph, hard, mir; uniform vec3 ca, cb;
+void main(){ vec2 p = uv - .5; p.x *= res.x/res.y; float t;
+ if (kind < .5){ vec2 d = vec2(cos(ang), sin(ang)); t = dot(p, d) + .5; }
+ else if (kind < 1.5) t = length(p)*1.4;
+ else if (kind < 2.5) t = atan(p.y, p.x)/6.2831853 + .5;
+ else t = (abs(p.x) + abs(p.y))*1.2;
+ t = t*rep + ph; float f = fract(t); if (mir > .5) f = 1. - abs(f*2. - 1.);
+ f = hard > .5 ? step(.5, f) : f; o = vec4(mix(ca, cb, f), 1.); }`,
+  vecpat: `uniform float mode, sides, dens, rot, lw, pulse, warp; uniform vec3 lc, bc;
+float poly(vec2 p, float n){ float a = atan(p.y, p.x), r = 6.2831853/n; return cos(floor(.5 + a/r)*r - a)*length(p); }
+void main(){ vec2 p = (uv - .5)*vec2(res.x/res.y, 1.); float c = cos(rot), s = sin(rot); p = mat2(c, -s, s, c)*p;
+ p *= 1. + pulse*.15*sin(time*2.); p += warp*.06*vec2(sin(p.y*9. + time), cos(p.x*9. + time));
+ float v, w = lw*.02*dens;
+ if (mode < .5){ float d = poly(p, sides)*dens*6.; v = abs(fract(d) - .5)*2.; v = 1. - smoothstep(0., lw*.2 + .02, v*.5); }
+ else if (mode < 1.5){ float a = atan(p.y, p.x)/6.2831853*dens*12.; v = 1. - smoothstep(0., lw*.12 + .02, abs(fract(a) - .5)); v *= smoothstep(.02, .06, length(p)); }
+ else if (mode < 2.5){ vec2 q = p*dens*6./max(.15, length(p)); v = mod(floor(q.x) + floor(q.y), 2.); }
+ else if (mode < 3.5){ vec2 q = p*dens*8.; q.x *= 1.1547; q.y += mod(floor(q.x), 2.)*.5; vec2 f = abs(fract(q) - .5); float e = max(f.x*1.5 + f.y, f.y*2.)*.5; v = smoothstep(.5 - lw*.06 - .02, .5, e); }
+ else if (mode < 4.5){ vec2 q = p*dens*7.; float a = abs(fract(q.y) - .5), b = abs(fract(q.y*.5 + q.x*.866) - .5), cc = abs(fract(q.y*.5 - q.x*.866) - .5); v = 1. - smoothstep(0., lw*.05 + .02, min(a, min(b, cc))); }
+ else if (mode < 5.5){ float z = abs(fract(p.x*dens*5.) - .5)*2.; v = 1. - smoothstep(0., lw*.08 + .02, abs(fract(p.y*dens*5. + z*.5) - .5)); }
+ else { float a = abs(fract((p.x + p.y)*dens*5.) - .5), b = abs(fract((p.x - p.y)*dens*5.) - .5); v = 1. - smoothstep(0., lw*.06 + .02, min(a, b)); }
+ o = vec4(mix(bc, lc, clamp(v, 0., 1.)), 1.); }`,
+  vosc: `uniform float wave, dir, freq, ph, spread, fm, cmode, hasm; uniform vec3 ca, cb;
+float W(float x){ float f = fract(x); if (wave < .5) return .5 + .5*sin(x*6.2831853); if (wave < 1.5) return 1. - abs(f*2. - 1.); if (wave < 2.5) return f; if (wave < 3.5) return step(.5, f); return fract(sin(floor(x*8.)*91.7)*43758.5); }
+void main(){ vec2 p = uv - .5; p.x *= res.x/res.y; float x;
+ if (dir < .5) x = p.x; else if (dir < 1.5) x = p.y; else if (dir < 2.5) x = (p.x + p.y)*.7071; else x = length(p);
+ float m = hasm > .5 ? dot(texture(tex0, uv).rgb, vec3(.299,.587,.114)) : 0.;
+ float t = x*freq + ph + m*fm*4.;
+ vec3 c; if (cmode < .5) c = mix(ca, cb, W(t)); else c = vec3(W(t), W(t + spread), W(t + spread*2.));
+ o = vec4(c, 1.); }`,
+  wfold: `uniform float gain, off, stages, chan;
+float fold(float v){ for (int i = 0; i < 8; i++){ if (float(i) >= stages) break; v = abs(v); v = v > 1. ? 2. - v : v; } return clamp(v, 0., 1.); }
+void main(){ vec3 c = texture(tex0, uv).rgb; vec3 v = c*gain + off;
+ if (chan < .5){ float l = dot(c, vec3(.299,.587,.114))*gain + off; float f = fold(l); o = vec4(c*(f/max(.02, dot(c, vec3(.299,.587,.114)))), 1.); o.rgb = clamp(o.rgb, 0., 1.); }
+ else o = vec4(fold(v.r), fold(v.g), fold(v.b), 1.); }`,
+  lumakey: `uniform float th, soft, inv, hasbg; uniform vec3 bgc;
+void main(){ vec3 c = texture(tex0, uv).rgb; float l = dot(c, vec3(.299,.587,.114));
+ float a = smoothstep(th - soft, th + soft, l); if (inv > .5) a = 1. - a;
+ vec3 b = hasbg > .5 ? texture(tex1, uv).rgb : bgc; o = vec4(mix(b, c, a), 1.); }`,
+  chromakey: `uniform vec3 kc, bgc; uniform float tol, soft, spill, hasbg;
+vec2 cbcr(vec3 c){ return vec2(-.169*c.r - .331*c.g + .5*c.b, .5*c.r - .419*c.g - .081*c.b); }
+void main(){ vec3 c = texture(tex0, uv).rgb; float d = distance(cbcr(c), cbcr(kc));
+ float a = smoothstep(tol, tol + soft + .001, d);
+ vec3 fg = c; if (spill > 0.){ float l = dot(c, vec3(.299,.587,.114)); fg = mix(c, vec3(l), spill*(1. - smoothstep(tol, tol + .25, d))); }
+ vec3 b = hasbg > .5 ? texture(tex1, uv).rgb : bgc; o = vec4(mix(b, fg, a), 1.); }`,
+  vfilter: `uniform float mode, amt;
+vec3 S(vec2 p){ return texture(tex0, p).rgb; }
+vec3 blur(float r){ vec2 px = r/res; vec3 s = vec3(0.); float n = 0.; for (int i = -3; i <= 3; i++) for (int j = -3; j <= 3; j++){ float w = 1. - length(vec2(i, j))/4.6; if (w <= 0.) continue; s += S(uv + vec2(i, j)*px)*w; n += w; } return s/n; }
+void main(){ vec3 c = S(uv), r;
+ if (mode < .5) r = blur(1. + amt*6.);
+ else if (mode < 1.5){ vec3 b = blur(1.5); r = c + (c - b)*amt*3.; }
+ else if (mode < 2.5){ vec3 b = blur(2. + amt*8.); r = c + max(b - .45, 0.)*amt*2.5; }
+ else if (mode < 3.5) r = mix(c, 1. - c, amt);
+ else if (mode < 4.5){ float l = dot(c, vec3(.299,.587,.114)); r = vec3(step(amt, l)); }
+ else if (mode < 5.5){ r = mix(c, abs(c - vec3(amt)) + (c.r > amt ? 0. : 0.), 1.); r = vec3(c.r > amt ? 1. - c.r : c.r, c.g > amt ? 1. - c.g : c.g, c.b > amt ? 1. - c.b : c.b); }
+ else if (mode < 6.5){ vec2 px = (1. + amt*3.)/res; vec3 e = S(uv - px) - S(uv + px); float l = dot(e, vec3(.333)); r = vec3(.5 + l*2.); }
+ else if (mode < 7.5){ float a = amt*6.2831853; mat3 m = mat3(.299,.587,.114,.299,.587,.114,.299,.587,.114); vec3 g = c*m; vec3 d = c - g; float cs = cos(a), sn = sin(a); vec3 k = vec3(.57735); r = g + d*cs + cross(k, d)*sn + k*dot(k, d)*(1. - cs); }
+ else { float l = dot(c, vec3(.299,.587,.114)); r = mix(vec3(l), c, amt*2.); }
+ o = vec4(clamp(r, 0., 1.), 1.); }`,
+  displace: `uniform float amt, mode, hasmap;
+void main(){ vec3 m = hasmap > .5 ? texture(tex1, uv).rgb : texture(tex0, uv).rgb; float l = dot(m, vec3(.299,.587,.114)) - .5; vec2 d;
+ if (mode < .5) d = vec2(l, 0.); else if (mode < 1.5) d = vec2(0., l); else if (mode < 2.5) d = vec2(m.r - .5, m.g - .5); else d = normalize(uv - .5 + 1e-5)*l;
+ o = vec4(texture(tex0, uv + d*amt*.2).rgb, 1.); }`,
+  chromab: `uniform float amt, ang, radial;
+void main(){ vec2 d = radial > .5 ? (uv - .5)*amt*.06 : vec2(cos(ang), sin(ang))*amt*.012;
+ o = vec4(texture(tex0, uv + d).r, texture(tex0, uv).g, texture(tex0, uv - d).b, 1.); }`,
+  halftone: `uniform float mode, size, ang; uniform vec3 ink, paper;
+float bayer(vec2 p){ ivec2 q = ivec2(mod(p, 4.)); int i = q.x + q.y*4; float m[16] = float[16](0.,8.,2.,10.,12.,4.,14.,6.,3.,11.,1.,9.,15.,7.,13.,5.); return (m[i] + .5)/16.; }
+void main(){ vec3 c = texture(tex0, uv).rgb; float l = dot(c, vec3(.299,.587,.114)); vec2 px = uv*res;
+ if (mode < .5){ float cs = cos(ang), sn = sin(ang); vec2 p = mat2(cs, -sn, sn, cs)*px/size; vec2 f = fract(p) - .5; float r = sqrt(1. - l)*.7; float dot1 = 1. - smoothstep(r - .06, r + .06, length(f)); o = vec4(mix(paper, ink, dot1), 1.); }
+ else if (mode < 1.5){ vec2 cell = floor(px/size)*size; float b = bayer(cell/size); o = vec4(mix(ink, paper, step(b, l)), 1.); }
+ else { vec3 q = floor(c*3.99)/3.; vec2 cell = floor(px/size); float b = bayer(cell) - .5; o = vec4(clamp(q + b*.33, 0., 1.), 1.); } }`,
+  ascii: `uniform float cell, color; uniform vec3 fg, bg;
+void main(){ vec2 px = uv*res, cid = floor(px/cell), cuv = fract(px/cell);
+ vec3 c = texture(tex0, (cid + .5)*cell/res).rgb; float l = clamp(dot(c, vec3(.299,.587,.114)), 0., .999);
+ float g = floor(l*10.); vec2 a = vec2((g + cuv.x)/10., cuv.y); float m = texture(tex1, a).r;
+ vec3 ink = color > .5 ? c : fg; o = vec4(mix(bg, ink, m), 1.); }`,
+  rutt: `uniform float lines, height, lw, color; uniform vec3 lc, bg;
+float L(vec2 p){ return dot(texture(tex0, p).rgb, vec3(.299,.587,.114)); }
+void main(){ float sp = 1./lines, best = 0.; vec3 col = vec3(0.);
+ for (int k = -14; k <= 2; k++){ float base = (floor(uv.y/sp) + float(k) + .5)*sp; if (base < 0. || base > 1.) continue;
+   float y = base + L(vec2(uv.x, base))*height; float d = abs(uv.y - y)*res.y; float a = 1. - smoothstep(lw*.5, lw*.5 + 1., d);
+   if (a > best){ best = a; col = color > .5 ? texture(tex0, vec2(uv.x, base)).rgb : lc; } }
+ o = vec4(mix(bg, col, best), 1.); }`,
+  smear: `uniform float keep, th;
+void main(){ vec3 c = texture(tex0, uv).rgb, p = texture(tex1, uv).rgb, q = texture(tex2, uv).rgb;
+ float moved = smoothstep(th, th + .1, distance(c, q)); vec3 d = texture(tex1, uv - (c.rg - q.rg)*.02).rgb;
+ o = vec4(mix(mix(c, d, keep), c, moved*(1. - keep*.9)), 1.); }`,
+  colorama: `uniform float cycles, speed, sat, mixc;
+vec3 hsv(float h, float s, float v){ vec3 k = clamp(abs(mod(h*6. + vec3(0., 4., 2.), 6.) - 3.) - 1., 0., 1.); return v*mix(vec3(1.), k, s); }
+void main(){ vec3 c = texture(tex0, uv).rgb; float l = dot(c, vec3(.299,.587,.114));
+ vec3 r = hsv(fract(l*cycles + time*speed), sat, .35 + .65*l); o = vec4(mix(c, r, mixc), 1.); }`,
+  mosaic: `uniform float mode, size, scan;
+void main(){ vec2 px = uv*res, p; vec3 c;
+ if (mode < .5){ vec2 cid = floor(px/size); c = texture(tex0, (cid + .5)*size/res).rgb; }
+ else if (mode < 1.5){ vec2 s = vec2(1., 1.7320508)*size; vec2 a = mod(px, s) - s*.5, b = mod(px - s*.5, s) - s*.5; vec2 g = dot(a, a) < dot(b, b) ? px - a : px - b; c = texture(tex0, g/res).rgb; }
+ else { vec2 cid = floor(px/size), f = fract(px/size) - .5; c = texture(tex0, (cid + .5)*size/res).rgb; float r = .5*sqrt(dot(c, vec3(.333))); c *= 1. - smoothstep(r - .08, r, length(f)); }
+ if (scan > 0.) c *= 1. - scan*.6*step(.5, fract(px.y/3.));
+ o = vec4(c, 1.); }`,
+  edgeglow: `uniform float k, glow, over, cyc;
+float L(vec2 p){ return dot(texture(tex0, p).rgb, vec3(.299,.587,.114)); }
+float E(vec2 p, float r){ vec2 px = r/res; float gx = L(p + vec2(px.x, 0.)) - L(p - vec2(px.x, 0.)), gy = L(p + vec2(0., px.y)) - L(p - vec2(0., px.y)); return clamp(length(vec2(gx, gy))*k, 0., 1.); }
+vec3 hsv(float h){ return clamp(abs(mod(h*6. + vec3(0., 4., 2.), 6.) - 3.) - 1., 0., 1.); }
+void main(){ float e = E(uv, 1.), g = 0.; for (int i = 1; i <= 4; i++) g += E(uv, 1. + float(i)*glow*2.)/float(i + 1);
+ vec3 col = hsv(fract(atan(uv.y - .5, uv.x - .5)/6.2831853 + time*cyc)); vec3 base = over > .5 ? texture(tex0, uv).rgb*.6 : vec3(0.);
+ o = vec4(clamp(base + col*(e + g*glow), 0., 1.), 1.); }`,
   edge: `uniform float k, th, mode; uniform vec3 ec;
 float L(vec2 p){ return dot(texture(tex0, p).rgb, vec3(.299,.587,.114)); }
 void main(){ vec2 px = 1./res;
@@ -2212,7 +2355,11 @@ function memStore(n){
 }
 function memRecall(n, i){
   const m = (n.params.mem || [])[i]; if (!m) return;
-  for (const [k, v] of Object.entries(m)) if (JSON.stringify(n.params[k]) !== JSON.stringify(v)) setParam(n, k, JSON.parse(JSON.stringify(v)));
+  const modded = k => edgeInto(n.id, 'p:' + k) || ['H','S','L','A'].some(sfx => edgeInto(n.id, 'p:' + k + sfx));
+  for (const [k, v] of Object.entries(m)){
+    if (modded(k)) continue; // a modulated setting (or color) keeps following its input
+    if (JSON.stringify(n.params[k]) !== JSON.stringify(v)) setParam(n, k, JSON.parse(JSON.stringify(v)));
+  }
   n.memActive = i; memRender(n);
 }
 function memRender(n){
@@ -2531,6 +2678,14 @@ function pullNode(id){
   if (n._f === frameNo) return n._out;
   n._f = frameNo;
   const def = DEFS[n.type];
+  // The title-bar On/off input: a short trigger flips on/off; a held gate keeps the module on while high and off while low.
+  if (canBypass(n.type) && edgeInto(n.id, 'onoff')){
+    const g = readIn(n, 'onoff', 0) > 0.5, now = performance.now();
+    if (g && !n.ogPrev){ n.ogT = now; n.ogMode = null; }
+    if (g && n.ogPrev && !n.ogMode && now - n.ogT > 200){ n.ogMode = 'gate'; if (n.params.bypass){ n.params.bypass = false; n.ctl && n.ctl.bypass && n.ctl.bypass.set(false); } }
+    if (!g && n.ogPrev){ const off = n.ogMode === 'gate' ? true : !n.params.bypass; n.params.bypass = off; n.ctl && n.ctl.bypass && n.ctl.bypass.set(off); }
+    n.ogPrev = g;
+  }
   // Switched off: effects pass their input straight through; anything else goes quiet.
   if (n.params.bypass){ n._out = def.ins.some(p => p.name === 'in' && p.kind === 'video') ? inputRaw(n, 'in') : (def.kind === 'video' ? null : 0); return n._out; }
   // Drawn generators redraw at most at the Generator frame rate, unless a trigger arrives.
@@ -2725,6 +2880,31 @@ const BLENDS = [['source-over','Normal'],['lighter','Add'],['screen','Screen'],[
   ['color-dodge','Color dodge'],['color-burn','Color burn'],['hard-light','Hard light'],['soft-light','Soft light'],['difference','Difference'],['exclusion','Exclusion'],
   ['hue','Hue'],['saturation','Saturation'],['color','Color'],['luminosity','Luminosity'],['xor','XOR']];
 
+/* ---------- Helpers for the newer effects ---------- */
+// A one-input GPU effect with a Mix slider and tint, from a shader and its controls.
+function fxDef(title, params, controls, uniforms, shader){
+  return {title, kind:'video', w:260, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}], mix:true,
+    params: Object.assign({mix:1}, params),
+    build(n){ return controls(n); },
+    pull(n){ const s = inputRaw(n, 'in'); if (!s) return null; const [W, H] = dims(s); if (!W) return null; return gpu(n, FS[shader], [s], uniforms(n), W, H); }};
+}
+// A small on/off switch row for true/false settings.
+function toggleRow(n, key, label){
+  const b = h('button', {class:'btn togrow' + (n.params[key] ? ' on' : ''), text: label});
+  b.addEventListener('click', () => { n.params[key] = !n.params[key]; b.classList.toggle('on', !!n.params[key]); save(); });
+  n.ctl = n.ctl || {}; n.ctl[key] = {set(v){ n.params[key] = !!v; b.classList.toggle('on', !!v); }};
+  return h('div', {class:'btns'}, b);
+}
+// Characters from light to dark for ASCII art, drawn once into a strip.
+let _ascii = null;
+function asciiAtlas(){
+  if (_ascii) return _ascii;
+  const chars = ' .:-=+*#%@', S = 32, c = document.createElement('canvas'); c.width = S*10; c.height = S;
+  const x = c.getContext('2d'); x.fillStyle = '#000'; x.fillRect(0, 0, c.width, S); x.fillStyle = '#fff'; x.font = 'bold ' + (S*0.95) + 'px Menlo, Consolas, monospace'; x.textAlign = 'center'; x.textBaseline = 'middle';
+  for (let i = 0; i < 10; i++) x.fillText(chars[i], i*S + S/2, S/2 + 1);
+  c.__ver = 1; _ascii = c; return c;
+}
+
 const DEFS = {
   camera: {
     title:'Camera', kind:'video', fam:'src', w:250, ins:[], outs:[{name:'out', kind:'video', label:'Video'}],
@@ -2786,36 +2966,40 @@ const DEFS = {
       n.tmp = document.createElement('canvas'); n.tctx = n.tmp.getContext('2d');
       n.buf = []; n.pool = []; n.lastPush = 0;
       const ms = v => v + ' ms';
-      const rr = slider(n, 'r', 'Red', 0, 5000, 10, ms), rg = slider(n, 'g', 'Green', 0, 5000, 10, ms), rb = slider(n, 'b', 'Blue', 0, 5000, 10, ms);
+      const ms2 = v => v < 1000 ? Math.round(v) + ' ms' : (v/1000).toFixed(2) + ' s';
+      const rr = slider(n, 'r', 'Red', 0, 10000, 10, ms2), rg = slider(n, 'g', 'Green', 0, 10000, 10, ms2), rb = slider(n, 'b', 'Blue', 0, 10000, 10, ms2);
       return [rr, rg, rb, ...syncUI(n, [rr, rg, rb]),
         h('div', {class:'status', text:'When synced, red stays live, green trails by one step and blue by two.'})];
     },
     pull(n){
       const src = inputOf(n, 'in'); if (!src) return null;
       const [sw, sh] = dims(src); if (!sw) return null;
-      const longest = Math.max(n.params.r, n.params.g, n.params.b), cap = longest > 2200 ? 560 : 960;
+      // Long delays store smaller, less frequent frames. The stored past is kept when that changes, so delays never jump.
+      const modded0 = ['r','g','b'].some(k => edgeInto(n.id, 'p:' + k)) || n.params.sync !== 'off';
+      const longest = modded0 ? 10000 : Math.max(n.params.r, n.params.g, n.params.b), cap = longest > 6000 ? 420 : longest > 2500 ? 560 : 960;
       const sc = Math.min(1, cap/sw), W = Math.round(sw*sc), H = Math.round(sh*sc);
-      if (n.bw !== W || n.bh !== H){ n.buf = []; n.pool = []; n.bw = W; n.bh = H; }
+      if (n.bw !== W || n.bh !== H){ n.pool = []; n.bw = W; n.bh = H; }
       const now = performance.now();
-      if (!n.buf.length || now - n.lastPush >= (longest > 2200 ? 40 : 32)){
-        const slot = n.pool.pop() || mkCanvas(W, H);
+      if (!n.buf.length || now - n.lastPush >= Math.max(32, longest/220)){
+        const slot = n.pool.pop() || mkCanvas(W, H); fitCanvas(slot.cv, W, H);
         slot.ctx.drawImage(src, 0, 0, W, H); slot.t = now; n.buf.push(slot); n.lastPush = now;
       }
       if (rising(n, 'clock')){ if (n.lastClk) n.clkPeriod = (now - n.lastClk)/1000; n.lastClk = now; }
-      const ss = syncSec(n), per = ss, stepMs = ss ? Math.min(2500, ss*1000) : 0;
+      const ss = syncSec(n), per = ss, stepMs = ss ? Math.min(5000, ss*1000) : 0;
       const d = per ? {r: 0, g: stepMs, b: stepMs*2} : {r: P(n,'r'), g: P(n,'g'), b: P(n,'b')};
       syncInfo(n, stepMs);
       const modded = per || ['r','g','b'].some(k => edgeInto(n.id, 'p:' + k));
-      const keep = (modded ? 5000 : Math.max(d.r, d.g, d.b)) + 80;
-      while (n.buf.length > 1 && n.buf[1].t < now - keep) n.pool.push(n.buf.shift());
-      while (n.buf.length > 170) n.pool.push(n.buf.shift());
+      const keep = (modded ? 10000 : Math.max(d.r, d.g, d.b)) + 80;
+      const recycle = f => { if (f.cv.width === W && f.cv.height === H) n.pool.push(f); };
+      while (n.buf.length > 1 && n.buf[1].t < now - keep) recycle(n.buf.shift());
+      while (n.buf.length > 260) recycle(n.buf.shift());
       const at = t => { for (let i = n.buf.length - 1; i >= 0; i--) if (n.buf[i].t <= t) return n.buf[i]; return n.buf[0]; };
       fitCanvas(n.cv, W, H); fitCanvas(n.tmp, W, H);
       const o = n.ctx, tc = n.tctx;
       o.globalCompositeOperation = 'source-over'; o.fillStyle = '#000'; o.fillRect(0, 0, W, H);
       o.globalCompositeOperation = 'lighter';
       for (const [k, col] of [['r','#ff0000'],['g','#00ff00'],['b','#0000ff']]){
-        tc.globalCompositeOperation = 'source-over'; tc.drawImage(at(now - d[k]).cv, 0, 0);
+        tc.globalCompositeOperation = 'source-over'; tc.drawImage(at(now - d[k]).cv, 0, 0, W, H);
         tc.globalCompositeOperation = 'multiply'; tc.fillStyle = col; tc.fillRect(0, 0, W, H);
         o.drawImage(n.tmp, 0, 0);
       }
@@ -2842,7 +3026,7 @@ const DEFS = {
     }
   },
   lfo: {
-    title:'LFO', kind:'mod', w:250, ins:[{name:'sync', kind:'gate', label:'Sync'}], outs:[{name:'out', kind:'mod', label:'Out'},{name:'inv', kind:'mod', label:'Inverted'}],
+    title:'LFO', kind:'mod', w:250, ins:[{name:'sync', kind:'gate', label:'Sync'}], outs:[{name:'out', kind:'mod', label:'Out'},{name:'inv', kind:'mod', label:'Inverted'},{name:'cycle', kind:'gate', label:'End of cycle'}],
     params:{shape:'sine', rate:0.5, depth:0.5},
     build(n){
       n.ph = 0; n.prevR = 0; n.nextR = Math.random()*2 - 1; n.hist = new Float32Array(160); n.hi = 0;
@@ -2859,7 +3043,8 @@ const DEFS = {
       if (rising(n, 'sync')) n.ph = 0;
       const lss = syncSec(n); if (lss) syncInfo(n, lss*1000);
       n.ph += dt * (lss ? 1/lss : P(n, 'rate'));
-      while (n.ph >= 1){ n.ph -= 1; n.prevR = n.nextR; n.nextR = Math.random()*2 - 1; }
+      let cyc = 0; while (n.ph >= 1){ n.ph -= 1; n.prevR = n.nextR; n.nextR = Math.random()*2 - 1; cyc = 1; }
+      n.cyc = cyc;
       const p = n.ph; let v;
       switch (n.params.shape){
         case 'tri': v = p < .5 ? -1 + 4*p : 3 - 4*p; break;
@@ -2872,7 +3057,7 @@ const DEFS = {
       }
       v *= P(n, 'depth');
       n.hist[n.hi] = v; n.hi = (n.hi + 1) % n.hist.length;
-      return {out: v, inv: -v};
+      return {out: v, inv: -v, cycle: n.cyc || 0};
     },
     render(n){
       pullNode(n.id);
@@ -3018,7 +3203,7 @@ const DEFS = {
       return b;
     },
     ins:[{name:'clock', kind:'gate', label:'Clock'},{name:'reset', kind:'gate', label:'Reset'},{name:'rand', kind:'gate', label:'Randomize'}],
-    outs:[{name:'cv', kind:'mod', label:'CV'},{name:'inv', kind:'mod', label:'Inverted'},{name:'gate', kind:'gate', label:'Gate'}],
+    outs:[{name:'cv', kind:'mod', label:'CV'},{name:'inv', kind:'mod', label:'Inverted'},{name:'gate', kind:'gate', label:'Gate'},{name:'end', kind:'gate', label:'End of sequence'},{name:'step', kind:'mod', label:'Step number'}],
     params:{steps:'8', dir:'fwd', rate:4, gateLen:0.5, glide:0, depth:1, vals:null, on:null, gh:120, compact:true},
     build(n){
       const dv = [0.8,-0.2,0.4,-0.7,1,0,-0.4,0.6,-1,0.3,0.7,-0.5,0.1,-0.9,0.5,-0.1];
@@ -3079,12 +3264,15 @@ const DEFS = {
           n.idx = i;
         } else n.idx = (n.idx + 1) % N;
         n.stepT = now;
+        // End of sequence: the step that closes the cycle (back to the first step, or a turnaround in ping-pong).
+        if ((n.params.dir === 'rev' && n.idx === N - 1) || (n.params.dir !== 'rev' && n.idx === 0) || (n.params.dir === 'pp' && (n.idx === 0 || n.idx === N - 1))) n.endT = now;
       }
       const target = n.params.vals[n.idx] * P(n, 'depth'), g = P(n, 'glide');
       n.cv = g > 0 ? n.cv + (target - n.cv)*(1 - Math.exp(-dt/(g*0.35))) : target;
       const gate = n.params.on[n.idx] && (now - n.stepT) < P(n, 'gateLen')*n.stepDur;
       n.gateOn = gate;
-      return {cv: n.cv, inv: -n.cv, gate: gate ? 1 : 0};
+      const endP = n.endT && n.endT === n.stepT && !n.endSent ? 1 : 0; if (endP) n.endSent = true; if (n.endT !== n.stepT) n.endSent = false;
+      return {cv: n.cv, inv: -n.cv, gate: gate ? 1 : 0, end: endP, step: n.idx + 1};
     },
     render(n){
       pullNode(n.id);
@@ -3191,9 +3379,16 @@ const DEFS = {
     }
   },
   button: {
-    title:'Button', kind:'gate', w:210, ins:[],
+    title:'Button', kind:'gate', w:210, ins:[{name:'light', kind:'gate', label:'Light'}],
     outs:[{name:'trig', kind:'gate', label:'Trig'},{name:'gate', kind:'gate', label:'Gate'}],
-    params:{},
+    params:{ph:64},
+    resizable: {get: n => n.params.ph || 64, set: (n, v) => { n.params.ph = Math.round(Math.max(36, Math.min(600, v))); n.pad.style.height = n.params.ph + 'px'; }},
+    afterBuild(n){
+      // The pad sits up beside the Trig and Gate jacks; the button can't be collapsed.
+      const ports = n.el.querySelector(':scope > .ports'); if (ports){ ports.prepend(n.pad); ports.classList.add('padports'); }
+      n.pad.style.height = (n.params.ph || 64) + 'px';
+      if (n.foldBtn) n.foldBtn.remove(); n.el.classList.add('nofold');
+    },
     build(n){
       n.fire = false; n.held = false; n.flashT = -1e9;
       n.pad = h('button', {class:'pad', text:'Trigger'});
@@ -3208,7 +3403,7 @@ const DEFS = {
       return [n.pad, h('div', {class:'status', text:'Trig sends a short pulse. Gate stays on while you hold the button.'})];
     },
     pull(n){ const t = n.fire ? 1 : 0; n.fire = false; return {trig: t, gate: n.held ? 1 : 0}; },
-    render(n){ n.pad.classList.toggle('on', n.held || performance.now() - n.flashT < 120); }
+    render(n){ const lit = edgeInto(n.id, 'light') && readIn(n, 'light', 0) > 0.5; n.pad.classList.toggle('on', n.held || lit || performance.now() - n.flashT < 120); }
   },
   clock: {
     title:'Clock', kind:'gate', fam:'gate', w:260,
@@ -3366,7 +3561,7 @@ const DEFS = {
     mix:true, params:{time:500, sync:'off', mix:1},
     build(n){
       n.fb = new FrameBuf(960);
-      n.timeRow = slider(n, 'time', 'Delay', 0, 20000, 10, v => v < 1000 ? v + ' ms' : (v/1000).toFixed(2) + ' s');
+      n.timeRow = slider(n, 'time', 'Delay', 0, 10000, 10, v => v < 1000 ? v + ' ms' : (v/1000).toFixed(2) + ' s');
       return [n.timeRow,
         ...syncUI(n, [n.timeRow]),
         h('div', {class:'status', text:'Set Mix below 100% to see the live and delayed pictures together.'})];
@@ -3376,7 +3571,7 @@ const DEFS = {
       const now = performance.now();
       if (rising(n, 'clock')){ if (n.lastClk) n.clkPeriod = (now - n.lastClk)/1000; n.lastClk = now; }
       const ss = syncSec(n), per = ss;
-      const d = ss ? Math.min(20000, ss*1000) : P(n, 'time');
+      const d = ss ? Math.min(10000, ss*1000) : P(n, 'time');
       syncInfo(n, d);
       // Long delays keep a smaller, slower copy of the past so memory stays reasonable.
       const span = edgeInto(n.id, 'p:time') ? Math.max(3000, n.params.time*2) : d;
@@ -3384,15 +3579,15 @@ const DEFS = {
       if (n.fb.maxW !== tier[0]){ n.fb = new FrameBuf(tier[0]); }
       n.fb.gap = tier[1];
       n.fb.push(src, now);
-      n.fb.trim(now, Math.min(20000, span) + 120, tier[2]);
+      n.fb.trim(now, Math.min(10000, span) + 120, tier[2]);
       return n.fb.at(now - d).cv;
     }
   },
   looper: {
     title:'Looper', kind:'video', w:280,
     ins:[{name:'in', kind:'video', label:'In'},{name:'clock', kind:'gate', label:'Clock'},{name:'rec', kind:'gate', label:'Record'},{name:'play', kind:'gate', label:'Play / stop'},{name:'clear', kind:'gate', label:'Clear'}],
-    outs:[{name:'out', kind:'video', label:'Out'},{name:'loop', kind:'gate', label:'Loop start'}],
-    mix:true, params:{lenMode:'sec', secs:2, beats:'4', xf:0.25, curve:'smooth', mix:1},
+    outs:[{name:'out', kind:'video', label:'Out'},{name:'loop', kind:'gate', label:'Loop start'},{name:'end', kind:'gate', label:'Loop end'}],
+    mix:true, params:{lenMode:'sec', secs:2, beats:'4', xf:0.25, curve:'smooth', mix:1, autoplay:true},
     build(n){
       n.state = 'idle'; n.frames = []; n.pool = [];
       n.out = mkCanvas(2, 2);
@@ -3410,14 +3605,14 @@ const DEFS = {
         rows.secs, rows.beats,
         slider(n, 'xf', 'Crossfade', 0, 1, 0.01, v => v ? Math.round(v*1000) + ' ms' : 'Off', null, false),
         choice(n, 'curve', 'Fade curve', [['linear','Linear'],['smooth','Smooth'],['fastin','Fast start'],['slowin','Slow start'],['cut','Cut (no fade)']]),
-        n.bar, h('div', {class:'btns'}, n.recBtn, n.playBtn, clr), n.st];
+        n.bar, h('div', {class:'btns'}, n.recBtn, n.playBtn, clr, n.apBtn = h('button', {class:'btn' + (n.params.autoplay !== false ? ' on' : ''), text:'Play after recording', title:'Start playing the loop as soon as recording stops', onclick: () => { n.params.autoplay = n.params.autoplay === false; n.apBtn.classList.toggle('on', n.params.autoplay); save(); }})), n.st];
       show();
       return kids;
     },
     pull(n){
       const src = inputOf(n, 'in');
       const now = performance.now();
-      let loopPulse = false;
+      let loopPulse = false, loopEnd = false;
       const clockRise = rising(n, 'clock');
       if (clockRise){ if (n.lastClk) n.clkPeriod = (now - n.lastClk)/1000; n.lastClk = now; }
       if (rising(n, 'rec')) looperRec(n);
@@ -3433,12 +3628,12 @@ const DEFS = {
             f.ctx.drawImage(src, 0, 0, W, H); f.t = rel; n.frames.push(f);
           }
         }
-        if (now - n.recT0 >= (n.L + n.XF)*1000){ n.state = n.frames.length ? 'play' : 'idle'; n.prevP = -1; }
+        if (now - n.recT0 >= (n.L + n.XF)*1000){ n.state = n.frames.length ? (n.params.autoplay !== false ? 'play' : 'stopped') : 'idle'; n.prevP = -1; loopEnd = true; }
       }
       let out = src;
       if (n.state === 'play' && n.frames.length){
         const L = n.L, xf = n.XF, p = (((now - n.recT0)/1000 - xf) % L + L) % L;
-        if (p < n.prevP) loopPulse = true;
+        if (p < n.prevP){ loopPulse = true; loopEnd = true; }
         n.prevP = p; n.pos = p/L;
         const tail = frameAt(n.frames, (xf + p)*1000), W = tail.cv.width, H = tail.cv.height;
         fitCanvas(n.out.cv, W, H);
@@ -3449,7 +3644,7 @@ const DEFS = {
         }
         out = n.out.cv;
       }
-      return new PortOut({out, loop: loopPulse ? 1 : 0});
+      return new PortOut({out, loop: loopPulse ? 1 : 0, end: loopEnd ? 1 : 0});
     },
     render(n){
       pullNode(n.id);
@@ -3537,7 +3732,7 @@ const DEFS = {
     title:'Video player', kind:'video', fam:'src', w:270,
     ins:[{name:'trig', kind:'gate', label:'Restart'},{name:'play', kind:'gate', label:'Play / pause'}],
     outs:[{name:'out', kind:'video', label:'Video'},{name:'audio', kind:'audio', label:'Audio'}],
-    params:{file:'', path:'', loop:true, speed:1},
+    params:{file:'', path:'', loop:true, speed:1, autoplay:true},
     build(n){
       n.video = h('video', {playsinline:true, preload:'auto'}); n.video.muted = true; n.video.loop = !!n.params.loop; media.append(n.video);
       n.fileIn = h('input', {type:'file', accept:'video/*', hidden:true});
@@ -3546,6 +3741,8 @@ const DEFS = {
       n.ppBtn = h('button', {class:'btn', text:'Play', onclick: () => { if (!n.url) return; n.video.paused ? n.video.play().catch(() => {}) : n.video.pause(); }});
       n.loopBtn = h('button', {class:'btn', text:'Loop', onclick: () => { n.params.loop = !n.params.loop; n.video.loop = n.params.loop; n.loopBtn.classList.toggle('on', n.params.loop); save(); }});
       n.loopBtn.classList.toggle('on', !!n.params.loop);
+      if (typeof n.params.autoplay !== 'boolean') n.params.autoplay = true;
+      n.autoBtn = h('button', {class:'btn' + (n.params.autoplay ? ' on' : ''), text:'Play on open', title:'Start playing as soon as the patch opens', onclick: () => { n.params.autoplay = !n.params.autoplay; n.autoBtn.classList.toggle('on', n.params.autoplay); save(); }});
       n.scrub = h('input', {type:'range', min:0, max:1000, step:1, value:0, 'aria-label':'Playback position'});
       n.scrub.addEventListener('input', () => { if (n.video.duration) n.video.currentTime = n.scrub.value/1000*n.video.duration; });
       n.scrub.addEventListener('pointerdown', () => n.scrubbing = true);
@@ -3558,7 +3755,7 @@ const DEFS = {
       n.drop.addEventListener('dragleave', () => n.drop.classList.remove('over'));
       n.drop.addEventListener('drop', e => { e.preventDefault(); n.drop.classList.remove('over'); const f = [...e.dataTransfer.files].find(f => f.type.startsWith('video')); if (f) playerLoad(n, f); });
       return [n.drop, h('div', {class:'row sl'}, h('span', {text:'Position'}), n.scrub, n.tm),
-        h('div', {class:'btns'}, n.ppBtn, n.loopBtn),
+        h('div', {class:'btns'}, n.ppBtn, n.loopBtn, n.autoBtn),
         slider(n, 'speed', 'Speed', 0.25, 2, 0.01, v => v.toFixed(2) + '×'), n.st];
     },
     initAudio(n){
@@ -4039,7 +4236,7 @@ const DEFS = {
   },
   euclid: {
     title:'Euclidean rhythm', kind:'gate', fam:'gate', w:250, ins:[{name:'clock', kind:'gate', label:'Clock'},{name:'reset', kind:'gate', label:'Reset'}],
-    outs:[{name:'gate', kind:'gate', label:'Hits'},{name:'rest', kind:'gate', label:'Rests'}],
+    outs:[{name:'gate', kind:'gate', label:'Hits'},{name:'rest', kind:'gate', label:'Rests'},{name:'end', kind:'gate', label:'End of pattern'}],
     params:{steps:16, hits:5, rot:0, rate:4},
     build(n){
       n.idx = -1; n.stepT = -1e9; n.stepDur = 250; n.ring = h('canvas', {class:'ring', 'aria-hidden':'true'});
@@ -4050,12 +4247,12 @@ const DEFS = {
     pull(n){
       const [now, dt] = tdt(n), N = Math.max(1, Math.round(P(n, 'steps'))), K = Math.min(N, Math.round(P(n, 'hits'))), R = Math.round(P(n, 'rot'));
       if (rising(n, 'reset')) n.idx = -1;
-      if (tickIn(n, 'clock', rateOf(n), dt, now)){ n.idx = (n.idx + 1) % N; n.stepT = now; }
+      let endP = 0; if (tickIn(n, 'clock', rateOf(n), dt, now)){ n.idx = (n.idx + 1) % N; n.stepT = now; if (n.idx === 0) endP = 1; }
       if (n.idx >= N) n.idx = 0;
       const win = edgeInto(n.id, 'clock') ? !!gateHigh(n, 'clock') : now - n.stepT < 0.5*n.stepDur;
       const hit = n.idx >= 0 && euclidHit(n.idx, N, K, R);
       n.view = {N, K, R};
-      return {gate: win && hit ? 1 : 0, rest: win && n.idx >= 0 && !hit ? 1 : 0};
+      return {gate: win && hit ? 1 : 0, rest: win && n.idx >= 0 && !hit ? 1 : 0, end: endP};
     },
     render(n){
       pullNode(n.id);
@@ -4354,7 +4551,7 @@ const DEFS = {
   },
   counter: {
     title:'Counter', kind:'mod', fam:'gate', w:230, ins:[{name:'clock', kind:'gate', label:'Count'},{name:'reset', kind:'gate', label:'Reset'}],
-    outs:[{name:'count', kind:'mod', label:'Count'},{name:'wrap', kind:'gate', label:'Wrapped'}],
+    outs:[{name:'count', kind:'mod', label:'Count'},{name:'wrap', kind:'gate', label:'Wrapped'},{name:'num', kind:'mod', label:'Step number'}],
     params:{steps:4, dir:'up'},
     build(n){
       n.k = 0; n.dirSign = 1; n.big = h('div', {class:'time', text:'1'});
@@ -4373,7 +4570,7 @@ const DEFS = {
         else { n.k++; if (n.k >= N){ n.k = 0; wrap = true; } }
       }
       n.k = Math.max(0, Math.min(N - 1, n.k)); n.count = n.k;
-      return {count: N > 1 ? n.k/(N - 1)*2 - 1 : 0, wrap: wrap ? 1 : 0};
+      return {count: N > 1 ? n.k/(N - 1)*2 - 1 : 0, wrap: wrap ? 1 : 0, num: n.k + 1};
     },
     render(n){ pullNode(n.id); const t = String(n.k + 1); if (n.big.textContent !== t) n.big.textContent = t; }
   },
@@ -5170,6 +5367,207 @@ const DEFS = {
       return n.cv;
     }
   },
+  toggle: {
+    title:'Toggle', kind:'gate', fam:'gate', w:200, ins:[{name:'in', kind:'gate', label:'In'}], outs:[{name:'out', kind:'gate', label:'Out'}],
+    params:{on:false},
+    build(n){
+      n.sw = h('button', {class:'togglebtn', 'aria-pressed':'false'});
+      n.paintT = () => { const on = !!n.params.on; n.sw.classList.toggle('on', on); n.sw.textContent = on ? 'ON' : 'OFF'; n.sw.setAttribute('aria-pressed', String(on)); };
+      n.sw.addEventListener('click', () => { n.params.on = !n.params.on; n.paintT(); save(); });
+      n.sw.addEventListener('pointerdown', e => e.stopPropagation());
+      n.ctl = n.ctl || {}; n.ctl.on = {set(v){ n.params.on = !!v; n.paintT(); }};
+      n.paintT();
+      return [n.sw, h('div', {class:'status', text:'Click to switch. A gate at In switches it on while high and off when low. Out sends a gate while on.'})];
+    },
+    pull(n){
+      if (edgeInto(n.id, 'in')){ const g = readIn(n, 'in', 0) > 0.5; if (g !== n.lastIn){ n.lastIn = g; if (!!n.params.on !== g){ n.params.on = g; n.paintT(); } } }
+      return n.params.on ? 1 : 0;
+    },
+    render(n){ pullNode(n.id); }
+  },
+  led: {
+    title:'LED', kind:'gate', fam:'mon', w:120, ins:[{name:'in', kind:'gate', label:'In'}], outs:[{name:'out', kind:'gate', label:'Out'}],
+    params:{color:'#ff3d3d'},
+    build(n){
+      n.lamp = h('div', {class:'ledlamp', title:'Right-click to change the color'});
+      n.lamp.addEventListener('contextmenu', e => {
+        e.preventDefault(); e.stopPropagation();
+        const inp = h('input', {type:'color'}); inp.value = n.params.color || '#ff3d3d'; inp.style.cssText = 'position:fixed; left:' + e.clientX + 'px; top:' + e.clientY + 'px; opacity:0; width:1px; height:1px';
+        document.body.append(inp);
+        inp.addEventListener('input', () => { n.params.color = inp.value; n.lastSt = null; });
+        inp.addEventListener('change', () => { n.params.color = inp.value; n.lastSt = null; save(); inp.remove(); });
+        inp.addEventListener('blur', () => setTimeout(() => inp.remove(), 300));
+        inp.click();
+      });
+      n.ctl = n.ctl || {}; n.ctl.color = {set(v){ n.params.color = v; n.lastSt = null; }};
+      return [n.lamp];
+    },
+    // Lights while a gate is high, flashes on each trigger, and glows with the strength of a changing signal.
+    pull(n){ const v = readIn(n, 'in', 0), now = performance.now();
+      if ((v > 0.5 && !(n.lastV > 0.5)) || Math.abs(v - (n.lastV || 0)) > 0.25) n.flashT = now;
+      n.lastV = v; return v; },
+    render(n){
+      const v = pullNode(n.id) || 0, flash = performance.now() - (n.flashT || -1e9) < 110;
+      const lvl = flash || v > 0.5 ? 1 : Math.min(1, Math.abs(v)), key = (n.params.color || '') + '|' + lvl.toFixed(2);
+      if (key === n.lastSt) return; n.lastSt = key;
+      const c = n.params.color || '#ff3d3d';
+      n.lamp.style.background = lvl > 0.02 ? 'color-mix(in srgb, ' + c + ' ' + Math.round(25 + lvl*75) + '%, #000)' : '';
+      n.lamp.style.boxShadow = lvl > 0.5 ? '0 0 12px 3px ' + c : '';
+      n.lamp.style.borderColor = c;
+    }
+  },
+
+  intbox: {
+    title:'Integer', kind:'mod', fam:'util', w:210, ins:[{name:'in', kind:'mod', label:'Set'},{name:'inc', kind:'gate', label:'+1'},{name:'dec', kind:'gate', label:'−1'}], outs:[{name:'out', kind:'mod', label:'Out'}],
+    params:{value:0, min:0, max:16, scale:false},
+    build(n){
+      n.num = h('input', {type:'number', class:'numbox', step:'1', value: n.params.value, 'aria-label':'Value'});
+      n.num.addEventListener('change', () => { n.params.value = intClamp(n, Math.round(+n.num.value || 0)); n.num.value = n.params.value; save(); });
+      n.num.addEventListener('pointerdown', e => e.stopPropagation());
+      n.ctl = n.ctl || {}; n.ctl.value = {set(v){ n.params.value = v; n.num.value = v; }};
+      const mm = (k, l) => { const i = h('input', {type:'number', class:'numsmall', step:'1', value: n.params[k], 'aria-label': l}); i.addEventListener('change', () => { n.params[k] = Math.round(+i.value || 0); save(); }); return row(l, i); };
+      const sc = h('button', {class:'btn' + (n.params.scale ? ' on' : ''), text:'Output 0–1', title:'Send the value scaled from Min–Max to 0–1 instead of the number itself', onclick: () => { n.params.scale = !n.params.scale; sc.classList.toggle('on', n.params.scale); save(); }});
+      return [n.num, mm('min', 'Min'), mm('max', 'Max'), h('div', {class:'btns'}, h('button', {class:'btn', text:'−1', onclick: () => intStep(n, -1)}), h('button', {class:'btn', text:'+1', onclick: () => intStep(n, 1)}), sc),
+        h('div', {class:'status', text:'Sends a whole number. Patch it into Select number, or turn on Output 0–1 to move a slider.'})];
+    },
+    pull(n){
+      if (edgeInto(n.id, 'in')){ const v = intClamp(n, Math.round(readIn(n, 'in', 0))); if (v !== n.params.value){ n.params.value = v; } }
+      if (rising(n, 'inc')) intStep(n, 1); if (rising(n, 'dec')) intStep(n, -1);
+      const v = n.params.value; return n.params.scale ? (n.params.max > n.params.min ? (v - n.params.min)/(n.params.max - n.params.min) : 0) : v;
+    },
+    render(n){ pullNode(n.id); if (document.activeElement !== n.num && +n.num.value !== n.params.value) n.num.value = n.params.value; }
+  },
+  floatbox: {
+    title:'Decimal', kind:'mod', fam:'util', w:210, ins:[{name:'in', kind:'mod', label:'Set'}], outs:[{name:'out', kind:'mod', label:'Out'}],
+    params:{value:0, places:2},
+    build(n){
+      n.num = h('input', {type:'number', class:'numbox', step:'0.01', value: n.params.value, 'aria-label':'Value'});
+      n.num.addEventListener('change', () => { n.params.value = +n.num.value || 0; save(); });
+      n.num.addEventListener('pointerdown', e => e.stopPropagation());
+      n.ctl = n.ctl || {}; n.ctl.value = {set(v){ n.params.value = v; n.num.value = v; }};
+      return [n.num, choice(n, 'places', 'Shows', [['1','1 decimal'],['2','2 decimals'],['3','3 decimals']]), h('div', {class:'status', text:'Sends a number with decimals. A patched Set input shows the incoming value.'})];
+    },
+    pull(n){ if (edgeInto(n.id, 'in')) n.params.value = readIn(n, 'in', 0); return +n.params.value || 0; },
+    render(n){ pullNode(n.id); const t = (+n.params.value).toFixed(+n.params.places || 2); if (document.activeElement !== n.num && n.num.value !== t) n.num.value = t; }
+  },
+  selnum: {
+    title:'Select number', kind:'gate', fam:'gate', w:220, ins:[{name:'in', kind:'mod', label:'Number'}], outs:[{name:'trig', kind:'gate', label:'Match'},{name:'gate', kind:'gate', label:'While equal'},{name:'other', kind:'gate', label:'Other'}],
+    params:{target:3, mode:'round', tol:0.05},
+    build(n){
+      n.num = h('input', {type:'number', class:'numbox', step:'1', value: n.params.target, 'aria-label':'Number to match'});
+      n.num.addEventListener('change', () => { n.params.target = +n.num.value || 0; save(); });
+      n.num.addEventListener('pointerdown', e => e.stopPropagation());
+      n.ctl = n.ctl || {}; n.ctl.target = {set(v){ n.params.target = v; n.num.value = v; }};
+      n.lamp = h('div', {class:'lights'}, h('span'));
+      n.seen = h('div', {class:'status'});
+      return [row('Match', n.num), choice(n, 'mode', 'Compare', [['round','Rounded to whole numbers'],['near','Within a tolerance']]), slider(n, 'tol', 'Tolerance', 0.001, 1, 0.001, v => '±' + v.toFixed(3), null, false), n.lamp, n.seen,
+        h('div', {class:'status', text:'Fires Match when the incoming number becomes the one you set. Works with Integer, Counter (set its steps) or a Step sequencer.'})];
+    },
+    pull(n){
+      const v = readIn(n, 'in', 0), t = +n.params.target;
+      const eq = n.params.mode === 'near' ? Math.abs(v - t) <= P(n, 'tol') : Math.round(v) === Math.round(t);
+      const trig = eq && !n.wasEq ? 1 : 0, other = !eq && n.wasEq ? 1 : 0; n.wasEq = eq; n.lastV = v;
+      return {trig, gate: eq ? 1 : 0, other};
+    },
+    render(n){ pullNode(n.id); n.lamp.firstChild.className = n.wasEq ? 'on hot' : ''; const t = 'Incoming: ' + (Math.round((n.lastV || 0)*1000)/1000); if (frameNo % 6 === 0 && t !== n.seen.textContent) n.seen.textContent = t; }
+  },
+  ramp: {
+    title:'Ramp', kind:'video', w:260, ins:[], outs:[{name:'out', kind:'video', label:'Video'}],
+    params:{kind:'linear', ang:0, rep:1, speed:0.1, hard:false, mir:true, ca:'#05050a', cb:'#ec4f73', res:'720'},
+    build(n){ n.ph = 0; return [choice(n, 'kind', 'Shape', [['linear','Straight'],['radial','Circles'],['angular','Around'],['diamond','Diamond']]),
+      slider(n, 'ang', 'Angle', 0, 360, 1, v => Math.round(v) + '°'), slider(n, 'rep', 'Repeats', 0.5, 16, 0.01, v => v.toFixed(2)), slider(n, 'speed', 'Speed', -2, 2, 0.01, v => v.toFixed(2)),
+      toggleRow(n, 'mir', 'Mirror'), toggleRow(n, 'hard', 'Hard edge'), colorPick(n, 'ca', 'From'), colorPick(n, 'cb', 'To'), choice(n, 'res', 'Size', GEN_RES)]; },
+    pull(n){ const [, dt] = tdt(n); n.ph += dt*P(n, 'speed'); const [W, H] = genSize(n);
+      return gpu(n, FS.ramp, [], {kind: ['linear','radial','angular','diamond'].indexOf(n.params.kind), ang: P(n, 'ang')*Math.PI/180, rep: P(n, 'rep'), ph: n.ph, hard: n.params.hard ? 1 : 0, mir: n.params.mir ? 1 : 0, ca: colorRgb(n, 'ca'), cb: colorRgb(n, 'cb')}, W, H); }
+  },
+  vecpat: {
+    title:'Vector patterns', kind:'video', w:270, ins:[], outs:[{name:'out', kind:'video', label:'Video'}],
+    params:{mode:'polygons', sides:6, dens:1, spin:10, lw:1, pulse:0.3, warp:0, lc:'#7df9ff', bc:'#05050a', res:'720'},
+    build(n){ n.rot = 0; return [choice(n, 'mode', 'Pattern', [['polygons','Nested polygons'],['star','Starburst'],['checker','Checker tunnel'],['hex','Hexagon grid'],['tri','Triangle grid'],['zigzag','Zigzag'],['lattice','Diagonal lattice']]),
+      slider(n, 'sides', 'Sides', 3, 12, 1, v => String(Math.round(v))), slider(n, 'dens', 'Density', 0.2, 4, 0.01, v => v.toFixed(2)), slider(n, 'spin', 'Spin', -180, 180, 1, v => v + '°/s'),
+      slider(n, 'lw', 'Line width', 0.1, 5, 0.01, v => v.toFixed(2)), slider(n, 'pulse', 'Pulse', 0, 1, 0.01, v => Math.round(v*100) + '%'), slider(n, 'warp', 'Warp', 0, 1, 0.01, v => Math.round(v*100) + '%'),
+      colorPick(n, 'lc', 'Lines'), colorPick(n, 'bc', 'Background'), choice(n, 'res', 'Size', GEN_RES)]; },
+    pull(n){ const [, dt] = tdt(n); n.rot += dt*P(n, 'spin')*Math.PI/180; const [W, H] = genSize(n);
+      return gpu(n, FS.vecpat, [], {mode: ['polygons','star','checker','hex','tri','zigzag','lattice'].indexOf(n.params.mode), sides: Math.round(P(n, 'sides')), dens: P(n, 'dens'), rot: n.rot, lw: P(n, 'lw'), pulse: P(n, 'pulse'), warp: P(n, 'warp'), lc: colorRgb(n, 'lc'), bc: colorRgb(n, 'bc')}, W, H); }
+  },
+  vosc: {
+    title:'Video oscillator', kind:'video', w:270, ins:[{name:'mod', kind:'video', label:'FM video'}], outs:[{name:'out', kind:'video', label:'Video'}],
+    params:{wave:'sine', dir:'horizontal', freq:8, speed:0.5, cmode:'rgb', spread:0.33, fm:0.5, ca:'#000000', cb:'#ffffff', res:'720'},
+    build(n){ n.ph = 0; return [choice(n, 'wave', 'Wave', [['sine','Sine'],['tri','Triangle'],['saw','Saw'],['square','Square'],['noise','Stepped noise']]),
+      choice(n, 'dir', 'Direction', [['horizontal','Across'],['vertical','Up and down'],['diagonal','Diagonal'],['radial','Rings']]),
+      slider(n, 'freq', 'Frequency', 0.2, 80, 0.01, v => v.toFixed(2)), slider(n, 'speed', 'Speed', -4, 4, 0.01, v => v.toFixed(2) + ' Hz'),
+      choice(n, 'cmode', 'Color', [['rgb','RGB (shifted waves)'],['two','Two colors']]), slider(n, 'spread', 'RGB spread', 0, 1, 0.01, v => Math.round(v*100) + '%'),
+      slider(n, 'fm', 'FM amount', 0, 2, 0.01, v => Math.round(v*100) + '%'), colorPick(n, 'ca', 'Low'), colorPick(n, 'cb', 'High'), choice(n, 'res', 'Size', GEN_RES),
+      h('div', {class:'status', text:'Like an analog video synth. Patch video into FM to bend the waves with its brightness.'})]; },
+    pull(n){ const [, dt] = tdt(n); n.ph += dt*P(n, 'speed'); const m = inputRaw(n, 'mod'), [W, H] = genSize(n);
+      return gpu(n, FS.vosc, [m], {wave: ['sine','tri','saw','square','noise'].indexOf(n.params.wave), dir: ['horizontal','vertical','diagonal','radial'].indexOf(n.params.dir), freq: P(n, 'freq'), ph: n.ph, spread: P(n, 'spread'), fm: P(n, 'fm'), cmode: n.params.cmode === 'two' ? 0 : 1, hasm: m ? 1 : 0, ca: colorRgb(n, 'ca'), cb: colorRgb(n, 'cb')}, W, H); }
+  },
+  wfold: fxDef('Video wave folder', {gain:2.5, off:0, stages:2, chan:'color'}, n => [slider(n, 'gain', 'Fold amount', 1, 10, 0.01, v => v.toFixed(2) + '×'), slider(n, 'off', 'Offset', -1, 1, 0.01, v => v.toFixed(2)), slider(n, 'stages', 'Folds', 1, 8, 1, v => String(Math.round(v))), choice(n, 'chan', 'Fold', [['color','Each color'],['bright','Brightness only']])],
+    n => ({gain: P(n, 'gain'), off: P(n, 'off'), stages: Math.round(P(n, 'stages')), chan: n.params.chan === 'bright' ? 0 : 1}), 'wfold'),
+  lumakey: {
+    title:'Luma key', kind:'video', w:260, ins:[{name:'in', kind:'video', label:'Foreground'},{name:'bg', kind:'video', label:'Background'}], outs:[{name:'out', kind:'video', label:'Out'}],
+    params:{th:0.5, soft:0.08, inv:false, bgc:'#000000'},
+    build(n){ return [slider(n, 'th', 'Threshold', 0, 1, 0.005, v => Math.round(v*100) + '%'), slider(n, 'soft', 'Softness', 0, 0.5, 0.005, v => Math.round(v*100) + '%'), toggleRow(n, 'inv', 'Key out bright parts'), colorPick(n, 'bgc', 'Background color'),
+      h('div', {class:'status', text:'Dark parts of the foreground become see-through (or bright parts, when switched), showing the Background video or color.'})]; },
+    pull(n){ const s = inputRaw(n, 'in'); if (!s) return null; const [W, H] = dims(s); if (!W) return null; const b = inputRaw(n, 'bg');
+      return gpu(n, FS.lumakey, [s, b], {th: P(n, 'th'), soft: P(n, 'soft'), inv: n.params.inv ? 0 : 1, hasbg: b ? 1 : 0, bgc: colorRgb(n, 'bgc')}, W, H); }
+  },
+  chromakey: {
+    title:'Chroma key', kind:'video', w:260, ins:[{name:'in', kind:'video', label:'Foreground'},{name:'bg', kind:'video', label:'Background'}], outs:[{name:'out', kind:'video', label:'Out'}],
+    params:{kc:'#00ff00', tol:0.12, soft:0.08, spill:0.5, bgc:'#000000'},
+    build(n){ return [colorPick(n, 'kc', 'Key color'), slider(n, 'tol', 'Tolerance', 0, 0.5, 0.002, v => Math.round(v*200) + '%'), slider(n, 'soft', 'Softness', 0, 0.4, 0.002, v => Math.round(v*250) + '%'), slider(n, 'spill', 'Spill removal', 0, 1, 0.01, v => Math.round(v*100) + '%'), colorPick(n, 'bgc', 'Background color'),
+      h('div', {class:'status', text:'Green (or any color) screen: the key color becomes see-through, showing the Background video or color.'})]; },
+    pull(n){ const s = inputRaw(n, 'in'); if (!s) return null; const [W, H] = dims(s); if (!W) return null; const b = inputRaw(n, 'bg');
+      return gpu(n, FS.chromakey, [s, b], {kc: colorRgb(n, 'kc'), tol: P(n, 'tol'), soft: P(n, 'soft'), spill: P(n, 'spill'), hasbg: b ? 1 : 0, bgc: colorRgb(n, 'bgc')}, W, H); }
+  },
+  vfilter: fxDef('Video filter', {mode:'blur', amt:0.5}, n => [choice(n, 'mode', 'Filter', [['blur','Blur'],['sharpen','Sharpen'],['glow','Glow'],['invert','Invert'],['threshold','Threshold'],['solarize','Solarize'],['emboss','Emboss'],['hue','Hue rotate'],['sat','Saturation']]), slider(n, 'amt', 'Amount', 0, 1, 0.005, v => Math.round(v*100) + '%')],
+    n => ({mode: ['blur','sharpen','glow','invert','threshold','solarize','emboss','hue','sat'].indexOf(n.params.mode), amt: P(n, 'amt')}), 'vfilter'),
+  displace: {
+    title:'Displace', kind:'video', w:260, ins:[{name:'in', kind:'video', label:'In'},{name:'map', kind:'video', label:'Map'}], outs:[{name:'out', kind:'video', label:'Out'}], mix:true,
+    params:{amt:0.3, mode:'xy', mix:1},
+    build(n){ return [slider(n, 'amt', 'Amount', 0, 2, 0.005, v => Math.round(v*100) + '%'), choice(n, 'mode', 'Direction', [['x','Sideways'],['y','Up and down'],['xy','By color (red = sideways, green = up)'],['radial','In and out']]),
+      h('div', {class:'status', text:'Warps the picture by the brightness of the Map video (or of itself when nothing is patched). Try a Video oscillator or Ramp as the map.'})]; },
+    pull(n){ const s = inputRaw(n, 'in'); if (!s) return null; const [W, H] = dims(s); if (!W) return null; const m = inputRaw(n, 'map');
+      return gpu(n, FS.displace, [s, m], {amt: P(n, 'amt'), mode: ['x','y','xy','radial'].indexOf(n.params.mode), hasmap: m ? 1 : 0}, W, H); }
+  },
+  chromab: fxDef('Chromatic aberration', {amt:0.4, ang:0, radial:true}, n => [slider(n, 'amt', 'Amount', 0, 2, 0.005, v => Math.round(v*100) + '%'), slider(n, 'ang', 'Angle', 0, 360, 1, v => Math.round(v) + '°'), toggleRow(n, 'radial', 'From the center (lens style)')],
+    n => ({amt: P(n, 'amt'), ang: P(n, 'ang')*Math.PI/180, radial: n.params.radial ? 1 : 0}), 'chromab'),
+  halftone: fxDef('Halftone and dither', {mode:'dots', size:8, ang:45, ink:'#111111', paper:'#f7f5f2'}, n => [choice(n, 'mode', 'Style', [['dots','Halftone dots'],['dither','1-bit dither'],['retro','Retro color dither']]), slider(n, 'size', 'Size', 2, 30, 0.5, v => v.toFixed(1) + ' px'), slider(n, 'ang', 'Angle', 0, 90, 1, v => Math.round(v) + '°'), colorPick(n, 'ink', 'Ink'), colorPick(n, 'paper', 'Paper')],
+    n => ({mode: ['dots','dither','retro'].indexOf(n.params.mode), size: P(n, 'size')*QS, ang: P(n, 'ang')*Math.PI/180, ink: colorRgb(n, 'ink'), paper: colorRgb(n, 'paper')}), 'halftone'),
+  ascii: {
+    title:'ASCII art', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}], mix:true,
+    params:{cell:10, color:false, fg:'#39ff88', bg:'#000000', mix:1},
+    build(n){ return [slider(n, 'cell', 'Character size', 5, 40, 0.5, v => v.toFixed(1) + ' px'), toggleRow(n, 'color', 'Use the picture’s colors'), colorPick(n, 'fg', 'Characters'), colorPick(n, 'bg', 'Background')]; },
+    pull(n){ const s = inputRaw(n, 'in'); if (!s) return null; const [W, H] = dims(s); if (!W) return null;
+      return gpu(n, FS.ascii, [s, asciiAtlas()], {cell: P(n, 'cell')*QS, color: n.params.color ? 1 : 0, fg: colorRgb(n, 'fg'), bg: colorRgb(n, 'bg')}, W, H); }
+  },
+  rutt: fxDef('Scan lines (Rutt-Etra)', {lines:48, height:0.1, lw:2.5, color:true, lc:'#e8eef7', bg:'#000000'}, n => [slider(n, 'lines', 'Lines', 10, 200, 1, v => String(Math.round(v))), slider(n, 'height', 'Height', 0, 0.3, 0.001, v => Math.round(v*1000)/10 + '%'), slider(n, 'lw', 'Line width', 0.5, 6, 0.05, v => v.toFixed(2) + ' px'), toggleRow(n, 'color', 'Use the picture’s colors'), colorPick(n, 'lc', 'Lines'), colorPick(n, 'bg', 'Background')],
+    n => ({lines: P(n, 'lines'), height: P(n, 'height'), lw: P(n, 'lw')*QS, color: n.params.color ? 1 : 0, lc: colorRgb(n, 'lc'), bg: colorRgb(n, 'bg')}), 'rutt'),
+  framerate: {
+    title:'Frame rate and freeze', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'},{name:'freeze', kind:'gate', label:'Freeze'}], outs:[{name:'out', kind:'video', label:'Out'}],
+    params:{fps:8, frozen:false},
+    build(n){ n.fz = h('button', {class:'btn', text:'Freeze', onclick: () => { n.params.frozen = !n.params.frozen; n.fz.classList.toggle('on', n.params.frozen); save(); }}); n.fz.classList.toggle('on', !!n.params.frozen);
+      return [slider(n, 'fps', 'Frame rate', 1, 30, 0.5, v => v.toFixed(1) + ' fps'), h('div', {class:'btns'}, n.fz), h('div', {class:'status', text:'Choppy stop-motion. Freeze (button, or a gate at the input) holds the current frame.'})]; },
+    pull(n){ const s = inputRaw(n, 'in'); if (!s) return null; const [W, H] = dims(s); if (!W) return null;
+      const now = performance.now(), frozen = n.params.frozen || (edgeInto(n.id, 'freeze') && readIn(n, 'freeze', 0) > 0.5);
+      if (!n.held || (!frozen && now - (n.lastT || 0) >= 1000/Math.max(0.5, P(n, 'fps')))){ n.held = gpu(n, FS.copy, [s], {}, W, H, 'hold'); n.lastT = now; }
+      return n.held; }
+  },
+  smear: {
+    title:'Smear', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}], mix:true,
+    params:{keep:0.85, th:0.08, mix:1},
+    build(n){ return [slider(n, 'keep', 'Smear', 0, 0.98, 0.01, v => Math.round(v*100) + '%'), slider(n, 'th', 'Motion threshold', 0, 0.5, 0.005, v => Math.round(v*100) + '%'), h('div', {class:'status', text:'A datamosh-style look: still areas drag their old colors along while moving parts break through.'})]; },
+    pull(n){ const s = inputRaw(n, 'in'); if (!s) return null; const [W, H] = dims(s); if (!W) return null;
+      const prev = n.smPrev || s, last = n.smIn || s, k = (n.smK = (n.smK || 0) ^ 1);
+      const out = gpu(n, FS.smear, [s, prev, last], {keep: P(n, 'keep'), th: P(n, 'th')}, W, H, 'sm' + k);
+      n.smIn = gpu(n, FS.copy, [s], {}, W, H, 'smin' + k); n.smPrev = out; return out; }
+  },
+  colorama: fxDef('Colorama', {cycles:2, speed:0.1, sat:1, mixc:1}, n => [slider(n, 'cycles', 'Color cycles', 0.2, 10, 0.01, v => v.toFixed(2)), slider(n, 'speed', 'Cycle speed', -2, 2, 0.01, v => v.toFixed(2)), slider(n, 'sat', 'Saturation', 0, 1, 0.01, v => Math.round(v*100) + '%'), slider(n, 'mixc', 'Amount', 0, 1, 0.01, v => Math.round(v*100) + '%')],
+    n => ({cycles: P(n, 'cycles'), speed: P(n, 'speed'), sat: P(n, 'sat'), mixc: P(n, 'mixc')}), 'colorama'),
+  mosaic: fxDef('Mosaic', {mode:'hex', size:16, scan:0}, n => [choice(n, 'mode', 'Shape', [['square','Squares'],['hex','Hexagons'],['dots','LED dots']]), slider(n, 'size', 'Size', 3, 80, 0.5, v => v.toFixed(1) + ' px'), slider(n, 'scan', 'Scanlines', 0, 1, 0.01, v => Math.round(v*100) + '%')],
+    n => ({mode: ['square','hex','dots'].indexOf(n.params.mode), size: P(n, 'size')*QS, scan: P(n, 'scan')}), 'mosaic'),
+  edgeglow: fxDef('Edge glow', {k:4, glow:0.6, over:false, cyc:0.05}, n => [slider(n, 'k', 'Strength', 0.5, 12, 0.05, v => v.toFixed(2) + '×'), slider(n, 'glow', 'Glow', 0, 1.5, 0.01, v => Math.round(v*100) + '%'), slider(n, 'cyc', 'Color cycling', -1, 1, 0.01, v => v.toFixed(2)), toggleRow(n, 'over', 'Over the picture')],
+    n => ({k: P(n, 'k'), glow: P(n, 'glow'), over: n.params.over ? 1 : 0, cyc: P(n, 'cyc')}), 'edgeglow'),
   lineart: {
     title:'Line art', kind:'video', w:270, ins:[{name:'new', kind:'gate', label:'New shape'}], outs:[{name:'out', kind:'video', label:'Video'}],
     params:{style:'angular', complexity:4, seed:4127, sym:'none', draw:1, drift:0.3, speed:0.5, spin:0, lw:2, col:'#e8f1ff', acc:'#ff5ea8', bg:'#0b0d1a', res:'720'},
@@ -5472,7 +5870,7 @@ const DEFS = {
       if (localStorage.getItem(STORE + ':rcoll')) n.el.classList.add('rcoll');
       n.el.append(h('header', {}, rc, h('span', {class:'t', text:'Recorder'}), n.status),
         h('div', {class:'recrow'}, n.recBtn, n.time, n.recSum = h('button', {class:'recsum', title:'Change recording settings', onclick: () => { document.getElementById('setbtn').click(); }})), simpAudio,
-        h('div', {class:'meterwrap'}, n.mcv, n.pk), n.takesHead = h('div', {class:'takeshead', hidden: true}, h('span', {text:'Takes and stills'}), h('button', {class:'btn on headlive', text:'Back to live', hidden: true, onclick: () => hidePreview()}), h('button', {class:'btn', text:'Save all', title:'Save every take and still', onclick: async () => {
+        h('div', {class:'meterwrap'}, n.mcv, n.pk), n.takesHead = h('div', {class:'takeshead'}, h('span', {text:'Takes and stills'}), h('button', {class:'btn', text:'Clear', title:'Remove every take and still from the list', onclick: () => clearTakes(n)}), h('button', {class:'btn on headlive', text:'Back to live', hidden: true, onclick: () => hidePreview()}), h('button', {class:'btn', text:'Save all', title:'Save every take and still', onclick: async () => {
           const rows = [...n.list.querySelectorAll('.take')].reverse();
           for (const r of rows){ const t = n.takes.find(x => x.url === r.dataset.url); const b = [...r.querySelectorAll('.btn')].find(x => x.textContent === 'Save' || x.textContent === 'Saved'); if (t && b && b.textContent === 'Save'){ await saveTake(n, t, b); await new Promise(res => setTimeout(res, 350)); } }
           toast('Saved all takes.'); }})), n.list);
@@ -5524,6 +5922,14 @@ function recPause(n, on){
   try { on ? n.rec.pause() : n.rec.resume(); } catch(e){ return; }
   if (on){ n.paused = true; n.pauseT0 = performance.now(); } else { n.pausedMs = (n.pausedMs || 0) + performance.now() - n.pauseT0; n.paused = false; }
   n.el.classList.toggle('paused', !!n.paused); if (n.pills && n.pills.rpause) n.pills.rpause.classList.toggle('lit', !!n.paused);
+}
+async function clearTakes(n){
+  if (!n.takes || !n.takes.length) return;
+  const un = n.takes.filter(t => !t.saved).length;
+  if (un && !await askDialog(un + (un === 1 ? ' take hasn’t' : ' takes haven’t') + ' been saved. Clear the list anyway?', {ok: 'Clear', cancel: 'Keep them'})) return;
+  if (pvUrl) hidePreview();
+  for (const t of n.takes) URL.revokeObjectURL(t.url);
+  n.takes = []; n.list.replaceChildren(); refreshStageSrc();
 }
 function recSrc(n){ const s = recMainOn() ? toDraw(pullNode('main')) : inputOf(n, 'video'); return s ? conformOut(s) : s; }
 function startRec(n, retry){
@@ -5634,10 +6040,9 @@ function addTake(n, blob, dur, ext, info){
   const el = h('div', {class:'take' + (still ? ' still' : ''), 'data-url': t.url}, nm, live, saveBtn, del);
   del.addEventListener('click', () => {
     if (pvUrl === t.url) hidePreview();
-    URL.revokeObjectURL(t.url); el.remove(); n.takes = n.takes.filter(x => x !== t); refreshStageSrc(); if (n.takesHead) n.takesHead.hidden = !n.takes.length;
+    URL.revokeObjectURL(t.url); el.remove(); n.takes = n.takes.filter(x => x !== t); refreshStageSrc();
   });
   n.list.prepend(el);
-  if (n.takesHead) n.takesHead.hidden = false;
   refreshStageSrc();
 }
 let dlP = null;
@@ -5686,7 +6091,8 @@ function addNode(type, x, y, params, id){
   n.foldBtn = fold;
   const extra = def.headExtra ? def.headExtra(n) : null;
   const byp = canBypass(type) ? bypassBtn(n) : null;
-  const head = h('header', {title:'Double-click to collapse or expand'}, fold, titleEl, extra, byp,
+  const onoffJack = canBypass(type) ? (() => { const w = h('span', {class:'onoffj', 'data-jackhost':'', title:'On/off input: a trigger switches on or off; a held gate keeps it on while high'}); w.append(makeJack(n, {name:'onoff', kind:'gate', label:'On/off'}, 'in')); return w; })() : null;
+  const head = h('header', {title:'Double-click to collapse or expand'}, onoffJack, fold, titleEl, extra, byp,
     h('button', {class:'x', 'aria-label': 'Remove ' + def.title, title:'Remove', text:'×', onclick: () => removeNode(id)}));
   const hasPorts = def.ins.length || def.outs.length;
   const ports = hasPorts ? h('div', {class:'ports'},
@@ -5946,6 +6352,7 @@ function syncCableEls(){
   }
 }
 function setCollapsed(n, c){
+  if (n.type === 'button') c = false;
   n.collapsed = !!c;
   n.el.classList.toggle('collapsed', n.collapsed);
   n.foldBtn.setAttribute('aria-expanded', String(!n.collapsed));
@@ -6080,6 +6487,8 @@ function snapBend(d, P, shift){
 let autoPanV = [0, 0];
 function autoPanAt(ev){
   if (ev.target && ev.target.closest && ev.target.closest('.dock, .dockport')){ autoPanV = [0, 0]; return; }
+  // Heading for a docked jack (Main view at the top, the recorder at the bottom): don't scroll the patch.
+  for (const d of document.querySelectorAll('.dock .dockport')){ const r = d.getBoundingClientRect(); if (r.width && ev.clientX > r.left - 90 && ev.clientX < r.right + 40 && ev.clientY > r.top - 70 && ev.clientY < r.bottom + 70){ autoPanV = [0, 0]; return; } }
   const over = document.elementFromPoint(ev.clientX, ev.clientY); if (over && over.closest && over.closest('.dock')){ autoPanV = [0, 0]; return; }
   const r = ws.getBoundingClientRect(), m = 36, f = d => d < m ? (m - d)/m : 0;
   autoPanV = [ (f(ev.clientX - r.left) - f(r.right - ev.clientX))*14, (f(ev.clientY - r.top) - f(r.bottom - ev.clientY))*14 ];
@@ -6338,18 +6747,18 @@ const drawer = document.getElementById('drawer'), dtoggle = document.getElementB
 const PALETTE = [
   ['§Video', []],
   ['Video inputs', [['camera','Camera'],['player','Video player'],['image','Image'],['gif','GIF player']]],
-  ['Generators', [['vector3d','Vector shapes'],['amoeba','Amoeba'],['bloom','Contour bloom'],['shell','Contour shell'],['shards','Shard burst'],['strata','Strata'],['geo','Geo composer'],['topo','Contour rings'],['iso','Iso geometry'],['lineart','Line art'],['blobs','Blobs'],['lines','Lines & Grids'],['osc','Pattern generator'],['shapes','Shapes'],['text3d','3D text'],['text','Text']]],
-  ['Video manipulation', [['kaleido','Kaleidoscope'],['mirror','Mirror'],['rotate','Rotate'],['vzoom','Zoom'],['crop','Crop'],['tile','Tile'],['warp','Wave warp']]],
-  ['Color', [['cadj','Color adjust'],['bw','Black and white'],['poster','Posterize'],['gmap','Gradient map']]],
-  ['Texture', [['edge','Edge detect'],['pixelate','Pixelate'],['crt','CRT / VHS']]],
-  ['Delay, time, and memory', [['vdelay','Video delay'],['rgbdelay','RGB delay'],['feedback','Feedback'],['slitscan','Slit-scan'],['stutter','Stutter'],['looper','Looper']]],
-  ['Mix and route', [['mixer','Video mixer'],['xfade','Crossfade'],['key','Key'],['switcher','Input switcher'],['router','Sequential switch']]],
-  ['Monitoring', [['screen','Screen']]],
+  ['Generators', [['vector3d','Vector shapes'],['amoeba','Amoeba'],['vecpat','Vector patterns'],['vosc','Video oscillator'],['ramp','Ramp'],['bloom','Contour bloom'],['shell','Contour shell'],['shards','Shard burst'],['strata','Strata'],['geo','Geo composer'],['topo','Contour rings'],['iso','Iso geometry'],['lineart','Line art'],['blobs','Blobs'],['lines','Lines & Grids'],['osc','Pattern generator'],['shapes','Shapes'],['text3d','3D text'],['text','Text']]],
+  ['Video manipulation', [['displace','Displace'],['chromab','Chromatic aberration'],['rutt','Scan lines (Rutt-Etra)'],['kaleido','Kaleidoscope'],['mirror','Mirror'],['rotate','Rotate'],['vzoom','Zoom'],['crop','Crop'],['tile','Tile'],['warp','Wave warp']]],
+  ['Color', [['colorama','Colorama'],['wfold','Video wave folder'],['vfilter','Video filter'],['cadj','Color adjust'],['bw','Black and white'],['poster','Posterize'],['gmap','Gradient map']]],
+  ['Texture', [['halftone','Halftone and dither'],['ascii','ASCII art'],['mosaic','Mosaic'],['edgeglow','Edge glow'],['edge','Edge detect'],['pixelate','Pixelate'],['crt','CRT / VHS']]],
+  ['Delay, time, and memory', [['framerate','Frame rate and freeze'],['smear','Smear'],['vdelay','Video delay'],['rgbdelay','RGB delay'],['feedback','Feedback'],['slitscan','Slit-scan'],['stutter','Stutter'],['looper','Looper']]],
+  ['Mix and route', [['lumakey','Luma key'],['chromakey','Chroma key'],['mixer','Video mixer'],['xfade','Crossfade'],['key','Key'],['switcher','Input switcher'],['router','Sequential switch']]],
+  ['Monitoring', [['screen','Screen'],['led','LED']]],
   ['§Control', []],
   ['MIDI', [['midi','MIDI input'],['midiclock','MIDI clock']]],
   ['Modulation sources', [['lfo','LFO'],['envelope','Envelope'],['random','Random'],['macro','Macro knobs'],['morph','Preset morph']]],
-  ['Rhythm and triggers', [['bpm','BPM'],['clock','Clock'],['seq','Step sequencer'],['button','Button'],['counter','Counter'],['divider','Clock divider'],['euclid','Euclidean rhythm'],['logic','Logic']]],
-  ['Utilities', [['attenuator','Attenuator'],['scale','Scale'],['send','Send'],['receive','Receive'],['math','Math'],['sh','Sample and hold'],['quant','Quantizer'],['slew','Slew limiter']]],
+  ['Rhythm and triggers', [['bpm','BPM'],['clock','Clock'],['seq','Step sequencer'],['button','Button'],['toggle','Toggle'],['selnum','Select number'],['counter','Counter'],['divider','Clock divider'],['euclid','Euclidean rhythm'],['logic','Logic']]],
+  ['Utilities', [['intbox','Integer'],['floatbox','Decimal'],['attenuator','Attenuator'],['scale','Scale'],['send','Send'],['receive','Receive'],['math','Math'],['sh','Sample and hold'],['quant','Quantizer'],['slew','Slew limiter']]],
   ['§Audio', []],
   ['Audio inputs', [['audioin','Audio input'],['aplayer','Audio player']]],
   ['Audio effects', [['again','Gain'],['afilter','Filter'],['aeq','EQ'],['acomp','Compressor'],['adist','Distortion'],['adelay','Audio delay'],['areverb','Reverb'],['apan','Pan']]],
@@ -6360,8 +6769,8 @@ const CANVAS_GROUP = ['Canvas', [['d:box','Box'],['d:note','Comment'],['d:logo',
 const isSection = g => g.startsWith('§');
 /* Module list: Quick access dock plus collapsible categories. */
 const PSTORE = STORE + ':palette';
-const GROUP_FAM = {'Video inputs':'src', 'Audio inputs':'aud', 'MIDI':'midi', 'Generators':'gen', 'Video manipulation':'geo', 'Color':'tex', 'Texture':'tex', 'Delay, time, and memory':'time',
-  'Mix and route':'mix', 'Audio to visuals':'aud', 'Audio effects':'aud', 'Audio mix and output':'aud', 'Modulation sources':'mod', 'Rhythm and triggers':'gate', 'Utilities':'util', 'Monitoring':'mon'};
+const GROUP_FAM = {'Video inputs':'src', 'Audio inputs':'ain', 'MIDI':'midi', 'Generators':'gen', 'Video manipulation':'geo', 'Color':'tex', 'Texture':'tex', 'Delay, time, and memory':'time',
+  'Mix and route':'mix', 'Audio to visuals':'aud', 'Audio effects':'afx', 'Audio mix and output':'aout', 'Modulation sources':'mod', 'Rhythm and triggers':'gate', 'Utilities':'util', 'Monitoring':'mon'};
 let pstate = {open: {}, quick: ['camera', 'act:output', 'screen', 'mirror', 'lfo']};
 try { const v = JSON.parse(localStorage.getItem(PSTORE) || 'null'); if (v){ if (v.open) pstate.open = v.open; if (Array.isArray(v.quick)) pstate.quick = v.quick; pstate.drawer = !!v.drawer; } } catch(e){}
 const psave = () => { try { localStorage.setItem(PSTORE, JSON.stringify(pstate)); } catch(e){} };
@@ -6850,6 +7259,8 @@ window.addEventListener('keydown', e => {
   if (k === 's'){ e.preventDefault(); savePatch(e.shiftKey); }
   if (k === 'o'){ e.preventDefault(); openPatch(); }
   if (k === 'n' && !e.shiftKey){ e.preventDefault(); newPatch(); }
+  if (k === 'k' && !e.shiftKey){ e.preventDefault(); keyBtn.click(); }
+  if (k === 'm' && !e.shiftKey){ e.preventDefault(); document.getElementById('midilearn').click(); }
 });
 
 /* ---------- Perform mode: a non-node control surface you can arrange and lock ---------- */
@@ -7072,8 +7483,9 @@ function applyScope(){
   crumb.hidden = !scope;
   clearSel(); refreshGroups(); syncCableEls();
 }
-function openGroup(g){ scopeStack.push(scope); scope = g.id; applyScope(); requestAnimationFrame(() => fitAll()); }
-function closeGroup(){ if (scope === null) return; scope = scopeStack.length ? scopeStack.pop() : null; applyScope(); requestAnimationFrame(() => fitAll()); }
+const viewStack = [];
+function openGroup(g){ viewStack.push({pan: {...pan}, zoom}); scopeStack.push(scope); scope = g.id; applyScope(); }
+function closeGroup(){ if (scope === null) return; scope = scopeStack.length ? scopeStack.pop() : null; const v = viewStack.pop(); if (v){ pan = v.pan; zoom = v.zoom; applyPan(); } applyScope(); }
 document.getElementById('crumbback').addEventListener('click', closeGroup);
 document.getElementById('crumbsave').addEventListener('click', async () => {
   // Save the outermost open group (the custom module you're editing).
@@ -7191,10 +7603,10 @@ window.addEventListener('keydown', e => {
 
 /* ---------- Simple mode: camera, six effect slots, output ---------- */
 const SIMPLE_FX = [
-  ['Shape and space', [['kaleido','Kaleidoscope'],['mirror','Mirror'],['rotate','Rotate'],['vzoom','Zoom'],['crop','Crop'],['tile','Tile'],['warp','Wave warp']]],
-  ['Color', [['cadj','Color adjust'],['bw','Black and white'],['poster','Posterize'],['gmap','Gradient map']]],
-  ['Texture', [['edge','Edge detect'],['pixelate','Pixelate'],['crt','CRT / VHS']]],
-  ['Time and memory', [['vdelay','Video delay'],['rgbdelay','RGB delay'],['feedback','Feedback'],['slitscan','Slit-scan'],['stutter','Stutter'],['looper','Looper']]]
+  ['Shape and space', [['displace','Displace'],['chromab','Chromatic aberration'],['rutt','Scan lines (Rutt-Etra)'],['kaleido','Kaleidoscope'],['mirror','Mirror'],['rotate','Rotate'],['vzoom','Zoom'],['crop','Crop'],['tile','Tile'],['warp','Wave warp']]],
+  ['Color', [['colorama','Colorama'],['wfold','Video wave folder'],['vfilter','Video filter'],['cadj','Color adjust'],['bw','Black and white'],['poster','Posterize'],['gmap','Gradient map']]],
+  ['Texture', [['halftone','Halftone and dither'],['ascii','ASCII art'],['mosaic','Mosaic'],['edgeglow','Edge glow'],['edge','Edge detect'],['pixelate','Pixelate'],['crt','CRT / VHS']]],
+  ['Time and memory', [['framerate','Frame rate and freeze'],['smear','Smear'],['vdelay','Video delay'],['rgbdelay','RGB delay'],['feedback','Feedback'],['slitscan','Slit-scan'],['stutter','Stutter'],['looper','Looper']]]
 ];
 let simple = {on: false, group: null, input: null, mic: null, slots: [null, null, null, null, null, null], bypass: [false, false, false, false, false, false]};
 const simpleEl = document.getElementById('simple'), simpleRow = document.getElementById('simplerow');
@@ -7290,7 +7702,8 @@ function simpleRender(){
     const kids = [...body.children];
     // Trigger buttons (Record, Play, Clear, Trigger…) always stay visible.
     const isTrig = c => !c.classList.contains('adv') && !c.classList.contains('colorgrp') && (c.matches('button') || !!c.querySelector(':scope > button.btn, .btns button.btn'));
-    kids.forEach((c, k) => c.classList.toggle('smore', !isTrig(c) && (k >= 3 || c.classList.contains('adv'))));
+    const isMix = c => c.matches && c.matches('.row.sl[data-key="mix"]');
+    kids.forEach((c, k) => c.classList.toggle('smore', !isTrig(c) && !isMix(c) && (k >= 3 || c.classList.contains('adv'))));
     if (kids.some(c => c.classList.contains('smore'))){
       const mb = h('button', {class:'btn smorebtn', text: simple.more[i] ? 'Fewer controls' : 'More controls'});
       mb.addEventListener('click', () => { simple.more[i] = !simple.more[i]; card.classList.toggle('showmore', simple.more[i]); mb.textContent = simple.more[i] ? 'Fewer controls' : 'More controls'; });
@@ -7343,7 +7756,8 @@ function simpleAudioSync(){
 function simpleEnter(){
   if (simple.on) return;
   simple.on = true; document.body.classList.add('simple');
-  simpleEnsure();
+  simpleEnsure(); clipsBpm();
+  setTimeout(() => { const c = nodes.get(simple.input); if (c && c.type === 'camera' && !c.stream) startCam(c); }, 0);
   const mine = new Set([simple.input, simple.mic, ...simple.slots].filter(Boolean));
   const outs = e => (e.to.node === 'main' && e.to.port === 'in') || (e.to.node === 'rec' && (e.to.port === 'video' || e.to.port === 'audio'));
   simple.saved = edges.filter(e => outs(e) && !mine.has(e.from.node)).map(e => JSON.parse(JSON.stringify(e)));
@@ -7524,6 +7938,28 @@ const MODULE_HELP = {
   gif:'Plays animated GIFs (and animated WebP or PNG) at any speed, looping, bouncing, once, or one frame per Next trigger.',
   amoeba:'Soft, organic blobs that pulse and drift, with a glowing edge and an optional nucleus. Pulse can be triggered on the beat.',
   vector3d:'Random 3D vector forms: polyhedra, supershapes, knots, wave lattices, spiky forms, point clouds, twisted ribbons, helices, ring stacks and shard clusters, drawn as wireframes, hidden lines, solids or points, spinning in 3D with morphing, glitches and trails. New shape (or a trigger) makes a fresh one; store and recall your favorites.',
+  toggle:'An on/off switch. Click it, or patch a gate into In: high switches it on, low switches it off. Out sends a gate while it’s on.',
+  led:'A light for seeing triggers and gates (great next to sequencers). It passes the signal straight through.',
+  intbox:'A whole-number box with Min and Max, +1 and −1 buttons and trigger inputs. Sends the number itself, or 0–1 when Output 0–1 is on.',
+  floatbox:'A number box with decimals. Its Set input shows and passes along an incoming value.',
+  selnum:'Fires Match when the incoming number becomes the one you set (rounded, or within a tolerance), a gate while equal, and Other when it changes away.',
+  ramp:'Smooth or hard-edged gradients (straight, circles, around or diamond) that can repeat, mirror and scroll.',
+  vecpat:'Crisp vector-style patterns: nested polygons, starbursts, checker tunnels, hexagon and triangle grids, zigzags and lattices, spinning and pulsing.',
+  vosc:'An analog-style video oscillator: sine, triangle, saw, square or stepped-noise waves across the screen, in RGB or two colors. Patch video into FM to bend the waves.',
+  wfold:'Folds bright parts back down (like an audio wave folder), turning gradients into rippling bands.',
+  lumakey:'Makes the dark (or bright) parts of a picture see-through, showing a background video or color.',
+  chromakey:'Green screen: one color becomes see-through, with tolerance, softness and spill removal.',
+  vfilter:'Blur, sharpen, glow, invert, threshold, solarize, emboss, hue rotate or saturation.',
+  displace:'Warps the picture by the brightness of a map video (or itself), for liquid and heat-haze looks.',
+  chromab:'Offsets the red and blue channels like a cheap lens, from the center or in one direction.',
+  halftone:'Print-style halftone dots, 1-bit dither or retro color dither.',
+  ascii:'Turns the picture into text characters, in one color or the picture’s own colors.',
+  rutt:'Classic video-synth scan lines: each line is pushed up by the brightness underneath.',
+  framerate:'Lowers the frame rate for a choppy stop-motion look, and freezes on a button or gate.',
+  smear:'Datamosh-style smearing: still areas keep dragging old colors while movement breaks through.',
+  colorama:'Maps brightness to cycling rainbow colors.',
+  mosaic:'Squares, hexagons or LED dots, with optional scanlines.',
+  edgeglow:'Neon outlines with a soft glow and slowly cycling colors.',
   bpm:'The patch’s main tempo, from 20 to 2000 BPM, with Start, Stop and Tap. Every Sync BPM button in the patch follows it, and its outputs send beats, eighths, sixteenths and bars.',
   attenuator:'Turns a control signal up, down or upside down before it reaches a slider. Put it between an LFO (or any modulator) and the slider to set how far it moves.',
   scale:'Maps one range of a control signal onto another, with a choice of curves. Useful for using only part of an LFO’s swing.',
@@ -7581,7 +8017,7 @@ function helpDoc(){
       <p>Shape generators (Contour bloom, Contour shell, Shard burst, Strata, Geo composer, Contour rings, Iso geometry, Line art, Blobs) can <b>store shapes</b>: press New shape until you like it, then Store shape. Click a number to recall it; right-click to delete or replace. Their inputs let you make a new shape, store a shape and <b>Recall</b> one with a trigger or a <b>Counter</b>.</p>`],
     ['midi', 'MIDI', `<p>Press <b>MIDI learn</b>, click a slider or Button pad, then move a knob or hit a pad on your controller. Mapped controls show a small pink dot. Use the <b>MIDI input</b> module for notes and knobs as modulation, and <b>MIDI clock</b> to follow an external tempo. MIDI works in Chrome, Edge and the desktop app.</p>`],
     ['settings', 'Settings and skins', `<p>Settings holds Simple mode, tips, recording options, <b>Performance</b> (Draft quality renders effects at half resolution; Generators sets how often drawn generators redraw, 30 times a second by default, which keeps everything else smooth), <b>Backups</b> (earlier versions saved automatically every few minutes, which you can restore) and <b>skins</b>. Click a skin to try it; right-click to make it the default that opens every time.</p>`],
-    ['keys', 'Keyboard shortcuts', `<table><tr><td>Mouse wheel</td><td>Zoom the patch in and out</td></tr><tr><td>Shift + mouse wheel</td><td>Scroll the patch up and down</td></tr><tr><td>Cmd/Ctrl + N</td><td>New empty patch</td></tr><tr><td>Cmd/Ctrl + Z</td><td>Undo</td></tr><tr><td>Cmd/Ctrl + Shift + Z</td><td>Redo</td></tr><tr><td>Cmd/Ctrl + C / V</td><td>Copy and paste selected modules</td></tr><tr><td>Cmd/Ctrl + D</td><td>Duplicate selected modules</td></tr><tr><td>Cmd/Ctrl + S</td><td>Save</td></tr><tr><td>Cmd/Ctrl + Shift + S</td><td>Save as</td></tr><tr><td>Cmd/Ctrl + O</td><td>Load</td></tr>
+    ['keys', 'Keyboard shortcuts', `<table><tr><td>Mouse wheel</td><td>Zoom the patch in and out</td></tr><tr><td>Shift + mouse wheel</td><td>Scroll the patch up and down</td></tr><tr><td>Cmd/Ctrl + N</td><td>New empty patch</td></tr><tr><td>Cmd/Ctrl + K</td><td>Key mapping on/off</td></tr><tr><td>Cmd/Ctrl + M</td><td>MIDI learn on/off</td></tr><tr><td>Cmd/Ctrl + Z</td><td>Undo</td></tr><tr><td>Cmd/Ctrl + Shift + Z</td><td>Redo</td></tr><tr><td>Cmd/Ctrl + C / V</td><td>Copy and paste selected modules</td></tr><tr><td>Cmd/Ctrl + D</td><td>Duplicate selected modules</td></tr><tr><td>Cmd/Ctrl + S</td><td>Save</td></tr><tr><td>Cmd/Ctrl + Shift + S</td><td>Save as</td></tr><tr><td>Cmd/Ctrl + O</td><td>Load</td></tr>
       <tr><td>Cmd/Ctrl + E</td><td>Lock or unlock the Presentation layout</td></tr><tr><td>Option / Alt</td><td>Draw and edit cable bends</td></tr><tr><td>Keys button</td><td>Click a button or pad, then press a key to play it from the keyboard</td></tr><tr><td>Shift + click or drag</td><td>Select modules</td></tr>
       <tr><td>Delete</td><td>Remove the selected modules or canvas item</td></tr><tr><td>Escape</td><td>Cancel drawing a cable, close menus</td></tr></table>`],
     ['blends', 'Blend modes', `<p>Blend modes decide how a layer combines with what’s underneath (in the Video mixer and Feedback). <b>Normal</b> is traditional video layering: the top picture simply covers the one below, and its Level fades it in and out.</p>
@@ -7828,11 +8264,16 @@ function loadSimpleExample(ex){
   setSimpleCount(ex.count);
   ex.slots.forEach(([type, params], i) => { simpleSet(i, type); const n = nodes.get(simple.slots[i]); if (n) for (const [k, v] of Object.entries(params)) setParam(n, k, v); });
   simpleRender(); save();
-  toast('Loaded “' + ex.name + '”. Press Start camera to begin.');
+  const cam = nodes.get(simple.input); if (cam && cam.type === 'camera' && !cam.stream) startCam(cam);
+  toast('Loaded “' + ex.name + '”.');
 }
 {
   const menu = document.getElementById('exmenu'), btn = document.getElementById('exbtn');
   const item = (ex, fn) => { const b = h('button', {class:'exitem'}, h('b', {text: ex.name}), h('span', {text: ex.desc})); b.addEventListener('click', () => { menu.hidden = true; fn(ex); }); return b; };
+  const hidden = () => settings.hiddenEx || [];
+  const builtIn = (ex, fn, pre) => { const x = h('button', {class:'qx exdel', title:'Remove from this menu', 'aria-label':'Remove ' + ex.name, text:'×'});
+    x.addEventListener('click', e => { e.stopPropagation(); settings.hiddenEx = hidden().concat([pre + ex.name]); saveSettings(); renderExamples(); });
+    return h('div', {class:'exwrapitem'}, item(ex, fn), x); };
   window.renderExamples = () => {
     const mine = userExamples.map((ex, i) => {
       const b = item({name: ex.name, desc: ex.desc, build: () => ex.patch}, e2 => { loadExample(e2); const d = ex.patch; if (d.presets){ presets = JSON.parse(JSON.stringify(d.presets)); renderPresets(); } });
@@ -7841,8 +8282,9 @@ function loadSimpleExample(ex){
       return h('div', {class:'exwrapitem'}, b, x);
     });
     menu.replaceChildren(...(mine.length ? [h('div', {class:'sethead', text:'Your examples'}), ...mine] : []),
-      h('div', {class:'sethead', text:'Patches'}), ...EXAMPLES.map(ex => item(ex, loadExample)),
-      h('div', {class:'sethead', text:'Simple mode'}), ...SIMPLE_EXAMPLES.map(ex => item(ex, loadSimpleExample)));
+      h('div', {class:'sethead', text:'Patches'}), ...EXAMPLES.filter(ex => !hidden().includes('p:' + ex.name)).map(ex => builtIn(ex, loadExample, 'p:')),
+      h('div', {class:'sethead', text:'Simple mode'}), ...SIMPLE_EXAMPLES.filter(ex => !hidden().includes('s:' + ex.name)).map(ex => builtIn(ex, loadSimpleExample, 's:')),
+      ...(hidden().length ? [h('button', {class:'btn exrestore', text:'Show removed examples again', onclick: () => { settings.hiddenEx = []; saveSettings(); renderExamples(); }})] : []));
   };
   renderExamples();
   btn.addEventListener('click', () => { menu.hidden = !menu.hidden; });
@@ -7998,6 +8440,9 @@ function paintStrips(){ document.querySelectorAll('.lefttitle').forEach(el => el
 setInterval(paintStrips, 500);
 // Double-click the divider: back to the resting layout (main view about a third of the window).
 divider.addEventListener('dblclick', () => { setLeftCol(false); setViewCol(false); setSw(Math.round(split.clientWidth/3)); });
+{ const cb = document.getElementById('setsimpleonly'); cb.checked = !!settings.simpleOnly; document.body.classList.toggle('simpleonly', !!settings.simpleOnly);
+  if (settings.simpleOnly && !settings.simple) setTimeout(() => setSimpleMode(true), 0);
+  cb.addEventListener('change', () => { settings.simpleOnly = cb.checked; saveSettings(); document.body.classList.toggle('simpleonly', cb.checked); if (cb.checked && !settings.simple) setSimpleMode(true); }); }
 { const cb = document.getElementById('setrecmain'); cb.checked = recMainOn(); document.body.classList.toggle('recmain', recMainOn()); cb.addEventListener('change', () => { settings.recMain = cb.checked; saveSettings(); document.body.classList.toggle('recmain', cb.checked); syncCableEls(); }); }
 for (const [id, key, cls] of [['setnoex', 'noExamples', 'noexamples'], ['setnorec', 'noRec', 'norec']]){
   const cb = document.getElementById(id); cb.checked = !!settings[key]; document.body.classList.toggle(cls, !!settings[key]);
@@ -8221,6 +8666,8 @@ function vecMesh(seed, family, detail){
   return {v, e, f, name: name + (family === 'random' ? ' (surprise)' : '')};
 }
 
+function intClamp(n, v){ const lo = Math.min(n.params.min, n.params.max), hi = Math.max(n.params.min, n.params.max); return Math.max(lo, Math.min(hi, v)); }
+function intStep(n, d){ const lo = Math.min(n.params.min, n.params.max), hi = Math.max(n.params.min, n.params.max); let v = n.params.value + d; if (v > hi) v = lo; if (v < lo) v = hi; n.params.value = v; if (n.num) n.num.value = v; }
 /* ---------- Tempo sync helpers ---------- */
 // Steps per second, or one step per musical division when synced to the BPM.
 function rateOf(n){ const ss = syncSec(n); if (ss){ syncInfo(n, ss*1000); return 1/ss; } return P(n, 'rate'); }
@@ -8542,7 +8989,7 @@ function liveRender(){
   lay.value = live.layout;
 }
 // Clips tempo: drives quantized launches, beat-length fades and every Sync BPM effect in the clips.
-function setClipsBpm(v){ live.bpm = Math.max(20, Math.min(2000, +v || 120)); const b = nodes.get(live.bpmId); if (b) setParam(b, 'bpm', live.bpm); document.getElementById('lbpm').value = (+live.bpm).toFixed(1); liveSave(); }
+function setClipsBpm(v){ live.bpm = Math.max(20, Math.min(2000, +v || 120)); const b = nodes.get(live.bpmId); if (b) setParam(b, 'bpm', live.bpm); document.getElementById('lbpm').value = (+live.bpm).toFixed(1); const sb = document.getElementById('sbpm'); if (sb) sb.value = (+live.bpm).toFixed(1); liveSave(); }
 {
   const inp = document.getElementById('lbpm'); inp.value = live.bpm;
   inp.addEventListener('change', () => setClipsBpm(inp.value));
@@ -8671,6 +9118,21 @@ document.getElementById('bankminus').addEventListener('click', () => { bank.coun
 document.getElementById('bankplus').addEventListener('click', () => { bank.count = Math.min(16, bank.count + 1); bankRender(); save(); });
 ['bankminus', 'bankplus'].forEach(id => document.getElementById(id).addEventListener('pointerdown', e => e.stopPropagation()));
 bankEl.addEventListener('pointerdown', e => e.stopPropagation());
+// Control mode: draw a line from each fader to every control it's linked to.
+const bankSvg = document.createElementNS(SVGNS, 'svg'); bankSvg.setAttribute('class', 'banklinks'); document.body.append(bankSvg);
+function drawBankLinks(){
+  if (!document.body.classList.contains('sliders')){ if (bankSvg.childNodes.length) bankSvg.replaceChildren(); return; }
+  const strips = bankEl.querySelectorAll('.bstrip'), wr = ws.getBoundingClientRect(), br = bankEl.getBoundingClientRect(), parts = [];
+  for (const m of bank.maps){
+    const st = strips[m.s], row = bankRowFor(m); if (!st || !row || !row.offsetParent) continue;
+    const j = st.querySelector('.bjack').getBoundingClientRect(), rj = (row.querySelector('.jack') || row).getBoundingClientRect();
+    const x1 = j.left + j.width/2, y1 = j.top + j.height/2, x2 = rj.left + rj.width/2, y2 = Math.min(rj.top + rj.height/2, br.top - 2);
+    if (rj.bottom < wr.top || rj.top > br.top || rj.right < wr.left || rj.left > wr.right) continue;
+    const my = (y1 + y2)/2;
+    parts.push('<path d="M' + x1 + ' ' + y1 + ' C' + x1 + ' ' + (my) + ' ' + x2 + ' ' + (my) + ' ' + x2 + ' ' + y2 + '"/><circle cx="' + x2 + '" cy="' + y2 + '" r="4"/>');
+  }
+  const html = parts.join(''); if (html !== bankSvg.dataset.h){ bankSvg.dataset.h = html; bankSvg.innerHTML = html; }
+}
 function slidersEnter(){ document.body.classList.add('sliders'); bankRender(); }
 function slidersExit(){ document.body.classList.remove('sliders'); }
 
@@ -8725,6 +9187,13 @@ function conformOut(src){
   [a, r, f].forEach(el => el.addEventListener('change', set)); paint();
 }
 
+/* ---------- Tempo in Simple mode: the same tempo as Clips, for every Sync BPM effect ---------- */
+{
+  const inp = document.getElementById('sbpm'); inp.value = live.bpm;
+  inp.addEventListener('change', () => { clipsBpm(); setClipsBpm(inp.value); inp.value = live.bpm; });
+  let taps = [];
+  document.getElementById('stap').addEventListener('click', () => { clipsBpm(); const now = performance.now(); taps = taps.filter(t => now - t < 2500); taps.push(now); if (taps.length >= 2){ setClipsBpm((60000/((taps[taps.length-1] - taps[0])/(taps.length - 1))).toFixed(1)); inp.value = live.bpm; } });
+}
 /* ---------- Warn before closing with unsaved takes ---------- */
 function unsavedTakes(){ const r = nodes.get('rec'); return r && r.takes ? r.takes.filter(t => !t.saved).length : 0; }
 window.seedsUnsaved = unsavedTakes;   // the desktop app asks this before closing
@@ -8769,6 +9238,7 @@ function frame(){
 function frameBody(){
   frameNo++;
   liveTick();
+  if (frameNo % 2 === 0) drawBankLinks();
   fpsTick();
   autoPanStep();
   for (const n of nodes.values()){ const r = DEFS[n.type].render; if (r) r(n); }
