@@ -1017,7 +1017,7 @@ body.lbarmin .livebar .lextra{display:none !important}
 .lbarcoll .dchev{transform:rotate(45deg)}
 body.lbarmin .lbarcoll .dchev{transform:rotate(-135deg)}
 .dockport.mini{padding:4px !important; gap:0}
-.dockport.mini > span{display:none}
+.dockport.mini > span:not(.jack){display:none}
 
 /* layout: the presets bar belongs to the left side; the main view reaches the top bar in every mode */
 body, body.simplemode, body.live{grid-template-rows:auto minmax(0,1fr) !important}
@@ -1044,6 +1044,7 @@ body.sliders .ws .node > header .bypass{pointer-events:auto}
 body.sliders .ws .node > header .x, body.sliders .ws .node > header .fold, body.sliders .ws .rz, body.sliders .ws .decor .x{display:none !important}
 body.sliders .dock .jack{pointer-events:none}
 .row.sl.banktarget{outline:2px solid var(--mod); outline-offset:2px; border-radius:4px; background:color-mix(in srgb, var(--mod) 14%, transparent)}
+.sndinfo{font-size:12px}
 </style>
 </head>
 <body>
@@ -1097,6 +1098,14 @@ body.sliders .dock .jack{pointer-events:none}
           <option value="128000">128 kbps</option><option value="192000">192 kbps</option><option value="256000">256 kbps</option><option value="320000">320 kbps (best)</option></select></label>
       </div>
       <div class="setsec">
+        <div class="sethead">Sound</div>
+        <div class="setsub" id="setaudiostate">Sound is off.</div>
+        <div class="btns"><button class="tb" id="setaudiostart">Start audio</button><button class="tb" id="setaudiorestart">Restart audio</button></div>
+        <div class="btns"><button class="tb" id="settest1">Test tone 1</button><button class="tb" id="settest2">Test tone 2</button><button class="tb" id="setsndreport">Copy sound report</button></div>
+        <div class="setsub">Test tone 1 plays through ...Seeds’ audio engine; Test tone 2 plays the simplest way Windows can. If you hear 2 but not 1, tell me; if you hear neither, the sound card is busy or set to another output.</div>
+        <label class="setsel"><span>Output</span><select id="setaudioout"><option value="">Default output</option></select></label>
+        <label class="setsel"><span>Latency</span><select id="setaudiolat"><option value="interactive">Low (live playing)</option><option value="balanced">Balanced</option><option value="playback">Safe (fewer glitches)</option></select></label>
+        <div class="setsub">If you also use a DAW with an <b>ASIO</b> driver, it may hold the sound card so other programs can’t play. Close the DAW (or let it release the device), choose an output here, then press Restart audio. ...Seeds plays through Windows’ normal audio, so pick the speakers or headphones Windows uses.</div>
         <div class="sethead">MIDI</div>
         <label class="setsel"><span>Controller</span><select id="setmidiin"><option value="">All connected MIDI inputs</option></select></label>
         <div class="setsub" id="setmidiinfo">Choose which controller ...Seeds listens to. MIDI starts when you first use MIDI learn, a MIDI module or Clips notes.</div>
@@ -2787,12 +2796,47 @@ function ensureAudio(){
   if (!actx){
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return null;
-    actx = new AC();
+    try { actx = new AC({latencyHint: settings.audioLatency || 'interactive'}); } catch(e){ actx = new AC(); }
+    if (settings.audioOut && actx.setSinkId) actx.setSinkId(settings.audioOut).catch(err => { audioProblem = 'Couldn’t use the chosen output (' + err.message + '). Using the default instead.'; });
+    actx.onstatechange = () => soundPaint();
     for (const n of nodes.values()) DEFS[n.type].initAudio && DEFS[n.type].initAudio(n);
     syncAudio();
   }
-  if (actx.state === 'suspended') actx.resume();
+  if (actx.state === 'suspended' && !soundUserOff) actx.resume().catch(() => {});
+  setTimeout(soundPaint, 50);
   return actx;
+}
+let audioProblem = '', soundUserOff = false;
+// Media elements (takes, Video player, Audio player) play through the output chosen in Settings → Sound.
+async function applySink(el){
+  if (!el || !el.setSinkId) return;
+  const want = settings.audioOut || '';
+  if (el.sinkId === want) return;
+  try { await el.setSinkId(want); } catch(e){ if (want){ try { await el.setSinkId(''); } catch(e2){} } }
+}
+// Restart the audio engine (after changing devices, or if another program grabbed the sound card).
+async function restartAudio(){
+  const old = actx; actx = null;
+  if (old){ try { await old.close(); } catch(e){} }
+  for (const n of nodes.values()){
+    for (const k of ['ain','aout','g','vol','msrc','an','meter']) n[k] = undefined;
+    // An audio file element can only feed one engine, so players get a fresh one (keeping the file and position).
+    if (n.type === 'aplayer' && n.audio){ const o = n.audio, a = new Audio(); a.preload = 'auto'; a.loop = o.loop; if (o.src){ a.src = o.src; a.currentTime = o.currentTime || 0; } const was = !o.paused; o.pause(); n.audio = a; if (was) setTimeout(() => apPlay(n), 100); }
+  }
+  audioProblem = '';
+  ensureAudio(); toast('Audio restarted.');
+}
+function soundState(){
+  if (!actx) return {on: false, text: 'Sound is off. Press Sound on (or Start audio in Settings).'};
+  const dev = settings.audioOutName ? ' to ' + settings.audioOutName : ' to the default output';
+  if (actx.state === 'running') return {on: true, text: 'Sound is on, playing' + dev + ' at ' + actx.sampleRate.toLocaleString() + ' Hz.' + (audioProblem ? ' ' + audioProblem : '')};
+  if (actx.state === 'suspended') return {on: false, text: soundUserOff ? 'Sound is off. Press Sound on to switch it back on.' : 'Sound is paused by the system. Press Sound on again.'};
+  return {on: false, text: 'Sound is stopped. Restart audio in Settings.'};
+}
+function soundPaint(){
+  const st = soundState();
+  const el = document.getElementById('setaudiostate'); if (el) el.textContent = st.text;
+  for (const n of nodes.values()) if (n.type === 'speakers' && n.sndInfo){ if (n.sndInfo.textContent !== st.text) n.sndInfo.textContent = st.text; if (n.onBtn){ n.onBtn.classList.toggle('on', st.on); const t = st.on ? 'Sound off' : 'Sound on'; if (n.onBtn.textContent !== t) n.onBtn.textContent = t; } }
 }
 function stereoGain(){ const g = actx.createGain(); g.channelCount = 2; g.channelCountMode = 'explicit'; g.channelInterpretation = 'speakers'; return g; }
 function makeMeter(src){
@@ -5075,7 +5119,12 @@ const DEFS = {
     params:{vol:0.8, mute:false},
     build(n){
       n.muteBtn = h('button', {class:'btn', text:'Mute', onclick: () => { n.params.mute = !n.params.mute; save(); }});
-      return [h('div', {class:'btns'}, h('button', {class:'btn', text:'Sound on', onclick: () => ensureAudio()}), n.muteBtn),
+      n.onBtn = h('button', {class:'btn', text:'Sound on', title:'Switch all sound on or off', onclick: () => {
+        if (actx && actx.state === 'running'){ soundUserOff = true; actx.suspend().then(soundPaint); return; }
+        soundUserOff = false; const c = ensureAudio(); if (!c) toast('This computer’s browser engine has no audio.'); setTimeout(soundPaint, 200); }});
+      n.sndInfo = h('div', {class:'status sndinfo'});
+      setTimeout(soundPaint, 0);
+      return [h('div', {class:'btns'}, n.onBtn, n.muteBtn), n.sndInfo,
         slider(n, 'vol', 'Volume', 0, 1.2, 0.01, v => Math.round(v*100) + '%'),
         h('div', {class:'status', text:'Plays whatever is patched in through your computer’s speakers or headphones. Careful with a microphone: it can feed back.'})];
     },
@@ -6018,7 +6067,14 @@ function startRec(n, retry){
   drawFit(n.rctx, src, n.rc.width, n.rc.height, '#000');
   let vs;
   // A steady frame rate: video encoders (H.264 especially) need one, or they stop with "video encoding failed".
-  try { vs = n.rc.captureStream(+rs.fps || 30); } catch(e){ n.status.textContent = 'This browser can’t capture canvas video.'; n.status.classList.add('err'); return; }
+  let recFps = +rs.fps || 30;
+  if (lastFps && lastFps < recFps*0.85){
+    const steps = [12, 15, 20, 24, 25, 30, 50, 60].filter(f => f <= Math.max(12, lastFps*0.92));
+    const pick = steps[steps.length - 1] || 12;
+    if (pick < recFps){ recFps = pick; if (!retry) toast('The app is drawing about ' + lastFps + ' frames a second, so this take records at ' + recFps + ' fps to stay smooth.'); }
+  }
+  n.recFps = recFps;
+  try { vs = n.rc.captureStream(recFps); } catch(e){ n.status.textContent = 'This browser can’t capture canvas video.'; n.status.classList.add('err'); return; }
   n.vtrack = null;
   const tracks = [...vs.getVideoTracks()];
   if (n.dest) tracks.push(...n.dest.stream.getAudioTracks());
@@ -6026,6 +6082,8 @@ function startRec(n, retry){
   // A format this computer can't record falls back to one it can.
   let mime = retry && retry.mime != null ? retry.mime : rs.format;
   if (!retry && /mp4/i.test(mime || '') && settings.mp4ok && MediaRecorder.isTypeSupported(settings.mp4ok)) mime = settings.mp4ok;
+  // Plain "MP4" lets the computer pick the video codec (Windows picks the heavy VP9); ask for H.264 first.
+  if (!retry && mime === 'video/mp4' && MediaRecorder.isTypeSupported('video/mp4;codecs=avc1.4D401F,mp4a.40.2')) mime = 'video/mp4;codecs=avc1.4D401F,mp4a.40.2';
   // H.264 needs a "level" big enough for the picture size and frame rate. The old fixed level only covered 720p at 30 fps,
   // which Windows' encoder rejects for anything bigger ("video encoding failed"). Pick the right one for this recording.
   if (mime && /avc1/i.test(mime) && !(retry && retry.exact)){
@@ -6055,7 +6113,9 @@ function startRec(n, retry){
     const dur = recElapsed(n)/1000; n.paused = false; n.el.classList.remove('paused'); if (n.pills && n.pills.rpause) n.pills.rpause.classList.remove('lit');
     setRecUI(n, false);
     if (n.discard || !chunks.length) return;
-    if (/mp4/i.test(mime || '') && settings.mp4ok !== mime){ settings.mp4ok = mime; saveSettings(); }
+    const realType = (n.rec && n.rec.mimeType) || mime || '';
+    if (/mp4/i.test(mime || '') && /avc|h264/i.test(realType + mime) && !/vp0?9|vp8/i.test(realType) && settings.mp4ok !== mime){ settings.mp4ok = mime; saveSettings(); }
+    if (settings.mp4ok === 'video/mp4'){ delete settings.mp4ok; saveSettings(); }
     const type = n.rec.mimeType || mime || chunks[0].type || 'video/webm';
     const blob = new Blob(chunks, {type});
     addTake(n, blob, dur, /mp4/i.test(type) ? 'mp4' : 'webm');
@@ -6063,11 +6123,11 @@ function startRec(n, retry){
   n.rec.onerror = ev => {
     const msg = (ev.error && ev.error.message) || 'error';
     // If the encoder fails, try once more with WebM, which works everywhere.
-    const webm = FORMATS.map(f => f[0]).find(m => m && /webm/i.test(m) && MediaRecorder.isTypeSupported(m));
+    const webm = ['video/webm;codecs=vp8,opus', ...FORMATS.map(f => f[0])].find(m => m && /webm/i.test(m) && MediaRecorder.isTypeSupported(m)); // VP8 is the lightest to encode
     const tried = (retry && retry.tried) || [mime];
     if (/mp4/i.test(mime || '')){
       const lv = (/avc1\.4D40([0-9A-F]{2})/i.exec(mime || '') || [, '1F'])[1];
-      const nextMp4 = ['video/mp4;codecs=avc1.4D40' + lv + ',opus', 'video/mp4;codecs=avc1.4D40' + lv, 'video/mp4;codecs=avc1.42E0' + lv + ',mp4a.40.2', 'video/mp4;codecs=avc3.4D40' + lv + ',mp4a.40.2', 'video/mp4']
+      const nextMp4 = ['video/mp4;codecs=avc1.4D40' + lv + ',opus', 'video/mp4;codecs=avc1.4D40' + lv, 'video/mp4;codecs=avc1.42E0' + lv + ',mp4a.40.2', 'video/mp4;codecs=avc3.4D40' + lv + ',mp4a.40.2']
         .find(m => !tried.includes(m) && MediaRecorder.isTypeSupported(m));
       if (nextMp4){
         n.discard = true; n.retryWith = {mime: nextMp4, exact: true, tried: tried.concat([nextMp4])};
@@ -6344,7 +6404,15 @@ function showPreview(url){
   const rec = nodes.get('rec'), t = rec && rec.takes.find(x => x.url === url), still = t && t.ext === 'png';
   pvWrap.hidden = false; pvUrl = url;
   if (still){ pvVideo.pause(); pvVideo.hidden = true; pvImg.hidden = false; pvImg.src = url; }
-  else { pvImg.hidden = true; pvVideo.hidden = false; pvVideo.src = url; pvVideo.play().catch(() => {}); }
+  else {
+    pvImg.hidden = true; pvVideo.hidden = false; pvVideo.muted = false; pvVideo.src = url;
+    applySink(pvVideo).then(() => pvVideo.play()).catch(err => {
+      // Sound couldn't start (often the sound card is busy): play the picture muted and say why.
+      pvVideo.muted = true;
+      pvVideo.play().then(() => toast('Playing without sound (' + (err.message || err.name) + '). Check Settings → Sound → Output, then click the take again.'))
+        .catch(e2 => toast('This take can’t play here: ' + (e2.message || e2.name) + '. You can still Save it.'));
+    });
+  }
   stageSrc.value = url; markPreviewRows();
 }
 function hidePreview(){ pvVideo.pause(); pvVideo.removeAttribute('src'); pvVideo.load(); pvImg.removeAttribute('src'); pvWrap.hidden = true; pvUrl = null; stageSrc.value = 'live'; markPreviewRows(); }
@@ -8411,12 +8479,12 @@ function loadSimpleExample(ex){
 }
 
 /* ---------- Performance: frame-rate meter and draft quality ---------- */
-let fpsFrames = 0, fpsT = performance.now();
+let fpsFrames = 0, fpsT = performance.now(), lastFps = 0;
 function fpsTick(){
   fpsFrames++;
   const now = performance.now();
   if (now - fpsT >= 1000){
-    const f = Math.round(fpsFrames*1000/(now - fpsT)); fpsFrames = 0; fpsT = now;
+    const f = Math.round(fpsFrames*1000/(now - fpsT)); fpsFrames = 0; fpsT = now; lastFps = f;
     const el = document.getElementById('fpsv'); el.textContent = f + ' fps';
     el.className = 'fps ' + (f >= 50 ? 'good' : f >= 28 ? 'ok' : 'low');
     el.title = f >= 50 ? 'Running smoothly' : f >= 28 ? 'A little busy. Draft quality in Settings can help.' : 'Heavy patch. Try Draft quality in Settings, or remove some modules.';
@@ -8621,7 +8689,7 @@ function mixerShow(n){
 }
 /* ---------- audio helpers ---------- */
 const freqOf = v => 20*Math.pow(1000, Math.max(0, Math.min(1, v)));   // 0..1 → 20 Hz..20 kHz
-function apPlay(n){ ensureAudio(); n.audio.play().catch(() => toast('Couldn’t play that file.')); }
+function apPlay(n){ soundUserOff = false; ensureAudio(); applySink(n.audio).then(() => n.audio.play()).then(() => { n.name.classList.remove('err'); }).catch(err => { n.name.textContent = 'Couldn’t play: ' + (err.message || err.name); n.name.classList.add('err'); toast('Couldn’t play that file: ' + (err.message || err.name)); }); }
 function apToggle(n){ if (!n.audio.src){ toast('Load an audio file first.'); return; } n.audio.paused ? apPlay(n) : n.audio.pause(); }
 
 /* ---------- CPU meter: how much of each frame the app spends working ---------- */
@@ -9378,6 +9446,64 @@ document.addEventListener('pointerdown', e => { if (e.target.closest && e.target
   sel.addEventListener('focus', () => { if (!MIDI.access) midiInit().then(midiSettingsList).catch(err => { document.getElementById('setmidiinfo').textContent = err.message; }); });
   sel.addEventListener('change', () => { settings.midiIn = sel.value; saveSettings(); if (MIDI.access) midiBind(); });
   setTimeout(midiSettingsList, 0); }
+{
+  const outSel = document.getElementById('setaudioout'), lat = document.getElementById('setaudiolat');
+  lat.value = settings.audioLatency || 'interactive';
+  const listOuts = async () => {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    try {
+      const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audiooutput');
+      outSel.replaceChildren(h('option', {value:'', text:'Default output'}), ...devs.filter(d => d.deviceId && d.deviceId !== 'default').map(d => h('option', {value: d.deviceId, text: d.label || 'Output device'})));
+      outSel.value = settings.audioOut || '';
+      if (!devs.some(d => d.label)) outSel.title = 'Device names appear after you allow microphone access once (for example with an Audio input module).';
+    } catch(e){}
+  };
+  outSel.addEventListener('focus', listOuts); setTimeout(listOuts, 0);
+  outSel.addEventListener('change', async () => {
+    settings.audioOut = outSel.value; settings.audioOutName = outSel.value ? outSel.selectedOptions[0].text : ''; saveSettings();
+    if (actx && actx.setSinkId){ try { await actx.setSinkId(outSel.value || ''); audioProblem = ''; } catch(e){ audioProblem = 'Couldn’t use that output: ' + e.message; } }
+    applySink(document.getElementById('pvvideo')); for (const n of nodes.values()){ if (n.audio) applySink(n.audio); if (n.video && n.type === 'player') applySink(n.video); }
+    soundPaint();
+  });
+  lat.addEventListener('change', () => { settings.audioLatency = lat.value; saveSettings(); if (actx) restartAudio(); });
+  document.getElementById('setaudiostart').addEventListener('click', () => { soundUserOff = false; ensureAudio(); });
+  // Test 1: a short beep through the audio engine (straight to the output, not through the patch).
+  document.getElementById('settest1').addEventListener('click', () => {
+    const c = ensureAudio(); if (!c) { toast('No audio engine available.'); return; }
+    const o = c.createOscillator(), g = c.createGain(), t = c.currentTime;
+    o.frequency.value = 660; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.25, t + 0.02); g.gain.setValueAtTime(0.25, t + 0.6); g.gain.linearRampToValueAtTime(0, t + 0.7);
+    o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + 0.75);
+    toast('Test tone 1: playing through the audio engine (' + c.state + ').');
+  });
+  // Test 2: a beep from a plain sound file, which bypasses the audio engine.
+  document.getElementById('settest2').addEventListener('click', () => {
+    const sr = 44100, n = Math.floor(sr*0.7), buf = new ArrayBuffer(44 + n*2), v = new DataView(buf);
+    const w = (o, str) => { for (let i = 0; i < str.length; i++) v.setUint8(o + i, str.charCodeAt(i)); };
+    w(0, 'RIFF'); v.setUint32(4, 36 + n*2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr*2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n*2, true);
+    for (let i = 0; i < n; i++){ const env = Math.min(1, i/800, (n - i)/800); v.setInt16(44 + i*2, Math.sin(i/sr*2*Math.PI*440)*9000*env, true); }
+    const a = new Audio(URL.createObjectURL(new Blob([buf], {type:'audio/wav'})));
+    if (settings.audioOut && a.setSinkId) a.setSinkId(settings.audioOut).catch(() => {});
+    a.play().then(() => toast('Test tone 2: playing a plain sound file.')).catch(err => toast('Test tone 2 couldn’t play: ' + (err.message || err.name)));
+  });
+  // A short report to paste into a message.
+  document.getElementById('setsndreport').addEventListener('click', async () => {
+    let outs = [];
+    try { outs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audiooutput').map(d => d.label || '(unnamed)'); } catch(e){}
+    const c = actx;
+    const rep = ['...Seeds sound report', 'App: ' + (window.seedsNative ? 'desktop' : 'browser') + ', ' + navigator.userAgent,
+      'Engine: ' + (c ? c.state + ', ' + c.sampleRate + ' Hz, base latency ' + (c.baseLatency || 0).toFixed(3) + ' s, output latency ' + ((c.outputLatency || 0)).toFixed(3) + ' s, sink ' + (c.sinkId || 'default') : 'not started'),
+      'Chosen output: ' + (settings.audioOutName || 'default'), 'Outputs: ' + (outs.join(' | ') || 'none listed'), 'Problem: ' + (audioProblem || 'none')].join('\n');
+    try { await navigator.clipboard.writeText(rep); toast('Sound report copied. Paste it into a message.'); } catch(e){ await askDialog(rep, {ok: 'OK'}); }
+  });
+  document.getElementById('setaudiorestart').addEventListener('click', () => restartAudio());
+  setInterval(soundPaint, 1500);
+}
+// If a take can't play in the main view, say why (for example a format this computer can't decode).
+{ const v = document.getElementById('pvvideo');
+  v.addEventListener('error', () => { const e = v.error, why = e ? ({1:'loading was stopped', 2:'a network or file error', 3:'the file couldn’t be decoded', 4:'this format isn’t supported here'}[e.code] || 'unknown error') + (e.message ? ' (' + e.message + ')' : '') : 'unknown error';
+    toast('This take can’t play in the main view: ' + why + '. You can still Save it and open it in a video player.'); });
+  v.addEventListener('stalled', () => { if (v.readyState < 2) toast('The take is still loading…'); }); }
 /* ---------- Warn before closing with unsaved takes ---------- */
 function unsavedTakes(){ const r = nodes.get('rec'); return r && r.takes ? r.takes.filter(t => !t.saved).length : 0; }
 window.seedsUnsaved = unsavedTakes;   // the desktop app asks this before closing
