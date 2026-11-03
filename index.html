@@ -2818,7 +2818,7 @@ function pullNode(id){
   // Drawn generators redraw at most at the Generator frame rate, unless a trigger arrives.
   if (GEN_CAP.has(n.type) && genFps && n._gout){
     const now = performance.now();
-    if (now - n._gt < 1000/genFps && !gatesChanged(n)) { n._out = n._gout; return n._out; }
+    if (now - n._genT < 1000/genFps && !gatesChanged(n)) { n._out = n._gout; return n._out; }
   }
   n._out = null;
   if (MEM_TYPES.has(n.type)) memTick(n);
@@ -2826,7 +2826,7 @@ function pullNode(id){
   if (GEN_CAP.has(n.type) && n._out && n._out.getContext) n._out.__ver = (n._out.__ver || 0) + 1;
   if (def.mix && n._out) n._out = applyMix(n, n._out);
   if (n._out && n.params.tntAmt !== undefined && (n.params.tntAmt > 0 || edgeInto(n.id, 'p:tntAmt'))) n._out = applyTint(n, n._out);
-  if (GEN_CAP.has(n.type)){ n._gout = n._out; n._gt = performance.now(); gatesChanged(n); }
+  if (GEN_CAP.has(n.type)){ n._gout = n._out; n._genT = performance.now(); gatesChanged(n); } // _genT, not _gt: _gt holds the node's GPU pictures
   return n._out;
 }
 const GEN_CAP = new Set(['amoeba', 'vector3d', 'bloom', 'shell', 'shards', 'strata', 'geo', 'topo', 'iso', 'lineart', 'blobs', 'lines', 'shapes', 'text', 'text3d']);
@@ -3008,10 +3008,12 @@ async function startMic(n, retried){
   n.status.classList.remove('err');
   if (!hasMedia()){ n.status.textContent = 'This browser view can’t reach a microphone.'; n.status.classList.add('err'); return; }
   n.status.textContent = 'Asking for microphone access…';
+  const ask = n.micAsk; // stopMic (another start, a Stop, or removal) bumps this, so a late answer is let go
   try {
     const s = await navigator.mediaDevices.getUserMedia({video:false, audio:{
       deviceId: n.params.deviceId ? {exact: n.params.deviceId} : undefined,
       echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:{ideal:2}}});
+    if (ask !== n.micAsk || nodes.get(n.id) !== n){ s.getTracks().forEach(t => t.stop()); return; }
     n.stream = s; n.src = actx.createMediaStreamSource(s); n.src.connect(n.gain);
     n.btn.textContent = 'Stop input'; n.btn.classList.add('on');
     await fillDevices(n.devSel, 'audioinput', n.params.deviceId, 'Default input');
@@ -3025,6 +3027,7 @@ async function startMic(n, retried){
   }
 }
 function stopMic(n){
+  n.micAsk = (n.micAsk || 0) + 1; // cancel a start that's still waiting for the microphone
   if (n.src){ try { n.src.disconnect(); } catch(e){} n.src = null; }
   if (n.stream) n.stream.getTracks().forEach(t => t.stop());
   n.stream = null;
@@ -6443,11 +6446,17 @@ function addNode(type, x, y, params, id){
   if (scope) refreshGroups();
   return n;
 }
+// Keyboard edits (Delete, copy, paste, duplicate) only in Patch mode, where the selected modules are visible.
+function patchEditable(){ return !perf.on && !simple.on && !live.on && !document.body.classList.contains('sliders'); }
 function removeNode(id){
   const n = nodes.get(id); if (!n || n.fixed) return;
   const def = DEFS[n.type];
   def.destroy && def.destroy(n);
   if (GLX) GLX.release(n);
+  // A deleted module's sound must stop now: its output is unplugged here because syncAudio only rewires modules still in the patch.
+  for (const k of ['aout', 'ain']) if (n[k]){ try { n[k].disconnect(); } catch(e){} }
+  if (n._pp) perfRemovePanel(n);
+  delete perf.panels[id];
   edges = edges.filter(e => e.from.node !== id && e.to.node !== id);
   n.el.remove(); nodes.delete(id);
   afterEdges();
@@ -7020,7 +7029,7 @@ function applyPatch(d){
     renderPresets(); markMapped();
     if (midiMap.length) midiInit().catch(() => {});
     return [...nodes.values()].some(n => !n.fixed) || decor.length > 0;
-  } catch(e){ console.error(e); return false; }
+  } catch(e){ console.error(e); return null; } // null = failed part-way (false = loaded, but empty)
 }
 function defaultPatch(){
   const cam = addNode('camera', 40, 40);
@@ -7575,7 +7584,11 @@ async function loadPatchFile(f, handle){
   try {
     const d = JSON.parse(await f.text());
     if (!d || !Array.isArray(d.nodes)) throw new Error('This isn’t a ...Seeds patch file.');
-    clearPatch(); applyPatch(d);
+    const before = histState();
+    clearPatch();
+    const ok = applyPatch(d);
+    // Failed part-way, or none of its modules could be made: put the patch back as it was.
+    if (ok === null || (!ok && d.nodes.length)){ reconcile(JSON.parse(before)); applyPan(); syncCableEls(); throw new Error('the file is damaged or from a newer version. Your patch is unchanged.'); }
     patchName = d.name || f.name.replace(/(\.seeds)?\.json$/i, ''); pnameEl.value = patchName; setFile(handle);
     applyPan(); syncCableEls(); if (settings.simple) setMode('simple'); save(); toast('Loaded ' + patchName + '.');
   } catch(e){ toast('Couldn’t load that file: ' + e.message); }
@@ -7970,7 +7983,7 @@ ws.addEventListener('contextmenu', e => {
 });
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !ctx.hidden) hideMenu();
-  if ((e.key === 'Delete' || e.key === 'Backspace') && selected.size && !document.body.classList.contains('sliders') && !(e.target.closest && e.target.closest('input, select, textarea, [contenteditable="true"]')) && !(learn.on && learn.target)){
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selected.size && patchEditable() && !(e.target.closest && e.target.closest('input, select, textarea, [contenteditable="true"]')) && !(learn.on && learn.target)){
     e.preventDefault(); for (const m of selNodes()) removeNode(m.id); clearSel();
   }
 });
@@ -8557,9 +8570,9 @@ window.addEventListener('keydown', e => {
   if (k === 'z' && !e.shiftKey){ e.preventDefault(); undo(); }
   else if ((k === 'z' && e.shiftKey) || k === 'y'){ e.preventDefault(); redo(); }
   else if (document.body.classList.contains('sliders') && 'cvdxz'.includes(k)){ /* Control mode: the patch can't be changed */ }
-  else if (k === 'c' && !perf.on && !simple.on){ if (copySel()) e.preventDefault(); }
-  else if (k === 'v' && !perf.on && !simple.on && clip){ e.preventDefault(); pasteClip(); }
-  else if (k === 'd' && !perf.on && !simple.on){ e.preventDefault(); if (copySel(true)) pasteClip(); }
+  else if (k === 'c' && patchEditable()){ if (copySel()) e.preventDefault(); }
+  else if (k === 'v' && patchEditable() && clip){ e.preventDefault(); pasteClip(); }
+  else if (k === 'd' && patchEditable()){ e.preventDefault(); if (copySel(true)) pasteClip(); }
 });
 
 /* ---------- Copy, paste and duplicate ---------- */
@@ -9787,7 +9800,19 @@ try { navigator.mediaDevices.addEventListener('devicechange', fillAudioSources);
 let lastScheme = T.video;
 function frame(){
   const fT0 = performance.now();
-  try { frameBody(); } finally { cpuTick(performance.now() - fT0); }
+  // The next frame is booked first, so nothing that goes wrong below can freeze the picture.
+  schedule();
+  try { frameBody(); }
+  catch(e){ frameError(null, e); }
+  finally { cpuTick(performance.now() - fT0); }
+}
+// A module whose drawing fails is reported once (console + toast) and the rest keep running.
+let frameErrT = 0;
+function frameError(n, e){
+  if (n){ if (n.renderFailed) return; n.renderFailed = true; }
+  console.error(n ? 'Render failed in ' + n.type + ' (' + n.id + ')' : 'Frame failed', e);
+  const now = performance.now(); if (now - frameErrT < 5000) return; frameErrT = now;
+  toast(n ? (DEFS[n.type].title + ' hit a problem and was skipped. Everything else keeps running.') : 'Something went wrong drawing a frame. The picture keeps running.');
 }
 function frameBody(){
   frameNo++;
@@ -9795,11 +9820,10 @@ function frameBody(){
   if (frameNo % 2 === 0) drawBankLinks();
   fpsTick();
   autoPanStep();
-  for (const n of nodes.values()){ const r = DEFS[n.type].render; if (r) r(n); }
+  for (const n of nodes.values()){ const r = DEFS[n.type].render; if (!r) continue; try { r(n); n.renderFailed = false; } catch(e){ frameError(n, e); } }
   modPass();
   drawCables();
   if (frameNo % 60 === 0){ readTokens(); if (T.video !== lastScheme){ lastScheme = T.video; recolorCables(); } }
-  schedule();
 }
 // requestAnimationFrame stops when the window is hidden; fall back to a timer so
 // output windows and recordings keep running.
