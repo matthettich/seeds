@@ -1,0 +1,90 @@
+{
+  "name": "seeds",
+  "productName": "Seeds",
+  "version": "1.0.1",
+  "description": "...Seeds, a modular video processing and recording environment",
+  "main": "main.js",
+  "scripts": {
+    "copy": "node copy-app.js",
+    "start": "node copy-app.js && electron .",
+    "dist:mac": "node copy-app.js && electron-builder --mac --arm64 --publish never",
+    "dist:mac-intel": "node copy-app.js && electron-builder --mac --x64 --publish never",
+    "dist:win": "node copy-app.js && electron-builder --win --publish never",
+    "test": "node --test ../tests/updater.test.js"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "app.seeds.video",
+    "productName": "Seeds",
+    "files": [
+      "main.js",
+      "preload.js",
+      "updater.js",
+      "app/**/*"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "mac": {
+      "category": "public.app-category.video",
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSCameraUsageDescription": "...Seeds uses the camera as a video source.",
+        "NSMicrophoneUsageDescription": "...Seeds uses the microphone to record audio with your video."
+      }
+    },
+    "dmg": {
+      "artifactName": "Seeds-${version}-${arch}.${ext}"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Seeds-Setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "matthettich",
+        "repo": "seeds",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "6.6.2"
+  }
+}

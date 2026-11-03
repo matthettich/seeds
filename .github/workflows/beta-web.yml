@@ -1,0 +1,38 @@
+# BETA WEB COPY: every push to the `beta` branch publishes that branch's app to beta/ on main, so it runs at
+#   https://matthettich.github.io/seeds/beta/
+# while the live app (the root of main) stays exactly as it is. Work in progress goes to `beta`; when you're happy,
+# merge `beta` into `main` and the live app updates. Script: tools/make-channel.sh. Run workflow by hand to republish.
+name: Beta web copy
+
+on:
+  push:
+    branches: [beta]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: beta-web
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main, fetch-depth: 0 }
+      - name: Copy the beta branch into beta/
+        run: |
+          git fetch origin beta
+          bash tools/make-channel.sh origin/beta beta seedsbeta-v beta
+      - name: Commit to main (beta/ only)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add beta
+          if git diff --cached --quiet; then echo "beta/ unchanged"; exit 0; fi
+          # Safety: this job may only ever change beta/.
+          if git diff --cached --name-only | grep -v '^beta/'; then echo "refusing: changes outside beta/"; exit 1; fi
+          git commit -m "beta/: publish $(git rev-parse --short origin/beta) from the beta branch"
+          git push origin HEAD:main
