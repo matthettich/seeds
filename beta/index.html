@@ -6109,7 +6109,7 @@ const DEFS = {
       const opts = FORMATS.length ? FORMATS : [['', 'Browser default']];
       if (!opts.some(([m]) => m === n.params.format)) n.params.format = opts[0][0];
       n.fmtRow = choice(n, 'format', 'Format', opts);
-      n.recBtn = h('button', {class:'recbtn', onclick: () => isRec(n) ? stopRec(n) : startRec(n)}, h('span', {class:'d'}), h('span', {text:'Record'}));
+      n.recBtn = h('button', {class:'recbtn', onclick: () => recActive(n) ? stopRec(n) : startRec(n)}, h('span', {class:'d'}), h('span', {text:'Record'}));
       n.time = h('div', {class:'time', text:'00:00'});
       n.mcv = h('canvas', {class:'meter', 'aria-hidden':'true'}); n.pk = h('div', {class:'pk'});
       n.status = h('div', {class:'status'});
@@ -6140,7 +6140,7 @@ const DEFS = {
     },
     audioIn(n){ return n.bus; },
     render(n){
-      if (rising(n, 'rtrig')) isRec(n) ? stopRec(n) : startRec(n);
+      if (rising(n, 'rtrig')) recActive(n) ? stopRec(n) : startRec(n);
       if (edgeInto(n.id, 'rpause')){
         const g = readIn(n, 'rpause', 0) > 0.5, now = performance.now();
         if (g && !n.pg){ n.pgT = now; n.pgMode = null; }
@@ -6149,7 +6149,7 @@ const DEFS = {
         n.pg = g;
       }
       const src = recSrc(n);
-      if (isRec(n)){
+      if (n.rec && n.rec.state !== 'inactive'){
         drawFit(n.rctx, src, n.rc.width, n.rc.height, '#000');
 
         n.time.textContent = (n.paused ? 'Paused ' : '') + fmtTime((recElapsed(n))/1000);
@@ -6168,14 +6168,17 @@ const DEFS = {
         if (s !== n.lastS){ n.status.textContent = s; n.lastS = s; }
       }
     },
-    destroy(n){ if (isRec(n)) { n.discard = true; n.rec.stop(); } n.takes.forEach(t => URL.revokeObjectURL(t.url)); }
+    destroy(n){ if (recActive(n)) { n.discard = true; stopRec(n); } n.takes.forEach(t => URL.revokeObjectURL(t.url)); }
   }
 };
 
 function isRec(n){ return n.rec && n.rec.state === 'recording'; }
+// A take is under way from Record until its file is finished: recording, paused, stopping, or between format retries.
+// Record (button or trigger) toggles on this, so a quick second press can never start a second recorder.
+function recActive(n){ return !!n.recBusy || !!(n.rec && n.rec.state !== 'inactive'); }
 function recElapsed(n){ return (n.paused ? n.pauseT0 : performance.now()) - n.t0 - (n.pausedMs || 0); }
 function recPause(n, on){
-  if (!isRec(n) || !!n.paused === !!on) return;
+  if (!n.rec || n.rec.state === 'inactive' || !!n.paused === !!on) return;
   try { on ? n.rec.pause() : n.rec.resume(); } catch(e){ return; }
   if (on){ n.paused = true; n.pauseT0 = performance.now(); } else { n.pausedMs = (n.pausedMs || 0) + performance.now() - n.pauseT0; n.paused = false; }
   n.el.classList.toggle('paused', !!n.paused); if (n.pills && n.pills.rpause) n.pills.rpause.classList.toggle('lit', !!n.paused);
@@ -6190,6 +6193,8 @@ async function clearTakes(n){
 }
 function recSrc(n){ const s = recMainOn() ? toDraw(pullNode('main')) : inputOf(n, 'video'); return s ? conformOut(s) : s; }
 function startRec(n, retry){
+  if (!retry && recActive(n)) return;
+  n.recBusy = false;
   ensureAudio();
   n.status.classList.remove('err');
   const src = recSrc(n);
@@ -6208,7 +6213,7 @@ function startRec(n, retry){
     if (pick < recFps){ recFps = pick; if (!retry) toast('The app is drawing about ' + lastFps + ' frames a second, so this take records at ' + recFps + ' fps to stay smooth.'); }
   }
   n.recFps = recFps;
-  try { vs = n.rc.captureStream(recFps); } catch(e){ n.status.textContent = 'This browser can’t capture canvas video.'; n.status.classList.add('err'); return; }
+  try { vs = n.rc.captureStream(recFps); } catch(e){ n.status.textContent = 'This browser can’t capture canvas video.'; n.status.classList.add('err'); setRecUI(n, false); return; }
   n.vtrack = null;
   const tracks = [...vs.getVideoTracks()];
   if (n.dest) tracks.push(...n.dest.stream.getAudioTracks());
@@ -6236,21 +6241,22 @@ function startRec(n, retry){
   try {
     n.rec = new MediaRecorder(stream, mime ? {mimeType: mime, videoBitsPerSecond: +rs.vbr, audioBitsPerSecond: +rs.abr} : {videoBitsPerSecond: +rs.vbr, audioBitsPerSecond: +rs.abr});
   } catch(e){
-    try { n.rec = new MediaRecorder(stream); mime = ''; } catch(e2){ n.status.textContent = 'Couldn’t start recording: ' + e.message; n.status.classList.add('err'); vs.getTracks().forEach(t => t.stop()); n.rec = null; return; }
+    try { n.rec = new MediaRecorder(stream); mime = ''; } catch(e2){ n.status.textContent = 'Couldn’t start recording: ' + e.message; n.status.classList.add('err'); vs.getTracks().forEach(t => t.stop()); n.rec = null; setRecUI(n, false); return; }
   }
-  const chunks = [];
+  const chunks = [], rec = n.rec;
   n.discard = false;
   n.rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
   n.rec.onstop = () => {
     vs.getTracks().forEach(t => t.stop());
-    if (n.retryWith){ const r = n.retryWith; n.retryWith = null; setRecUI(n, false); setTimeout(() => startRec(n, r), 60); return; }
+    if (n.retryWith){ const r = n.retryWith; n.retryWith = null; n.recRetryT = setTimeout(() => { n.recRetryT = null; startRec(n, r); }, 60); return; } // still busy: Record stays on
+    n.recBusy = false;
     const dur = recElapsed(n)/1000; n.paused = false; n.el.classList.remove('paused'); if (n.pills && n.pills.rpause) n.pills.rpause.classList.remove('lit');
     setRecUI(n, false);
     if (n.discard || !chunks.length) return;
-    const realType = (n.rec && n.rec.mimeType) || mime || '';
+    const realType = rec.mimeType || mime || '';
     if (/mp4/i.test(mime || '') && /avc|h264/i.test(realType + mime) && !/vp0?9|vp8/i.test(realType) && settings.mp4ok !== mime){ settings.mp4ok = mime; saveSettings(); }
     if (settings.mp4ok === 'video/mp4'){ delete settings.mp4ok; saveSettings(); }
-    const type = n.rec.mimeType || mime || chunks[0].type || 'video/webm';
+    const type = rec.mimeType || mime || chunks[0].type || 'video/webm';
     const blob = new Blob(chunks, {type});
     addTake(n, blob, dur, /mp4/i.test(type) ? 'mp4' : 'webm');
   };
@@ -6281,10 +6287,13 @@ function startRec(n, retry){
     n.status.textContent = 'Recording stopped: ' + msg; n.status.classList.add('err'); try { n.rec.stop(); } catch(e){} setRecUI(n, false);
   };
   try { n.rec.start(500); } catch(e){ n.status.textContent = 'Couldn’t start recording: ' + e.message; n.status.classList.add('err'); vs.getTracks().forEach(t => t.stop()); n.rec = null; setRecUI(n, false); return; }
-  n.t0 = performance.now(); n.paused = false; n.pausedMs = 0;
+  n.t0 = performance.now(); n.paused = false; n.pausedMs = 0; n.recBusy = true;
   setRecUI(n, true);
 }
-function stopRec(n){ if (isRec(n)) n.rec.stop(); }
+function stopRec(n){
+  if (n.recRetryT){ clearTimeout(n.recRetryT); n.recRetryT = null; n.recBusy = false; setRecUI(n, false); return; } // stopped while switching formats
+  if (n.rec && n.rec.state !== 'inactive') n.rec.stop(); // recBusy clears when the file is finished (onstop)
+}
 function setRecUI(n, on){
   n.recBtn.classList.toggle('on', on);
   if (simple.recB){ simple.recB.classList.toggle('on', on); simple.recB.lastChild.textContent = on ? 'Stop' : 'Record'; }
@@ -6979,12 +6988,32 @@ function clearPatch(){
   renderPresets(); markMapped(); syncCableEls();
 }
 function load(){
+  let raw = null;
   try {
-    const d = JSON.parse(localStorage.getItem(STORE) || 'null');
+    raw = localStorage.getItem(STORE);
+    const d = JSON.parse(raw || 'null');
     if (!d || d.v !== 1 || !Array.isArray(d.nodes)) return false;
     if (d.name){ patchName = d.name; pnameEl.value = d.name; }
-    return applyPatch(d);
-  } catch(e){ return false; }
+    const ok = applyPatch(d);
+    if (ok === null || (!ok && d.nodes.length)) throw new Error('the saved patch couldn’t be rebuilt');
+    return ok;
+  } catch(e){
+    // The autosave couldn't be opened. Keep a copy before anything overwrites it, and start from a clean patch
+    // (not the demo patch on top of a half-loaded one).
+    console.error('Autosave not loaded:', e);
+    if (raw){
+      try { localStorage.setItem(STORE + ':broken', raw); } catch(e2){}
+      try { // also listed under Settings → Backups, so it can be tried again or saved as a file
+        let nm = 'Untitled'; try { nm = JSON.parse(raw).name || nm; } catch(e3){}
+        backups = [{t: Date.now(), name: nm + ' (couldn’t open)', mods: 0, state: raw}, ...backups].slice(0, 8);
+        localStorage.setItem(BK_KEY, JSON.stringify(backups)); renderBackups();
+      } catch(e2){}
+      try { clearPatch(); } catch(e2){}
+      patchName = 'Untitled'; pnameEl.value = patchName;
+      setTimeout(() => toast('Your last patch couldn’t be opened, so a fresh one was started. It’s kept in Settings → Backups, marked “couldn’t open”.'), 800);
+    }
+    return false;
+  }
 }
 function applyPatch(d){
   try {
@@ -8888,7 +8917,8 @@ function mixerShow(n){
   'abcdefghij'.split('').forEach((k, i) => {
     const j = n.jacks['in:' + k], port = j && j.closest('.port'); if (port) port.hidden = i >= N;
     (n.mixRows[i] || []).forEach(r => r.hidden = i >= N);
-    if (i >= N) edges = edges.filter(e => !(e.to.node === n.id && e.to.port === k));
+    // Cables into hidden inputs are kept (they dock on the title bar, as on a collapsed module) and come back with the input:
+    // Inputs can be moved by a preset morph or MIDI mid-show, and that must never delete parts of the patch.
   });
   syncCableEls();
 }
@@ -9766,7 +9796,7 @@ function unsavedTakes(){ const r = nodes.get('rec'); return r && r.takes ? r.tak
 window.seedsUnsaved = unsavedTakes;   // the desktop app asks this before closing
 window.addEventListener('beforeunload', e => {
   const r = nodes.get('rec');
-  if (unsavedTakes() || (r && isRec(r))){ e.preventDefault(); e.returnValue = 'You have recordings or stills that haven’t been saved.'; return e.returnValue; }
+  if (unsavedTakes() || (r && recActive(r))){ e.preventDefault(); e.returnValue = 'You have recordings or stills that haven’t been saved.'; return e.returnValue; }
 });
 
 /* ---------- boot ---------- */
