@@ -1301,7 +1301,40 @@ function drawCover(ctx, src, W, H){
 function fitCanvas(cv, w, h){ if (cv.width !== w || cv.height !== h){ cv.width = w; cv.height = h; } }
 
 function row(label, ctl, val){ return h('label', {class: val ? 'row' : 'row wide'}, h('span', {text: label}), ctl, val || null); }
-function slider(n, key, label, min, max, step, fmt, onchange, modable = true){
+// Typed values: a number with its unit multiplier (kHz → ×1000, ms → seconds), so "1.5k", "1500 Hz" and "1.5 kHz" all mean the same.
+// Left/Right readouts (Pan) count Left as negative; Center is zero.
+const _numIn = s => { s = String(s).trim(); if (/^center$/i.test(s)) return 0; const m = s.replace(/−/g, '-').replace(',', '.').match(/-?\d*\.?\d+/); if (!m) return NaN; const v = parseFloat(m[0]); return /^l\b/i.test(s) ? -Math.abs(v) : v; };
+const _unitMul = s => { s = String(s); return /\d\s*k(hz)?\b/i.test(s) ? 1000 : /\d\s*ms\b/i.test(s) ? 0.001 : /\d\s*s$/i.test(s.trim()) ? 1 : /\d\s*hz\b/i.test(s) ? 1 : null; };
+// Turn what was typed back into a slider value, whatever the readout shows (percent, 200%, Hz, ms or s, L/R…).
+// A bare number takes the unit of the readout it replaced.
+function sliderFromText(txt, shown, fmt, min, max, step, cur){
+  const raw = _numIn(txt); if (isNaN(raw)) return NaN;
+  const disp = v => { try { const s = fmt(v), x = _numIn(s); return x*(_unitMul(s) != null ? _unitMul(s) : 1); } catch(e){ return NaN; } };
+  // A bare number is in the readout's unit. On sliders whose readout switches unit, other units are tried when that's out of range ("440" under "1.2 kHz" means 440 Hz).
+  let lo = Infinity, hi = -Infinity; for (let i = 0; i <= 20; i++){ const d = disp(min + (max - min)*i/20); if (isFinite(d)){ lo = Math.min(lo, d); hi = Math.max(hi, d); } }
+  const typedMul = _unitMul(txt), sm = _unitMul(shown);
+  let fmtMin = '', fmtMax = ''; try { fmtMin = fmt(min); fmtMax = fmt(max); } catch(e){}
+  const mixed = _unitMul(fmtMin) !== _unitMul(fmtMax); // readouts that switch unit along the slider (ms → s, Hz → kHz)
+  const muls = typedMul != null ? [typedMul] : mixed ? [sm != null ? sm : 1, 1, 0.001, 1000] : [sm != null ? sm : 1];
+  const fits = x => x >= lo - Math.abs(lo)*1e-6 - 1e-9 && x <= hi + Math.abs(hi)*1e-6 + 1e-9;
+  const target = raw*(muls.find(m => fits(raw*m)) ?? muls[0]);
+  // Straight-line readouts (plain numbers, percents, ms): solve exactly.
+  const d0 = disp(min), d1 = disp(max), a = (d1 - d0)/(max - min);
+  if (isFinite(a) && a !== 0 && isFinite(d0)){
+    const tol = Math.abs(d1 - d0)*0.02 + 1e-9; let lin = true;
+    for (let i = 1; i < 10 && lin; i++){ const v = min + (max - min)*i/10, d = disp(v); if (!(Math.abs(d - (d0 + a*(v - min))) <= tol)) lin = false; }
+    if (lin) return min + (target - d0)/a;
+  }
+  // Anything else (Hz curves, Left/Right): pick the slider position whose readout is nearest, closest to where it was on a tie.
+  const N = Math.max(2, Math.min(2001, Math.round((max - min)/(step || (max - min)/1000)) + 1));
+  let best = NaN, bd = Infinity;
+  const tryV = v => { const d = Math.abs(disp(v) - target); if (d < bd - 1e-9 || (Math.abs(d - bd) <= 1e-9 && Math.abs(v - cur) < Math.abs(best - cur))){ bd = d; best = v; } };
+  for (let i = 0; i < N; i++) tryV(min + (max - min)*i/(N - 1));
+  if (!isNaN(best) && step && (max - min)/(N - 1) > step*1.5){ const span = (max - min)/(N - 1), b0 = best; for (let v = Math.max(min, b0 - span); v <= Math.min(max, b0 + span); v += step) tryV(v); }
+  return best;
+}
+// parse (optional): turns the typed text into a value; without it the readout is worked backwards (sliderFromText).
+function slider(n, key, label, min, max, step, fmt, onchange, modable = true, parse){
   const out = h('span', {class:'val', title:'Double-click to type a value'});
   const inp = h('input', {type:'range', min, max, step, 'aria-label': label});
   inp.value = n.params[key];
@@ -1311,18 +1344,17 @@ function slider(n, key, label, min, max, step, fmt, onchange, modable = true){
   out.addEventListener('dblclick', e => {
     e.stopPropagation();
     if (out.querySelector('input')) return;
-    const shown = fmt(n.params[key]), num = (shown.match(/[-−]?\d+(\.\d+)?/) || [''])[0].replace('−', '-');
+    const shown = fmt(n.params[key]), num = /^l\b/i.test(shown.trim()) ? String(_numIn(shown)) : (shown.match(/[-−]?\d+(\.\d+)?/) || [''])[0].replace('−', '-');
     const ed = h('input', {type:'text', class:'valedit', 'aria-label': label + ' value', inputmode:'decimal'});
     ed.value = num; out.replaceChildren(ed); ed.focus(); ed.select();
     let done = false;
     const finish = commit => {
       if (done) return; done = true;
-      if (commit){
-        const txt = ed.value.trim().replace(',', '.');
-        let v = parseFloat(txt.replace('−', '-'));
-        if (!isNaN(v)){
-          if (fmt(max).includes('%')) v /= 100;
-          else if (/ms/i.test(txt) && / s$/.test(fmt(max))) v /= 1000;
+      // Left as it was: keep the exact value (the readout is rounded).
+      if (commit && ed.value.trim() !== num){
+        const txt = ed.value.trim();
+        let v = parse ? parse(txt) : sliderFromText(txt, shown, fmt, min, max, step, n.params[key]);
+        if (typeof v === 'number' && !isNaN(v)){
           v = Math.max(min, Math.min(max, v));
           n.params[key] = +v.toFixed(6); inp.value = v; onchange && onchange(); save();
         }
@@ -1402,7 +1434,7 @@ function drawScope(cv, hist, hi, color, unipolar){
   x.strokeStyle = color; x.lineWidth = 2*dpr; x.beginPath();
   const L = hist.length;
   for (let i = 0; i < L; i++){
-    const v = hist[(hi + i) % L], px = i/(L - 1)*W, py = base - v*amp;
+    const v = hist[(hi + i) % L], px = L > 1 ? i/(L - 1)*W : W, py = base - v*amp;
     i ? x.lineTo(px, py) : x.moveTo(px, py);
   }
   x.stroke();
@@ -1416,7 +1448,8 @@ function P(n, key){
   let r = base + v * (m.max - m.min); // full depth can reach every part of the slider from any starting point
   r = Math.max(m.min, Math.min(m.max, r));
   r = Math.round((r - m.min) / m.step) * m.step + m.min;
-  return +r.toFixed(6);
+  // Rounding to the step can land just past the top (when the range isn't a whole number of steps).
+  return +Math.min(m.max, r).toFixed(6);
 }
 function modPass(){
   if (frameNo % 3) return; // the eye doesn't need slider readouts redrawn every frame
@@ -1511,6 +1544,8 @@ class FrameBuf {
   trim(now, keep, maxN){
     while (this.buf.length > 1 && this.buf[1].t < now - keep) this.pool.push(this.buf.shift());
     while (this.buf.length > maxN) this.pool.push(this.buf.shift());
+    // Keep only a few spare pictures for reuse; after a long delay is shortened the rest are let go.
+    if (this.pool.length > 4) this.pool.length = 4;
   }
 }
 function frameAt(frames, t){
@@ -1547,6 +1582,8 @@ function clockPeriod(n, port, measured){
 function beatSeconds(n){
   const e = edgeInto(n.id, 'clock');
   if (e){ const src = nodes.get(e.from.node); if (src && src.periods) return src.periods.beat; return n.clkPeriod || null; }
+  // A running BPM module: your own one in the patch wins; otherwise the hidden tempo of Clips / Simple mode.
+  for (const m of nodes.values()) if (m.type === 'bpm' && m.periods && m.params.running && !m.params.sys) return m.periods.beat;
   for (const m of nodes.values()) if (m.type === 'bpm' && m.periods && m.params.running) return m.periods.beat;
   for (const m of nodes.values()) if ((m.type === 'bpm' || m.type === 'clock' || m.type === 'midiclock') && m.periods) return m.periods.beat;
   return null;
@@ -1639,11 +1676,11 @@ const GLX = (() => {
 precision highp float; in vec2 uv; out vec4 o; uniform sampler2D tex0, tex1, tex2, tex3; uniform vec2 res; uniform float time;
 vec2 cov(vec2 u, vec2 s){ float ar = s.x/s.y, ao = res.x/res.y; vec2 k = ar > ao ? vec2(ao/ar, 1.) : vec2(1., ar/ao); return (u - .5)*k + .5; }
 `;
-  let gen = 1, lost = false, progs, uploads, buf;
+  let gen = 1, lost = false, progs, shared, buf;
   function init(){
     buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
-    progs = new Map(); uploads = new WeakMap();
+    progs = new Map(); shared = new Map();
   }
   init();
   // Graphics can reset (for example after sleep); rebuild everything when it comes back.
@@ -1662,45 +1699,103 @@ vec2 cov(vec2 u, vec2 s){ float ar = s.x/s.y, ao = res.x/res.y; vec2 k = ar > ao
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.tex, 0);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
-    dispose(){ if (this.gen === gen && !lost){ gl.deleteTexture(this.tex); gl.deleteFramebuffer(this.fbo); } this.gen = -1; }
+    dispose(){
+      if (this.gen === gen && !lost){ gl.deleteTexture(this.tex); gl.deleteFramebuffer(this.fbo); for (const u of this.m || []) freeUpload(u); }
+      this.m = null; this.gen = -1;
+    }
   }
+  // Shaders are built once. One that fails is remembered as failed, so it isn't rebuilt (and leaked) every frame.
   function prog(src){
-    let p = progs.get(src); if (p) return p;
-    const mk = (type, s) => { const sh = gl.createShader(type); gl.shaderSource(sh, s); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh)); return sh; };
-    const pr = gl.createProgram();
-    gl.attachShader(pr, mk(gl.VERTEX_SHADER, VS)); gl.attachShader(pr, mk(gl.FRAGMENT_SHADER, HEAD + src));
-    gl.bindAttribLocation(pr, 0, 'p'); gl.linkProgram(pr);
-    if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr));
+    let p = progs.get(src); if (p){ if (p.err) throw p.err; return p; }
+    const made = [];
+    const mk = (type, s) => { const sh = gl.createShader(type); made.push(sh); gl.shaderSource(sh, s); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh) || 'Shader didn’t compile'); return sh; };
+    let pr = null;
+    try {
+      pr = gl.createProgram();
+      gl.attachShader(pr, mk(gl.VERTEX_SHADER, VS)); gl.attachShader(pr, mk(gl.FRAGMENT_SHADER, HEAD + src));
+      gl.bindAttribLocation(pr, 0, 'p'); gl.linkProgram(pr);
+      if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr) || 'Shader didn’t link');
+    } catch(e){
+      for (const sh of made) gl.deleteShader(sh);
+      if (pr) gl.deleteProgram(pr);
+      // A lost graphics context makes every build fail; don't remember those, they work again after the restore.
+      if (!gl.isContextLost()) progs.set(src, {err: e});
+      throw e;
+    }
+    // The linked program keeps what it needs; the shader objects can go.
+    for (const sh of made){ gl.detachShader(pr, sh); gl.deleteShader(sh); }
     p = {pr, loc: {}}; progs.set(src, p); return p;
   }
+  // Pictures from the camera, video files and 2D canvases are copied to the GPU into textures owned by
+  // the module that reads them (one per input slot), reused frame after frame and freed with the module.
+  // Camera and video elements are also shared through a small cache, so a camera read by several effects
+  // is still copied only once a frame; the cache keeps up to 16 elements and frees the oldest.
+  const SHARED_MAX = 16; let pruneF = 0;
+  function uploadInto(u, v){
+    const [w, hh] = dims(v);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    // Always texImage2D: Chrome only has its fast GPU-to-GPU path for camera/video frames on texImage2D;
+    // texSubImage2D copies each frame through the CPU (measured: the default patch went from ~3 to ~1 fps).
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v); u.w = w; u.h = hh;
+    u.f = frameNo; u.ver = v.__ver; u.src = v;
+  }
+  function newUpload(){ const u = {tex: gl.createTexture(), f: -1, w: -1, h: -1, src: null, gen}; gl.bindTexture(gl.TEXTURE_2D, u.tex); texParams(); return u; }
+  function freeUpload(u){ if (u && u.gen === gen && !lost) gl.deleteTexture(u.tex); }
+  // Media elements (camera, video player) and generator pictures (they keep one canvas): one shared texture each,
+  // uploaded once a frame, or for generators only when their version changes.
+  function sharedUpload(v){
+    // Every few seconds, elements nobody has read for a while (a removed camera, player or generator) are let go.
+    if (frameNo - pruneF > 300){ pruneF = frameNo; for (const [k, old] of shared) if (old.used < frameNo - 300){ shared.delete(k); freeUpload(old); } }
+    let u = shared.get(v);
+    if (u && u.gen !== gen){ shared.delete(v); u = null; }
+    if (u){ u.used = frameNo; shared.delete(v); shared.set(v, u); } // most recently used goes last
+    else {
+      u = newUpload(); u.used = frameNo; shared.set(v, u);
+      while (shared.size > SHARED_MAX){ const [k, old] = shared.entries().next().value; shared.delete(k); freeUpload(old); }
+    }
+    gl.bindTexture(gl.TEXTURE_2D, u.tex);
+    if (u.src !== v || (v.__ver !== undefined ? u.ver !== v.__ver : u.f !== frameNo)) uploadInto(u, v);
+    return u;
+  }
+  // Canvases (often a different one each frame from Video delay, Slit-scan, Looper): the reading module's own texture for that slot.
+  function slotUpload(owner, i, v){
+    const m = owner.m || (owner.m = []);
+    let u = m[i];
+    if (!u || u.gen !== gen){ u = m[i] = newUpload(); }
+    gl.bindTexture(gl.TEXTURE_2D, u.tex);
+    if (u.src !== v || u.f !== frameNo) uploadInto(u, v);
+    return u;
+  }
+  // Each pass draws into a target (a module's picture, or the screen canvas when target is null).
+  // The target picture owns the upload textures for its 2D inputs; screen copies use screenUp.
+  const screenUp = {m: null};
   function pass(src, target, inputs, uni, W, H){
     const p = prog(src);
+    inputs = (inputs || []).map(v => v instanceof Tex && v.gen !== gen ? null : v); // a picture from before a graphics reset is gone
     if (target){ gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo); W = target.width; H = target.height; }
     else { gl.bindFramebuffer(gl.FRAMEBUFFER, null); if (cv.width !== W || cv.height !== H){ cv.width = W; cv.height = H; } }
     gl.viewport(0, 0, W, H); gl.useProgram(p.pr);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     const L = name => (name in p.loc) ? p.loc[name] : (p.loc[name] = gl.getUniformLocation(p.pr, name));
     // Empty texture slots are cleared, so a shader never reads the picture it's drawing into (a feedback loop the GPU rejects).
-    for (let i = 0; i < 4; i++) if (!(inputs || [])[i]){ gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, null); }
-    (inputs || []).forEach((v, i) => {
+    for (let i = 0; i < 4; i++) if (!inputs[i]){ gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, null); }
+    const owner = target || screenUp;
+    inputs.forEach((v, i) => {
       if (!v) return;
       gl.activeTexture(gl.TEXTURE0 + i);
       if (v instanceof Tex) gl.bindTexture(gl.TEXTURE_2D, v.tex);
-      else {
-        // Camera frames and 2D canvases are uploaded once per frame, however many GPU modules read them.
-        let u = uploads.get(v);
-        if (!u){ u = {tex: gl.createTexture(), f: -1}; gl.bindTexture(gl.TEXTURE_2D, u.tex); texParams(); uploads.set(v, u); }
-        gl.bindTexture(gl.TEXTURE_2D, u.tex);
-        const fresh = v.__ver !== undefined ? u.ver !== v.__ver : u.f !== frameNo; // generator pictures carry a version; others upload once a frame
-        if (fresh){ gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v); u.f = frameNo; u.ver = v.__ver; }
-      }
+      else if (v instanceof HTMLVideoElement || v.__ver !== undefined) sharedUpload(v);
+      else slotUpload(owner, i, v);
       const l = L('tex' + i); if (l) gl.uniform1i(l, i);
     });
     const lr = L('res'); if (lr) gl.uniform2f(lr, W, H);
-    const lt = L('time'); if (lt) gl.uniform1f(lt, (performance.now()/1000) % 3600);
+    // Shader time wraps every 6 hours (it was every hour), so moving patterns jump far less often; much longer would make
+    // fast patterns step, because the GPU keeps time to about 2 ms at 6 hours (8 ms at a day).
+    const lt = L('time'); if (lt) gl.uniform1f(lt, (performance.now()/1000) % 21600);
     for (const [k, v] of Object.entries(uni || {})){
       const l = L(k); if (!l) continue;
-      if (typeof v === 'number') gl.uniform1f(l, v);
+      if (typeof v === 'number' || typeof v === 'boolean') gl.uniform1f(l, +v);
+      else if (!v || typeof v.length !== 'number') continue;
       else if (v.length === 2) gl.uniform2fv(l, v); else if (v.length === 3) gl.uniform3fv(l, v); else gl.uniform4fv(l, v);
     }
     gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -1833,6 +1928,9 @@ const PIC_SIZES = ['720', '1080', '1440', '2160'];
 const OUT = {aspect: 'source', res: '1080', fit: 'crop'};
 try { Object.assign(OUT, JSON.parse(localStorage.getItem(STORE + ':outfmt') || '{}')); } catch(e){}
 if (!PIC_SIZES.includes(String(OUT.res))) OUT.res = '1080';
+// A damaged or unknown saved shape would make every size NaN; fall back to following the video.
+if (!['source', '16:9', '4:3', '3:2', '1:1', '4:5', '9:16', '21:9'].includes(OUT.aspect)) OUT.aspect = 'source';
+if (OUT.fit !== 'fit' && OUT.fit !== 'crop') OUT.fit = 'crop';
 const evenPx = v => Math.max(2, Math.round(v/2)*2);
 // Width and height for proportions ar (width ÷ height) at the chosen size: the short side is the Size.
 function sizeFor(ar){ const r = +OUT.res; return ar >= 1 ? [evenPx(r*ar), r] : [r, evenPx(r/ar)]; }
@@ -1845,7 +1943,7 @@ function outDims(src){
   if (OUT.aspect !== 'source') return sizeFor(shapeAr());
   const [sw, sh] = src ? dims(src) : [0, 0]; return sw && sh ? sizeFor(sw/sh) : [0, 0];
 }
-const genSize = n => picDims().map(v => Math.max(2, Math.round(v*QS)));
+const genSize = () => picDims().map(v => Math.max(2, Math.round(v*QS)));
 function barsCanvas(cv, vals, color){
   const dpr = window.devicePixelRatio || 1, W = Math.round(cv.clientWidth*dpr), H = Math.round(cv.clientHeight*dpr);
   if (!W || !H) return; fitCanvas(cv, W, H);
@@ -2074,7 +2172,7 @@ void main(){ vec3 c = texture(tex0, uv).rgb; vec3 v = c*gain + off;
  else o = vec4(fold(v.r), fold(v.g), fold(v.b), 1.); }`,
   lumakey: `uniform float th, soft, inv, hasbg; uniform vec3 bgc;
 void main(){ vec3 c = texture(tex0, uv).rgb; float l = dot(c, vec3(.299,.587,.114));
- float a = smoothstep(th - soft, th + soft, l); if (inv > .5) a = 1. - a;
+ float a = smoothstep(th - soft - 1e-4, th + soft + 1e-4, l); if (inv > .5) a = 1. - a; // padded: equal edges at Softness 0 are undefined in GLSL
  vec3 b = hasbg > .5 ? texture(tex1, uv).rgb : bgc; o = vec4(mix(b, c, a), 1.); }`,
   chromakey: `uniform vec3 kc, bgc; uniform float tol, soft, spill, hasbg;
 vec2 cbcr(vec3 c){ return vec2(-.169*c.r - .331*c.g + .5*c.b, .5*c.r - .419*c.g - .081*c.b); }
@@ -2091,7 +2189,7 @@ void main(){ vec3 c = S(uv), r;
  else if (mode < 2.5){ vec3 b = blur(2. + amt*8.); r = c + max(b - .45, 0.)*amt*2.5; }
  else if (mode < 3.5) r = mix(c, 1. - c, amt);
  else if (mode < 4.5){ float l = dot(c, vec3(.299,.587,.114)); r = vec3(step(amt, l)); }
- else if (mode < 5.5){ r = mix(c, abs(c - vec3(amt)) + (c.r > amt ? 0. : 0.), 1.); r = vec3(c.r > amt ? 1. - c.r : c.r, c.g > amt ? 1. - c.g : c.g, c.b > amt ? 1. - c.b : c.b); }
+ else if (mode < 5.5){ r = vec3(c.r > amt ? 1. - c.r : c.r, c.g > amt ? 1. - c.g : c.g, c.b > amt ? 1. - c.b : c.b); }
  else if (mode < 6.5){ vec2 px = (1. + amt*3.)/res; vec3 e = S(uv - px) - S(uv + px); float l = dot(e, vec3(.333)); r = vec3(.5 + l*2.); }
  else if (mode < 7.5){ float a = amt*6.2831853; mat3 m = mat3(.299,.587,.114,.299,.587,.114,.299,.587,.114); vec3 g = c*m; vec3 d = c - g; float cs = cos(a), sn = sin(a); vec3 k = vec3(.57735); r = g + d*cs + cross(k, d)*sn + k*dot(k, d)*(1. - cs); }
  else { float l = dot(c, vec3(.299,.587,.114)); r = mix(vec3(l), c, amt*2.); }
@@ -2834,7 +2932,8 @@ let genFps = 30;
 // True when any trigger input changed since the last check, so pulses are never missed while redrawing less often.
 function gatesChanged(n){
   let ch = false; n._gv = n._gv || {};
-  for (const p of DEFS[n.type].ins){ if (p.kind !== 'gate') continue; const v = readIn(n, p.name, 0) > 0.5 ? 1 : 0; if (n._gv[p.name] !== v){ n._gv[p.name] = v; ch = true; } }
+  // High and low the same way trigger inputs read them (rising): anything above zero, so short, weak pulses aren't missed.
+  for (const p of DEFS[n.type].ins){ if (p.kind !== 'gate') continue; const v = readIn(n, p.name, 0) > 0.0001 ? 1 : 0; if (n._gv[p.name] !== v){ n._gv[p.name] = v; ch = true; } }
   return ch;
 }
 
@@ -2862,16 +2961,41 @@ async function applySink(el){
   try { await el.setSinkId(want); } catch(e){ if (want){ try { await el.setSinkId(''); } catch(e2){} } }
 }
 // Restart the audio engine (after changing devices, or if another program grabbed the sound card).
+let audioRestarting = null;
 async function restartAudio(){
-  const old = actx; actx = null;
-  if (old){ try { await old.close(); } catch(e){} }
-  for (const n of nodes.values()){
-    for (const k of ['ain','aout','g','vol','msrc','an','meter']) n[k] = undefined;
-    // An audio file element can only feed one engine, so players get a fresh one (keeping the file and position).
-    if (n.type === 'aplayer' && n.audio){ const o = n.audio, a = new Audio(); a.preload = 'auto'; a.loop = o.loop; if (o.src){ a.src = o.src; a.currentTime = o.currentTime || 0; } const was = !o.paused; o.pause(); n.audio = a; if (was) setTimeout(() => apPlay(n), 100); }
-  }
-  audioProblem = '';
-  ensureAudio(); toast('Audio restarted.');
+  if (audioRestarting) return audioRestarting; // a second press while one is running waits for it
+  audioRestarting = (async () => {
+    // The old engine stays in place while it closes, so modules drawing in the meantime still have a working one.
+    const old = actx;
+    if (old){ try { await Promise.race([old.close(), new Promise(r => setTimeout(r, 1500))]); } catch(e){} }
+    // From here to the end nothing waits, so no frame ever sees the engine half rebuilt.
+    const mics = [];
+    for (const n of nodes.values()){
+      // Audio inputs need their microphone fed into the new engine: they're stopped here and started again below.
+      if (n.type === 'audioin' && n.stream){ mics.push(n); stopMic(n); }
+      for (const k of ['ain','aout','g','vol','msrc','an','meter']) n[k] = undefined;
+      // Remembered values that would stop the new engine's parts being set up: Reverb's echo, Distortion's curve, an input's gain.
+      delete n.irKey; delete n.lastD; delete n.lastGain;
+      // An audio file element can only feed one engine, so players get a fresh one (keeping the file and position).
+      if (n.type === 'aplayer' && n.audio){ const o = n.audio, a = new Audio(); a.preload = 'auto'; a.loop = o.loop; if (o.src){ a.src = o.src; a.currentTime = o.currentTime || 0; } const was = !o.paused; o.pause(); n.audio = a; if (was) setTimeout(() => apPlay(n), 100); }
+      // The same for the Video player's sound: a fresh video element with the same file, position, loop and play state.
+      if (n.type === 'player' && n.video){
+        const o = n.video, v = h('video', {playsinline:true, preload:'auto'}), t = o.currentTime || 0, was = !o.paused && !o.ended;
+        v.muted = true; v.loop = o.loop; v.playbackRate = o.playbackRate; v.onerror = o.onerror;
+        if (o.src){
+          v.src = o.src; v.currentTime = t;
+          v.addEventListener('loadedmetadata', () => { if (Math.abs(v.currentTime - t) > 0.05) try { v.currentTime = t; } catch(e){} }, {once: true});
+        }
+        o.onerror = null; o.pause(); o.remove(); media.append(v); n.video = v; applySink(v);
+        if (was) v.play().catch(() => {});
+      }
+    }
+    audioProblem = ''; actx = null; audioSig = '';
+    ensureAudio();
+    for (const n of mics) if (nodes.get(n.id) === n) startMic(n);
+    toast('Audio restarted.');
+  })();
+  try { await audioRestarting; } finally { audioRestarting = null; }
 }
 function soundState(){
   if (!actx) return {on: false, text: 'Sound is off. Press Sound on (or Start audio in Settings).'};
@@ -2891,19 +3015,29 @@ function makeMeter(src){
   const an = [0,1].map(i => { const a = actx.createAnalyser(); a.fftSize = 1024; a.smoothingTimeConstant = 0; sp.connect(a, i); return a; });
   return {an, buf: new Float32Array(1024), lvl:[-90,-90], pk:[-90,-90], pkT:[0,0], clipT:-1e9, t:0, rf:0};
 }
+// Each audio part gets a number, so the list of connections can be compared from one change to the next.
+const _aIds = new WeakMap(); let _aNext = 1, audioSig = '';
+const aId = o => { let i = _aIds.get(o); if (!i){ i = _aNext++; _aIds.set(o, i); } return i; };
+// Rewires the sound only when the audio connections actually change, so moving a video or control cable mid-show never clicks or drops the sound.
 function syncAudio(){
-  if (!actx) return;
-  for (const n of nodes.values()) if (n.aout) { try { n.aout.disconnect(); } catch(e){} }
+  if (!actx){ audioSig = ''; return; }
+  const links = [], sends = [];
   for (const e of edges){
     if (e.kind !== 'audio') continue;
     const a = nodes.get(e.from.node), b = nodes.get(e.to.node);
     if (!a || !b || !a.aout) continue;
     const dest = DEFS[b.type].audioIn && DEFS[b.type].audioIn(b, e.to.port);
-    if (dest) a.aout.connect(dest);
+    if (dest) links.push([a.aout, dest]);
   }
   // Audio Sends reach every Receive with the same name.
+  for (const r of nodes.values()) if (r.type === 'receive' && r.aout) for (const s of nodes.values()) if (s.type === 'send' && s.ain && s.params.label === r.params.label) sends.push([s.ain, r.aout]);
+  const sig = aId(actx) + '|' + links.map(([a, d]) => aId(a) + '>' + aId(d)).join(',') + '|' + sends.map(([a, d]) => aId(a) + '>' + aId(d)).join(',');
+  if (sig === audioSig) return;
+  audioSig = sig;
+  for (const n of nodes.values()) if (n.aout) { try { n.aout.disconnect(); } catch(e){} }
   for (const s of nodes.values()) if (s.type === 'send' && s.ain){ try { s.ain.disconnect(); } catch(e){} }
-  for (const r of nodes.values()) if (r.type === 'receive' && r.aout) for (const s of nodes.values()) if (s.type === 'send' && s.ain && s.params.label === r.params.label) s.ain.connect(r.aout);
+  for (const [a, d] of links) a.connect(d);
+  for (const [a, d] of sends) a.connect(d);
 }
 function drawMeter(cv, m, readout){
   const dpr = window.devicePixelRatio || 1, W = Math.round(cv.clientWidth*dpr), H = Math.round(cv.clientHeight*dpr);
@@ -2968,20 +3102,24 @@ async function startCam(n, retried){
   n.status.textContent = 'Asking for camera access…';
   const hh = camHeight(), w = Math.round(hh*16/9); n.camH = hh; // the picture size (Size under the main view)
   n.camAsk = (n.camAsk || 0) + 1; const ask = n.camAsk; n.camStarting = true; if (n.btn){ n.btn.textContent = 'Starting… (click to stop)'; }
+  // A newer start, a Stop, or removing the module replaces this request; then it must leave everything alone.
+  const stale = () => ask !== n.camAsk || nodes.get(n.id) !== n;
   try {
     const s = await navigator.mediaDevices.getUserMedia({audio:false, video:{
       deviceId: n.params.deviceId ? {exact: n.params.deviceId} : undefined,
       width:{ideal:w}, height:{ideal:hh}, frameRate:{ideal:30}}});
+    if (stale()){ s.getTracks().forEach(t => t.stop()); return; }
     n.camStarting = false;
-    if (ask !== n.camAsk || nodes.get(n.id) !== n){ s.getTracks().forEach(t => t.stop()); return; } // a newer start, a Stop, or removal replaced this one
     n.stream = s; n.video.srcObject = s;
     try { await n.video.play(); } catch(e){}
-    if (ask !== n.camAsk) return; // stopped while the picture was starting
+    if (stale()) return; // stopped while the picture was starting
     n.btn.textContent = 'Stop camera'; n.btn.classList.add('on');
     await fillDevices(n.devSel, 'videoinput', n.params.deviceId, 'Default camera');
+    if (stale()) return;
     const t = s.getVideoTracks()[0], st = t.getSettings();
     n.status.textContent = (t.label || 'Camera') + '\n' + (st.width||'?') + '×' + (st.height||'?') + (st.frameRate ? ', ' + Math.round(st.frameRate) + ' fps' : '');
   } catch(err){
+    if (stale()) return;
     n.camStarting = false;
     if (!retried && n.params.deviceId && (err.name === 'OverconstrainedError' || err.name === 'NotFoundError')){
       n.params.deviceId = ''; save(); return startCam(n, true);
@@ -3077,6 +3215,20 @@ function asciiAtlas(){
   c.__ver = 1; _ascii = c; return c;
 }
 
+// Unplugs every sound part a module made (single parts, lists like EQ bands, or groups like the mixer's inputs), so a deleted module goes fully quiet and can be freed.
+function audioTeardown(n, keys){
+  const off = v => { if (!v) return; if (v instanceof AudioNode){ try { v.disconnect(); } catch(e){} } else if (Array.isArray(v)) v.forEach(off); else if (v.constructor === Object) Object.values(v).forEach(off); };
+  for (const k of keys){ off(n[k]); n[k] = undefined; }
+}
+// Moves a sound setting smoothly, but only when its value actually changed (not every frame).
+function setAP(prm, v, tc){ if (!prm || prm.__v === v) return; prm.__v = v; prm.setTargetAtTime(v, actx.currentTime, tc); }
+// Image module: lets go of every loaded picture's memory.
+function imgFree(n){ for (const im of n.imgs || []) try { im.bmp.close(); } catch(e){} n.imgs = []; n.prevBmp = null; n.drawn = null; }
+// GIF player: lets go of decoded frames and the fallback picture.
+function gifFree(frames){ for (const f of frames || []) try { f.bmp.close(); } catch(e){} }
+function gifImgOff(n){ if (n.imgEl){ n.imgEl.remove(); n.imgEl = null; } if (n.imgUrl){ URL.revokeObjectURL(n.imgUrl); n.imgUrl = null; } }
+// Stops a media element and lets go of its file.
+function mediaOff(el, url){ if (!el) return; try { el.pause(); el.removeAttribute('src'); el.load(); } catch(e){} if (url && url.startsWith('blob:')) URL.revokeObjectURL(url); }
 const DEFS = {
   camera: {
     title:'Camera', kind:'video', fam:'src', w:250, ins:[], outs:[{name:'out', kind:'video', label:'Video'}],
@@ -3097,7 +3249,6 @@ const DEFS = {
     title:'Kaleidoscope', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{segments:8, rotate:0, spin:12, zoom:1.4, panX:0.2, panY:0, mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [
         slider(n, 'segments', 'Segments', 4, 24, 2, v => v),
         slider(n, 'rotate', 'Turn', 0, 360, 1, v => v + '°'),
@@ -3120,7 +3271,6 @@ const DEFS = {
     title:'Mirror', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{mode:'lr', mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [choice(n, 'mode', 'Mode', [['lr','Left onto right'],['rl','Right onto left'],['tb','Top onto bottom'],['bt','Bottom onto top'],['quad','Four-way'],['flip','Flip horizontal']])];
     },
     pull(n){
@@ -3182,7 +3332,6 @@ const DEFS = {
     title:'Black and white', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{mix:1, brightness:1, contrast:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       const kids = [];
       if (FILTER_OK || GLX) kids.push(
         slider(n, 'brightness', 'Brightness', 0, 2, 0.01, v => Math.round(v*100) + '%'),
@@ -3251,7 +3400,7 @@ const DEFS = {
     title:'Feedback', kind:'video', w:260, ins:[{name:'in', kind:'video', label:'In'},{name:'clear', kind:'gate', label:'Clear'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{mode:'screen', input:1, feedback:0.9, zoom:1.015, rotate:0.5, shiftX:0, shiftY:0, hue:2, blur:0, gain:1, mix:1},
     build(n){
-      n.bufs = [mkCanvas(2, 2), mkCanvas(2, 2)]; n.cur = 0;
+      n.cur = 0;
       const pct = v => Math.round(v*100) + '%';
       const looks = h('select', {'aria-label':'Feedback look'}, ...[['','Choose a look…'],['camera','Camera at screen'],['tunnel','Spinning tunnel'],['smear','Smear'],['trails','Echo trails'],['bloom','Glowing bloom']].map(([v, l]) => h('option', {value: v, text: l})));
       looks.addEventListener('change', () => { const L = FB_LOOKS[looks.value]; if (L){ for (const [k, v] of Object.entries(L)) setParam(n, k, v); save(); toast('Feedback look: ' + looks.selectedOptions[0].text + '. Adjust anything from here.'); } looks.value = ''; });
@@ -3289,7 +3438,7 @@ const DEFS = {
         GLX.pass(FS.fb, out, [prev, src], {fb: Math.pow(P(n, 'feedback'), k), z: Math.pow(P(n, 'zoom'), k), rot: P(n, 'rotate')*k*Math.PI/180,
           sh: [P(n, 'shiftX')*W*k, P(n, 'shiftY')*H*k], hue: P(n, 'hue')*k*Math.PI/180, blur: P(n, 'blur'), gain: P(n, 'gain'), inl: P(n, 'input'),
           mode: ['screen','lighter','lighten','difference','source-over','nest'].indexOf(n.params.mode)});
-      } catch(e){ console.error(e); return src; }
+      } catch(e){ if (!n.fbErr){ n.fbErr = true; console.error(e); } return src; } // reported once, not every frame
       return out;
     }
   },
@@ -3322,7 +3471,8 @@ const DEFS = {
       const keys = 'abcdefghij'.split('').slice(0, N), srcs = keys.map(k => inputRaw(n, k)), ok = srcs.map(x => !!(x && dims(x)[0]));
       const first = ok.indexOf(true); if (first < 0) return null;
       const [W, H] = dims(srcs[first]);
-      const mode = (k, i) => i <= first ? 0 : Math.max(0, BLENDS.findIndex(b => b[0] === (n.params['mode' + k.toUpperCase()] || 'source-over')));
+      // 'XOR' has no picture of its own on opaque video (it drew black), so it plays as Exclusion, its closest look. Saved patches keep the name.
+      const mode = (k, i) => { if (i <= first) return 0; const nm = n.params['mode' + k.toUpperCase()] || 'source-over'; return Math.max(0, BLENDS.findIndex(b => b[0] === (nm === 'xor' ? 'exclusion' : nm))); };
       // Four layers per pass; later passes put the result so far underneath the next three layers.
       let acc = null, i = 0, pass = 0;
       while (i < N){
@@ -3388,7 +3538,7 @@ const DEFS = {
       const GATE_FR = () => 18/n.scv.clientHeight, BAR_FR = () => (n.scv.clientHeight - 24)/n.scv.clientHeight;
       n.scv.addEventListener('pointerdown', e => {
         e.stopPropagation(); e.preventDefault(); n.scv.setPointerCapture(e.pointerId);
-        const r = n.scv.getBoundingClientRect(), N = +n.params.steps;
+        const r = n.scv.getBoundingClientRect(), N = n.N || +n.params.steps;
         const col = ev => Math.max(0, Math.min(N - 1, Math.floor((ev.clientX - r.left)/r.width*N)));
         if ((e.clientY - r.top)/r.height > 1 - GATE_FR()){ const i = col(e); n.params.on[i] = !n.params.on[i]; save(); return; }
         const setv = ev => {
@@ -3415,10 +3565,10 @@ const DEFS = {
     },
     pull(n){
       const now = performance.now(), dt = n.t ? Math.min(.1, (now - n.t)/1000) : 0; n.t = now;
-      const N = +n.params.steps;
+      const N = +n.params.steps; n.N = N; // the step count after any cable on Steps, so the grid shows the same steps
       if (n.idx >= N) n.idx = 0;
       if (rising(n, 'reset')) seqReset(n);
-      if (rising(n, 'rand')) for (let i = 0; i < 16; i++) n.params.vals[i] = +(Math.random()*2 - 1).toFixed(3);
+      if (rising(n, 'rand')){ for (let i = 0; i < 16; i++) n.params.vals[i] = +(Math.random()*2 - 1).toFixed(3); save(); }
       let adv = false;
       if (edgeInto(n.id, 'clock')){
         if (rising(n, 'clock')){ adv = true; if (n.lastClk) n.stepDur = Math.min(4000, now - n.lastClk); n.lastClk = now; }
@@ -3451,7 +3601,7 @@ const DEFS = {
       if (!W || !H) return;
       fitCanvas(cv, W, H);
       const x = cv.getContext('2d'); x.clearRect(0, 0, W, H);
-      const N = +n.params.steps, gh = 18*dpr, bh = H - gh - 6*dpr, cw = W/N, mid = bh/2;
+      const N = n.N || +n.params.steps, gh = 18*dpr, bh = H - gh - 6*dpr, cw = W/N, mid = bh/2;
       x.fillStyle = T.muted; x.globalAlpha = .3; x.fillRect(0, mid, W, dpr); x.globalAlpha = 1;
       for (let i = 0; i < N; i++){
         const v = n.params.vals[i], top = mid - v*(mid - 3*dpr), cur = i === n.idx;
@@ -3603,14 +3753,16 @@ const DEFS = {
       const now = performance.now(), dt = n.t ? Math.min(.1, (now - n.t)/1000) : 0; n.t = now;
       const bn = n.params.bsync && n.type === 'clock' ? bpmNode() : null;
       const bpm = Math.max(1, bn ? +bn.params.bpm : P(n, 'bpm')), bpb = +n.params.bpb, g = P(n, 'gateLen');
-      if (bn && typeof bn.beats === 'number'){ n.beats = bn.beats; n.params.running = !!bn.params.running; }
+      if (bn){ pullNode(bn.id); }
+      const follow = !!(bn && typeof bn.beats === 'number');
+      if (follow){ n.beats = bn.beats; n.params.running = !!bn.params.running; }
       n.periods = {beat: 60/bpm, eighth: 30/bpm, sixteenth: 15/bpm, bar: 60*bpb/bpm};
       if (rising(n, 'reset')){ n.beats = 0; n.startPulse = true; }
       if (rising(n, 'run')){ n.params.running = !n.params.running; if (n.params.running){ n.beats = 0; n.startPulse = true; } clockUI(n); }
       if (rising(n, 'tap')) n.tap();
       const start = n.startPulse; n.startPulse = false;
       if (!n.params.running) return {beat:0, eighth:0, sixteenth:0, bar:0, start: start ? 1 : 0};
-      n.beats += dt*bpm/60;
+      if (!follow) n.beats += dt*bpm/60;
       const b = n.beats, on = f => (f % 1) < g ? 1 : 0;
       return {beat: on(b), eighth: on(b*2), sixteenth: on(b*4), bar: ((b/bpb) % 1) < g/bpb ? 1 : 0, start: start ? 1 : 0};
     },
@@ -3651,7 +3803,7 @@ const DEFS = {
       const now = performance.now(), dt = n.t ? Math.min(.1, (now - n.t)/1000) : 0; n.t = now;
       let adv = false;
       if (rising(n, 'reset')){ n.k = 0; adv = true; }
-      if (rising(n, 'reseed')){ n.params.seed = Math.floor(Math.random()*10000); if (n.ctl.seed) n.ctl.seed.set(n.params.seed); n.k = 0; }
+      if (rising(n, 'reseed')){ n.params.seed = Math.floor(Math.random()*10000); if (n.ctl.seed) n.ctl.seed.set(n.params.seed); n.k = 0; save(); }
       if (edgeInto(n.id, 'next')){ if (rising(n, 'next')) adv = true; }
       else { n.ph += dt*Math.max(0.01, rateOf(n)); if (n.ph >= 1){ n.ph -= Math.floor(n.ph); adv = true; } }
       if (adv){
@@ -3674,7 +3826,6 @@ const DEFS = {
     title:'Rotate', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{angle:0, spin:0, scale:1, fill:'none', mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [
         slider(n, 'angle', 'Angle', -180, 180, 0.5, v => v.toFixed(1) + '°'),
         slider(n, 'spin', 'Spin', -360, 360, 1, v => v + '°/s'),
@@ -3696,7 +3847,6 @@ const DEFS = {
     title:'Zoom', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{amount:1.5, cx:0, cy:0, mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [
         slider(n, 'amount', 'Zoom', 0.25, 8, 0.01, v => v.toFixed(2) + '×'),
         slider(n, 'cx', 'Center X', -1, 1, 0.01, v => v.toFixed(2)),
@@ -3712,7 +3862,6 @@ const DEFS = {
     title:'Crop', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{left:0.1, right:0.1, top:0.1, bottom:0.1, out:'mask', mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       const pct = v => Math.round(v*100) + '%';
       return [
         slider(n, 'left', 'Left', 0, 0.45, 0.005, pct), slider(n, 'right', 'Right', 0, 0.45, 0.005, pct),
@@ -3747,11 +3896,14 @@ const DEFS = {
       // Long delays keep a smaller, slower copy of the past so memory stays reasonable.
       const span = edgeInto(n.id, 'p:time') ? Math.max(3000, n.params.time*2) : d;
       const tier = span <= 3200 ? [960, 32, 100] : span <= 8200 ? [640, 40, 220] : [420, 66, 330];
-      if (n.fb.maxW !== tier[0]){ n.fb = new FrameBuf(tier[0]); }
+      // When the delay crosses into another size, the old store is kept and read from until the new one holds enough past, so the picture never jumps.
+      if (n.fb.maxW !== tier[0]){ n.fbOld = n.fb.buf.length ? n.fb : null; n.fb = new FrameBuf(tier[0]); }
       n.fb.gap = tier[1];
       n.fb.push(src, now);
       n.fb.trim(now, Math.min(10000, span) + 120, tier[2]);
-      return n.fb.at(now - d).cv;
+      const want = now - d;
+      if (n.fbOld && n.fb.buf.length && n.fb.buf[0].t <= want) n.fbOld = null;
+      return (n.fbOld && (!n.fb.buf.length || n.fb.buf[0].t > want) ? n.fbOld : n.fb).at(want).cv;
     }
   },
   looper: {
@@ -3764,7 +3916,7 @@ const DEFS = {
       n.out = mkCanvas(2, 2);
       n.recBtn = h('button', {class:'btn', text:'Record', onclick: () => looperRec(n)});
       n.playBtn = h('button', {class:'btn', text:'Play', onclick: () => looperToggle(n)});
-      const clr = h('button', {class:'btn', text:'Clear', onclick: () => { n.state = 'idle'; n.pool.push(...n.frames); n.frames = []; }});
+      const clr = h('button', {class:'btn', text:'Clear', onclick: () => { n.state = 'idle'; n.frames = []; n.pool = []; }});
       n.bar = h('div', {class:'prog'}, h('span'));
       n.st = h('div', {class:'status'});
       const rows = {};
@@ -3788,7 +3940,9 @@ const DEFS = {
       if (clockRise){ if (n.lastClk) n.clkPeriod = (now - n.lastClk)/1000; n.lastClk = now; }
       if (rising(n, 'rec')) looperRec(n);
       if (rising(n, 'play')) looperToggle(n);
-      if (rising(n, 'clear')){ n.state = 'idle'; n.pool.push(...n.frames); n.frames = []; }
+      if (rising(n, 'clear')){ n.state = 'idle'; n.frames = []; n.pool = []; }
+      // Spare frames are only reused while recording; at any other time they are let go so memory comes back.
+      if (n.state !== 'rec' && n.pool.length) n.pool = [];
       if (n.state === 'armed' && clockRise) looperStart(n, now);
       if (n.state === 'rec'){
         if (src && dims(src)[0]){
@@ -3840,7 +3994,6 @@ const DEFS = {
     outs:[{name:'out', kind:'video', label:'Program'},{name:'cue', kind:'video', label:'Inactive'}],
     params:{fade:0, time:1, curve:'smooth'},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       n.swBtn = h('button', {class:'btn', text:'Switch to B', onclick: () => xfadeSwitch(n)});
       const goA = h('button', {class:'btn', text:'Cut to A', onclick: () => { n.anim = null; setParam(n, 'fade', 0); save(); }});
       const goB = h('button', {class:'btn', text:'Cut to B', onclick: () => { n.anim = null; setParam(n, 'fade', 1); save(); }});
@@ -3916,8 +4069,9 @@ const DEFS = {
       n.autoBtn = h('button', {class:'btn' + (n.params.autoplay ? ' on' : ''), text:'Play on open', title:'Start playing as soon as the patch opens', onclick: () => { n.params.autoplay = !n.params.autoplay; n.autoBtn.classList.toggle('on', n.params.autoplay); save(); }});
       n.scrub = h('input', {type:'range', min:0, max:1000, step:1, value:0, 'aria-label':'Playback position'});
       n.scrub.addEventListener('input', () => { if (n.video.duration) n.video.currentTime = n.scrub.value/1000*n.video.duration; });
-      n.scrub.addEventListener('pointerdown', () => n.scrubbing = true);
-      n.scrub.addEventListener('pointerup', () => n.scrubbing = false);
+      // Held while dragging; let go anywhere (even off the slider) ends it.
+      n.scrub.addEventListener('pointerdown', e => { n.scrubbing = true; try { n.scrub.setPointerCapture(e.pointerId); } catch(err){} });
+      for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture', 'change', 'blur']) n.scrub.addEventListener(ev, () => n.scrubbing = false);
       n.tm = h('span', {class:'val'});
       n.st = h('div', {class:'status', text: n.params.file ? 'Load “' + n.params.file + '” again to continue.' : 'Load a video file, or drop one here.'});
       if (NATIVE && n.params.path) setTimeout(() => playerLoadPath(n));
@@ -3948,7 +4102,7 @@ const DEFS = {
       const pp = v.paused ? 'Play' : 'Pause';
       if (pp !== n.ppBtn.textContent) n.ppBtn.textContent = pp;
     },
-    destroy(n){ n.video.pause(); if (n.url) URL.revokeObjectURL(n.url); n.video.remove(); },
+    destroy(n){ audioTeardown(n, ['msrc']); mediaOff(n.video, n.url); n.url = null; n.video.remove(); },
     audioOut(n){ return n.aout; }
   },
   midi: {
@@ -3985,7 +4139,6 @@ const DEFS = {
     title:'Color adjust', kind:'video', w:260, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{hue:0, sat:1, bri:1, con:1, gam:1, inv:0, tint:'#ff7a3d', tamt:0, mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       const pct = v => Math.round(v*100) + '%';
       return [slider(n, 'hue', 'Hue', -180, 180, 1, v => (v > 0 ? '+' : '') + Math.round(v) + '°'),
         slider(n, 'sat', 'Saturation', 0, 3, 0.01, pct), slider(n, 'bri', 'Brightness', 0, 3, 0.01, pct),
@@ -4004,7 +4157,6 @@ const DEFS = {
     ins:[{name:'fg', kind:'video', label:'Foreground'},{name:'bg', kind:'video', label:'Background'}], outs:[{name:'out', kind:'video', label:'Out'}],
     params:{mode:'luma', th:0.5, soft:0.08, inv:'keep', kc:'#00ff00'},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       const rows = {};
       const show = () => { rows.kc.hidden = n.params.mode !== 'chroma'; };
       rows.kc = colorPick(n, 'kc', 'Key color');
@@ -4029,7 +4181,6 @@ const DEFS = {
     title:'Posterize', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{levels:4, sat:1.2, mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [slider(n, 'levels', 'Levels', 2, 16, 1, v => String(Math.round(v))), slider(n, 'sat', 'Saturation', 0, 3, 0.01, v => Math.round(v*100) + '%')];
     },
     pull(n){ const s = inputRaw(n, 'in'); if (!s) return null; const [W, H] = dims(s); if (!W) return null;
@@ -4039,7 +4190,6 @@ const DEFS = {
     title:'Gradient map', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{c0:'#120a3a', c1:'#e0457b', c2:'#ffe29a', con:1, mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [colorPick(n, 'c0', 'Shadows'), colorPick(n, 'c1', 'Midtones'), colorPick(n, 'c2', 'Highlights'),
         slider(n, 'con', 'Contrast', 0.2, 4, 0.01, v => Math.round(v*100) + '%')];
     },
@@ -4050,7 +4200,6 @@ const DEFS = {
     title:'Edge detect', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{mode:'glow', k:3, th:0.1, ec:'#7df9ff', mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [choice(n, 'mode', 'Style', [['glow','Glowing lines on black'],['ink','Dark lines over the picture'],['neon','Colored lines over the picture']]),
         slider(n, 'k', 'Strength', 0.5, 10, 0.05, v => v.toFixed(2) + '×'),
         slider(n, 'th', 'Threshold', 0, 0.8, 0.005, v => Math.round(v*100) + '%'),
@@ -4063,21 +4212,19 @@ const DEFS = {
     title:'Wave warp', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{amp:0.03, freq:4, speed:2, dir:'h', mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [choice(n, 'dir', 'Direction', [['h','Sideways ripples'],['v','Up and down ripples'],['both','Both']]),
         slider(n, 'amp', 'Amount', 0, 0.2, 0.001, v => (v*100).toFixed(1) + '%'),
         slider(n, 'freq', 'Waves', 0.2, 40, 0.1, v => v.toFixed(1)),
         slider(n, 'speed', 'Speed', -10, 10, 0.05, v => v.toFixed(2))];
     },
     pull(n){ const s = inputRaw(n, 'in'); if (!s) return null; const [W, H] = dims(s); if (!W) return null;
-      const [, dt] = tdt(n); n.ph = ((n.ph || 0) + dt*P(n,'speed')*6.2831) % 6283.1;
+      const [, dt] = tdt(n); n.ph = ((n.ph || 0) + dt*P(n,'speed')*6.2831) % (Math.PI*200); // 100 full turns, so both ripple directions (×1 and ×1.13) line up and never jump
       return gpu(n, FS.warp, [s], {amp: P(n,'amp'), freq: P(n,'freq'), ph: n.ph, dir: {h:0, v:1, both:2}[n.params.dir]}, W, H); }
   },
   crt: {
     title:'CRT / VHS', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{scan:0.5, bleed:3, noise:0.15, wob:0.3, vig:0.5, curv:0.15, mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       const pct = v => Math.round(v*100) + '%';
       return [slider(n, 'scan', 'Scanlines', 0, 1, 0.01, pct), slider(n, 'bleed', 'Color bleed', 0, 12, 0.1, v => v.toFixed(1) + ' px'),
         slider(n, 'noise', 'Noise', 0, 1, 0.01, pct), slider(n, 'wob', 'Tracking', 0, 1, 0.01, pct),
@@ -4090,7 +4237,6 @@ const DEFS = {
     title:'Pixelate', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{size:16, mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d'); n.sm = mkCanvas(2, 2);
       return [slider(n, 'size', 'Block size', 1, 96, 1, v => Math.round(v) + ' px')];
     },
     pull(n){
@@ -4103,7 +4249,7 @@ const DEFS = {
     title:'Tile', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{cols:3, rows:3, mirror:'mirror', sx:0, sy:0, mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d'); n.ox = 0; n.oy = 0;
+      n.ox = 0; n.oy = 0;
       return [slider(n, 'cols', 'Across', 1, 8, 1, v => String(Math.round(v))), slider(n, 'rows', 'Down', 1, 8, 1, v => String(Math.round(v))),
         choice(n, 'mirror', 'Tiles', [['repeat','Repeat'],['mirror','Mirror alternate tiles']]),
         slider(n, 'sx', 'Scroll X', -2, 2, 0.01, v => v.toFixed(2) + '/s'), slider(n, 'sy', 'Scroll Y', -2, 2, 0.01, v => v.toFixed(2) + '/s')];
@@ -4128,7 +4274,9 @@ const DEFS = {
     pull(n){
       const s = inputOf(n, 'in'); if (!s || !dims(s)[0]) return null;
       const sss = syncSec(n), now = performance.now(), depth = sss ? Math.min(6000, sss*1000) : P(n, 'depth')*1000, B = Math.max(2, Math.round(P(n, 'bands'))); syncInfo(n, depth);
-      n.fb.push(s, now); n.fb.trim(now, (edgeInto(n.id, 'p:depth') ? 3000 : depth) + 100, 120);
+      // The store covers the whole time span (6 s with a cable on it); longer spans keep frames less often, so it stays at 120 frames.
+      const keep = (edgeInto(n.id, 'p:depth') ? 6000 : depth) + 100; n.fb.gap = Math.max(32, Math.ceil(keep/118));
+      n.fb.push(s, now); n.fb.trim(now, keep, 120);
       const W = n.fb.w, H = n.fb.h, d = n.params.dir, vert = d === 'down' || d === 'up';
       fitCanvas(n.cv, W, H); const x = n.ctx;
       for (let i = 0; i < B; i++){
@@ -4163,7 +4311,10 @@ const DEFS = {
     pull(n){
       const s = inputOf(n, 'in'); if (!s || !dims(s)[0]) return null;
       const now = performance.now(), m = n.params.mode;
-      n.fb.push(s, now); n.fb.trim(now, 1200, 60);
+      // The store covers the longest slice that can be asked for (2 s when synced), keeping frames less often past 1.3 s.
+      const ssl = m === 'repeat' ? syncSec(n) : null, len = ssl ? Math.min(2000, ssl*1000) : P(n, 'len');
+      const keep = Math.max(1200, (ssl ? len : edgeInto(n.id, 'p:len') ? 1000 : len) + 150); n.fb.gap = keep > 1300 ? 50 : 32;
+      n.fb.push(s, now); n.fb.trim(now, keep, 60);
       const W = n.fb.w, H = n.fb.h;
       const holdHi = !!gateHigh(n, 'hold'), holdRise = rising(n, 'hold'), trig = rising(n, 'trig') || n.fire; n.fire = false;
       if (m === 'hold' || holdHi){
@@ -4172,9 +4323,12 @@ const DEFS = {
       }
       if (m === 'repeat'){
         if (trig){
-          const ssl = syncSec(n); const len = ssl ? Math.min(2000, ssl*1000) : P(n, 'len'); syncInfo(n, len); n.seg = n.fb.buf.filter(f => f.t >= now - len).map(f => { const c = mkCanvas(f.cv.width, f.cv.height); c.ctx.drawImage(f.cv, 0, 0); c.t = f.t; return c; });
+          // The slice is copied into this module's own reusable frames (made once, grown only when needed), not new ones each trigger.
+          syncInfo(n, len); const pick = n.fb.buf.filter(f => f.t >= now - len).slice(-60), pool = n.segPool || (n.segPool = []);
+          n.seg = pick.map((f, i) => { const c = pool[i] || (pool[i] = mkCanvas(f.cv.width, f.cv.height)); fitCanvas(c.cv, f.cv.width, f.cv.height); c.ctx.drawImage(f.cv, 0, 0); c.t = f.t; return c; });
           if (!n.seg.length) n.seg = null; else { n.segT0 = n.seg[0].t; n.segLen = Math.max(30, len); n.segStart = now; n.segReps = Math.round(P(n, 'reps')); }
         }
+        if (!n.seg && n.segPool && now - (n.segStart || 0) > 5000) n.segPool = null; // no trigger for a while: let the spare frames go
         if (n.seg){
           const el = now - n.segStart, k = Math.floor(el/n.segLen);
           if (k >= n.segReps) n.seg = null;
@@ -4194,7 +4348,6 @@ const DEFS = {
     title:'Pattern generator', kind:'video', fam:'src', w:260, ins:[], outs:[{name:'out', kind:'video', label:'Video'}],
     params:{shape:'bars', freq:6, ang:0, speed:1, sharp:0, ca:'#0b0b2a', cb:'#ff9f1c'},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [choice(n, 'shape', 'Pattern', [['bars','Bars'],['rings','Rings'],['grid','Checkerboard'],['moire','Moiré'],['plasma','Plasma'],['ramp','Ramp']]),
         slider(n, 'freq', 'Frequency', 0.5, 60, 0.1, v => v.toFixed(1)),
         slider(n, 'ang', 'Angle', 0, 360, 0.5, v => Math.round(v) + '°'),
@@ -4203,7 +4356,9 @@ const DEFS = {
         colorPick(n, 'ca', 'Color A'), colorPick(n, 'cb', 'Color B')];
     },
     pull(n){
-      const [, dt] = tdt(n); n.ph = ((n.ph || 0) + dt*P(n, 'speed')*2) % 10000;
+      // The phase wraps where every pattern lines up exactly, so the picture never jumps: whole turns for the wave patterns, whole steps for the ramp.
+      const [, dt] = tdt(n), wrap = n.params.shape === 'ramp' ? 10060 : Math.PI*3200; n.ph = (n.ph || 0) + dt*P(n, 'speed')*2;
+      if (n.ph >= wrap) n.ph -= wrap; else if (n.ph <= -wrap) n.ph += wrap;
       const [W, H] = genSize(n);
       return gpu(n, FS.osc, [], {shape: ['bars','rings','grid','moire','plasma','ramp'].indexOf(n.params.shape), freq: P(n,'freq'), ang: P(n,'ang')*Math.PI/180, ph: n.ph, sharp: P(n,'sharp'), ca: colorRgb(n, 'ca'), cb: colorRgb(n, 'cb')}, W, H);
     }
@@ -4287,6 +4442,7 @@ const DEFS = {
     },
     initAudio(n){ n.ain = stereoGain(); n.an = actx.createAnalyser(); n.an.fftSize = 1024; n.ain.connect(n.an); n.buf = new Float32Array(1024); },
     audioIn(n){ return n.ain; },
+    destroy(n){ audioTeardown(n, ['an']); },
     pull(n){
       const [, dt] = tdt(n); let target = 0;
       if (n.an && edgeInto(n.id, 'in')){ n.an.getFloatTimeDomainData(n.buf); let s = 0; for (let i = 0; i < n.buf.length; i++) s += n.buf[i]*n.buf[i]; target = Math.min(1, Math.sqrt(s/n.buf.length)*3*P(n, 'gain')); }
@@ -4309,6 +4465,7 @@ const DEFS = {
     },
     initAudio(n){ n.ain = stereoGain(); n.an = actx.createAnalyser(); n.an.fftSize = 2048; n.an.smoothingTimeConstant = 0; n.ain.connect(n.an); n.fbuf = new Float32Array(1024); },
     audioIn(n){ return n.ain; },
+    destroy(n){ audioTeardown(n, ['an']); },
     pull(n){
       const [, dt] = tdt(n);
       if (n.an && edgeInto(n.id, 'in')){
@@ -4336,6 +4493,7 @@ const DEFS = {
     },
     initAudio(n){ n.ain = stereoGain(); n.an = actx.createAnalyser(); n.an.fftSize = 1024; n.an.smoothingTimeConstant = 0; n.ain.connect(n.an); n.fbuf = new Float32Array(512); n.tbuf = new Float32Array(1024); },
     audioIn(n){ return n.ain; },
+    destroy(n){ audioTeardown(n, ['an']); },
     pull(n){
       const [now, dt] = tdt(n); let e = 0;
       if (n.an && edgeInto(n.id, 'in')){
@@ -4353,6 +4511,7 @@ const DEFS = {
     render(n){
       pullNode(n.id);
       n.light.firstChild.className = performance.now() - n.last < 120 ? 'on hot' : '';
+      if (n.ivs.length && performance.now() - n.last > 3000){ n.ivs = []; n.bpm.textContent = 'Listening…'; } // beats stopped: forget the old tempo
       if (n.ivs.length >= 3 && (++n.rf || (n.rf = 1)) % 15 === 0){ const s = n.ivs.slice().sort((a, b) => a - b), med = s[s.length >> 1]; n.bpm.textContent = 'About ' + Math.round(60000/med) + ' BPM'; }
     }
   },
@@ -4376,7 +4535,8 @@ const DEFS = {
     pull(n){
       if (n.times.length >= 6){ const iv = (n.times[n.times.length - 1] - n.times[0])/(n.times.length - 1); if (iv > 0) n.bpmV = 60000/(iv*24); }
       const bpm = n.bpmV || 120, bpb = +n.params.bpb;
-      n.periods = {beat: 60/bpm, eighth: 30/bpm, sixteenth: 15/bpm, bar: 60*bpb/bpm};
+      // Only offer a tempo to synced modules once MIDI clock has actually arrived.
+      n.periods = n.bpmV ? {beat: 60/bpm, eighth: 30/bpm, sixteenth: 15/bpm, bar: 60*bpb/bpm} : null;
       const st = n.startPulse; n.startPulse = false;
       const live = (n.running || n.params.follow === 'free') && performance.now() - (n.times[n.times.length - 1] || 0) < 500;
       const t = Math.max(0, n.tick);
@@ -4456,7 +4616,8 @@ const DEFS = {
     },
     pull(n){
       const a = readIn(n, 'a', 0)*P(n, 'sa'), b = readIn(n, 'b', 0)*P(n, 'sb');
-      let v = {add: a + b, mul: a*b, min: Math.min(a, b), max: Math.max(a, b), diff: Math.abs(a - b)}[n.params.op] + P(n, 'off');
+      const r = {add: a + b, mul: a*b, min: Math.min(a, b), max: Math.max(a, b), diff: Math.abs(a - b)}[n.params.op];
+      let v = (r === undefined ? a : r) + P(n, 'off'); // an unknown operation passes A through
       v = Math.max(-1, Math.min(1, v)); n.hist[n.hi] = v; n.hi = (n.hi + 1) % n.hist.length;
       return {out: v, inv: -v};
     },
@@ -4558,7 +4719,7 @@ const DEFS = {
         colorPick(n, 'dark', 'Shadow'), colorPick(n, 'bg', 'Background')];
     },
     pull(n){
-      if (rising(n, 'new')) n.params.seed = Math.floor(Math.random()*99999);
+      if (rising(n, 'new')){ n.params.seed = Math.floor(Math.random()*99999); save(); }
       const [, dt] = tdt(n); n.time += dt*P(n, 'speed');
       if (n.sseed !== n.params.seed){ n.sseed = n.params.seed; const R = seededRng(n.params.seed*5 + 2);
         n.sh = Array.from({length: 5}, () => ({x: (R() - 0.5)*0.9, y: (R() - 0.5)*0.6, r: 0.18 + R()*0.18, rot: R()*6.28,
@@ -4624,7 +4785,7 @@ const DEFS = {
         colorPick(n, 'line', 'Lines'), colorPick(n, 'fa', 'Fill A'), colorPick(n, 'fb', 'Fill B'), colorPick(n, 'bg', 'Background')];
     },
     pull(n){
-      if (rising(n, 'new')) n.params.seed = Math.floor(Math.random()*99999);
+      if (rising(n, 'new')){ n.params.seed = Math.floor(Math.random()*99999); save(); }
       const [, dt] = tdt(n); n.rot += dt*P(n, 'spin');
       const [W, H] = genSize(n); fitCanvas(n.cv, W, H);
       const x = n.ctx; x.setTransform(1,0,0,1,0,0); x.globalAlpha = 1; x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H);
@@ -4688,7 +4849,7 @@ const DEFS = {
         colorPick(n, 'line', 'Lines'), colorPick(n, 'bg', 'Background')];
     },
     pull(n){
-      if (rising(n, 'new')) n.params.seed = Math.floor(Math.random()*99999);
+      if (rising(n, 'new')){ n.params.seed = Math.floor(Math.random()*99999); save(); }
       const [, dt] = tdt(n); n.time += dt*P(n, 'speed');
       const [W, H] = genSize(n); fitCanvas(n.cv, W, H);
       const x = n.ctx; x.setTransform(1,0,0,1,0,0); x.globalAlpha = 1; x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H);
@@ -4776,7 +4937,6 @@ const DEFS = {
         slider(n, 'taper', 'Inner petals', 0.05, 1.5, 0.01, pct),
         slider(n, 'center', 'Center', 0, 3, 0.01, pct),
         h('div', {class:'seghdr'}, h('span', {text:'Halo and motion'}), h('span')),
-        slider(n, 'contours', 'Petal lines', 0, 20, 1, v => String(Math.round(v))),
         slider(n, 'halo', 'Halo lines', 0, 60, 1, v => String(Math.round(v))),
         slider(n, 'hspace', 'Halo spacing', 0.004, 0.05, 0.001, v => (v*100).toFixed(1)),
         slider(n, 'hwob', 'Halo ripple', 0, 1, 0.01, pct),
@@ -4788,7 +4948,7 @@ const DEFS = {
         h('div', {class:'btns'}, h('button', {class:'btn', text:'New bloom', onclick: () => { setParam(n, 'seed', Math.floor(Math.random()*99999)); save(); }}))];
     },
     pull(n){
-      if (rising(n, 'new')) n.params.seed = Math.floor(Math.random()*99999);
+      if (rising(n, 'new')){ n.params.seed = Math.floor(Math.random()*99999); save(); }
       const [, dt] = tdt(n); n.time += dt*P(n, 'breathe'); n.rot += dt*P(n, 'spin');
       const cx = Math.round(P(n, 'complexity')), key = cx + ':' + n.params.seed;
       const k2 = key + n.params.layout + ':' + Math.round(n.params.rings) + ':' + Math.round(n.params.per);
@@ -4898,7 +5058,7 @@ const DEFS = {
         h('div', {class:'btns'}, h('button', {class:'btn', text:'New shape', onclick: () => { setParam(n, 'seed', Math.floor(Math.random()*99999)); save(); }}))];
     },
     pull(n){
-      if (rising(n, 'new')) n.params.seed = Math.floor(Math.random()*99999);
+      if (rising(n, 'new')){ n.params.seed = Math.floor(Math.random()*99999); save(); }
       const [, dt] = tdt(n); n.time += dt*P(n, 'speed');
       if (n.tseed !== n.params.seed){ n.tseed = n.params.seed; const R = seededRng(n.params.seed*7 + 1);
         n.hm = Array.from({length: 8}, (_, i) => ({k: 2 + i + Math.floor(R()*2), a: 0.5/(i + 1)*(0.5 + R()), ph: R()*Math.PI*2, s: (R() - 0.5)*0.8, dj: (R() - 0.5)*0.35}));
@@ -4964,7 +5124,7 @@ const DEFS = {
         h('div', {class:'btns'}, h('button', {class:'btn', text:'New layout', onclick: () => { setParam(n, 'seed', Math.floor(Math.random()*99999)); save(); }}))];
     },
     pull(n){
-      if (rising(n, 'new')) n.params.seed = Math.floor(Math.random()*99999);
+      if (rising(n, 'new')){ n.params.seed = Math.floor(Math.random()*99999); save(); }
       const [, dt] = tdt(n); n.time += dt*P(n, 'speed'); n.rot += dt*P(n, 'spin');
       const [W, H] = genSize(n); fitCanvas(n.cv, W, H);
       const x = n.ctx; x.setTransform(1,0,0,1,0,0); x.globalAlpha = 1; x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H);
@@ -5017,7 +5177,7 @@ const DEFS = {
         colorPick(n, 'line', 'Lines'), colorPick(n, 'bg', 'Background'), n.info];
     },
     pull(n){
-      if (rising(n, 'new')) n.params.seed = Math.floor(Math.random()*99999);
+      if (rising(n, 'new')){ n.params.seed = Math.floor(Math.random()*99999); save(); }
       const [, dt] = tdt(n); n.time += dt*P(n, 'speed'); n.rot += dt*P(n, 'spin');
       const [W, H] = genSize(n); fitCanvas(n.cv, W, H);
       const x = n.ctx; x.setTransform(1,0,0,1,0,0); x.globalAlpha = 1; x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H);
@@ -5157,13 +5317,13 @@ const DEFS = {
     render(n){
       pullNode(n.id);
       n.audio.loop = n.params.loop === 'on'; n.audio.playbackRate = P(n, 'speed');
-      if (n.vol) n.vol.gain.setTargetAtTime(P(n, 'vol'), actx.currentTime, 0.03);
+      if (n.vol) setAP(n.vol.gain, P(n, 'vol'), 0.03);
       const d = n.audio.duration || 0, t = n.audio.currentTime || 0;
       if (d && document.activeElement !== n.pos) n.pos.value = Math.round(t/d*1000);
       const txt = fmtTime(t) + (d ? ' / ' + fmtTime(d) : ''); if (txt !== n.time.textContent) n.time.textContent = txt;
       const lab = n.audio.paused ? 'Play' : 'Pause'; if (lab !== n.playBtn.textContent){ n.playBtn.textContent = lab; n.playBtn.classList.toggle('on', !n.audio.paused); }
     },
-    destroy(n){ n.audio.pause(); if (n.url) URL.revokeObjectURL(n.url); }
+    destroy(n){ audioTeardown(n, ['msrc', 'vol']); mediaOff(n.audio, n.url); n.url = null; }
   },
   speakers: {
     title:'Speakers', kind:'audio', fam:'aud', w:230, ins:[{name:'in', kind:'audio', label:'In'}], outs:[],
@@ -5181,8 +5341,8 @@ const DEFS = {
     },
     initAudio(n){ n.ain = stereoGain(); n.g = actx.createGain(); n.ain.connect(n.g); n.g.connect(actx.destination); },
     audioIn(n){ return n.ain; },
-    render(n){ if (n.g) n.g.gain.setTargetAtTime(n.params.mute ? 0 : P(n, 'vol'), actx.currentTime, 0.03); n.muteBtn.classList.toggle('on', !!n.params.mute); },
-    destroy(n){ try { n.g.disconnect(); } catch(e){} }
+    render(n){ if (n.g) setAP(n.g.gain, n.params.mute ? 0 : P(n, 'vol'), 0.03); n.muteBtn.classList.toggle('on', !!n.params.mute); },
+    destroy(n){ audioTeardown(n, ['g']); }
   },
   ameter: {
     title:'Meter', kind:'audio', fam:'aud', w:260, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5190,7 +5350,8 @@ const DEFS = {
     build(n){ n.mcv = h('canvas', {class:'meter', 'aria-hidden':'true'}); n.pk = h('div', {class:'pk'}); return [h('div', {class:'meterwrap'}, n.mcv, n.pk), h('div', {class:'status', text:'Shows how loud the sound is. The audio passes straight through.'})]; },
     initAudio(n){ n.ain = stereoGain(); n.aout = stereoGain(); n.ain.connect(n.aout); n.meter = makeMeter(n.ain); },
     audioIn(n){ return n.ain; },
-    render(n){ drawMeter(n.mcv, n.meter || null, n.pk); }
+    render(n){ drawMeter(n.mcv, n.meter || null, n.pk); },
+    destroy(n){ if (n.meter) audioTeardown(n.meter, ['an']); n.meter = undefined; }
   },
   again: {
     title:'Gain', kind:'audio', fam:'aud', w:230, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5198,7 +5359,7 @@ const DEFS = {
     build(n){ return [slider(n, 'db', 'Gain', -60, 18, 0.1, v => (v > 0 ? '+' : '') + v.toFixed(1) + ' dB')]; },
     initAudio(n){ n.ain = stereoGain(); n.aout = stereoGain(); n.ain.connect(n.aout); },
     audioIn(n){ return n.ain; },
-    render(n){ if (n.aout) n.aout.gain.setTargetAtTime(P(n, 'db') <= -59.9 ? 0 : Math.pow(10, P(n, 'db')/20), actx.currentTime, 0.02); }
+    render(n){ if (n.aout) setAP(n.aout.gain, P(n, 'db') <= -59.9 ? 0 : Math.pow(10, P(n, 'db')/20), 0.02); }
   },
   apan: {
     title:'Pan', kind:'audio', fam:'aud', w:230, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5206,7 +5367,8 @@ const DEFS = {
     build(n){ return [slider(n, 'pan', 'Pan', -1, 1, 0.01, v => Math.abs(v) < 0.01 ? 'Center' : (v < 0 ? 'L ' : 'R ') + Math.round(Math.abs(v)*100))]; },
     initAudio(n){ n.ain = stereoGain(); n.p = actx.createStereoPanner(); n.aout = stereoGain(); n.ain.connect(n.p); n.p.connect(n.aout); },
     audioIn(n){ return n.ain; },
-    render(n){ if (n.p) n.p.pan.setTargetAtTime(P(n, 'pan'), actx.currentTime, 0.02); }
+    render(n){ if (n.p) setAP(n.p.pan, P(n, 'pan'), 0.02); },
+    destroy(n){ audioTeardown(n, ['p']); }
   },
   afilter: {
     title:'Filter', kind:'audio', fam:'aud', w:250, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5217,7 +5379,8 @@ const DEFS = {
     },
     initAudio(n){ n.ain = stereoGain(); n.f = actx.createBiquadFilter(); n.aout = stereoGain(); n.ain.connect(n.f); n.f.connect(n.aout); },
     audioIn(n){ return n.ain; },
-    render(n){ if (!n.f) return; if (n.f.type !== n.params.type) n.f.type = n.params.type; n.f.frequency.setTargetAtTime(freqOf(P(n, 'freq')), actx.currentTime, 0.02); n.f.Q.setTargetAtTime(P(n, 'q'), actx.currentTime, 0.02); }
+    render(n){ if (!n.f) return; if (n.f.type !== n.params.type) n.f.type = n.params.type; setAP(n.f.frequency, freqOf(P(n, 'freq')), 0.02); setAP(n.f.Q, P(n, 'q'), 0.02); },
+    destroy(n){ audioTeardown(n, ['f']); }
   },
   aeq: {
     title:'EQ', kind:'audio', fam:'aud', w:250, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5229,7 +5392,8 @@ const DEFS = {
       n.ain.connect(n.b[0]); n.b[0].connect(n.b[1]); n.b[1].connect(n.b[2]); n.b[2].connect(n.aout);
     },
     audioIn(n){ return n.ain; },
-    render(n){ if (n.b) ['low','mid','high'].forEach((k, i) => n.b[i].gain.setTargetAtTime(P(n, k), actx.currentTime, 0.02)); }
+    render(n){ if (n.b) ['low','mid','high'].forEach((k, i) => setAP(n.b[i].gain, P(n, k), 0.02)); },
+    destroy(n){ audioTeardown(n, ['b']); }
   },
   acomp: {
     title:'Compressor', kind:'audio', fam:'aud', w:260, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5243,12 +5407,13 @@ const DEFS = {
     initAudio(n){ n.ain = stereoGain(); n.c = actx.createDynamicsCompressor(); n.aout = stereoGain(); n.ain.connect(n.c); n.c.connect(n.aout); },
     audioIn(n){ return n.ain; },
     render(n){
-      if (!n.c) return; const t = actx.currentTime;
-      n.c.threshold.setTargetAtTime(P(n, 'thr'), t, 0.02); n.c.ratio.setTargetAtTime(P(n, 'ratio'), t, 0.02);
-      n.c.attack.setTargetAtTime(P(n, 'att'), t, 0.02); n.c.release.setTargetAtTime(P(n, 'rel'), t, 0.02);
-      n.aout.gain.setTargetAtTime(Math.pow(10, P(n, 'makeup')/20), t, 0.02);
+      if (!n.c) return;
+      setAP(n.c.threshold, P(n, 'thr'), 0.02); setAP(n.c.ratio, P(n, 'ratio'), 0.02);
+      setAP(n.c.attack, P(n, 'att'), 0.02); setAP(n.c.release, P(n, 'rel'), 0.02);
+      setAP(n.aout.gain, Math.pow(10, P(n, 'makeup')/20), 0.02);
       const r = 'Reduction: ' + n.c.reduction.toFixed(1) + ' dB'; if (frameNo % 6 === 0 && r !== n.red.textContent) n.red.textContent = r;
-    }
+    },
+    destroy(n){ audioTeardown(n, ['c']); }
   },
   adist: {
     title:'Distortion', kind:'audio', fam:'aud', w:250, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5261,10 +5426,12 @@ const DEFS = {
     },
     audioIn(n){ return n.ain; },
     render(n){
-      if (!n.ws) return; const t = actx.currentTime, d = Math.round(P(n, 'drive')*100);
-      if (d !== n.lastD){ n.lastD = d; const k = d*2 + 1, c = new Float32Array(1024); for (let i = 0; i < 1024; i++){ const x = i/511.5 - 1; c[i] = (1 + k)*x/(1 + k*Math.abs(x)); } n.ws.curve = c; }
-      n.tf.frequency.setTargetAtTime(freqOf(P(n, 'tone')), t, 0.02); const m = P(n, 'mix'); n.wet.gain.setTargetAtTime(m*0.7, t, 0.02); n.dry.gain.setTargetAtTime(1 - m, t, 0.02);
-    }
+      if (!n.ws) return; const d = Math.round(P(n, 'drive')*100);
+      // The curve is also rebuilt after the audio engine restarts (a fresh shaper has no curve).
+      if (d !== n.lastD || !n.ws.curve){ n.lastD = d; const k = d*2 + 1, c = new Float32Array(1024); for (let i = 0; i < 1024; i++){ const x = i/511.5 - 1; c[i] = (1 + k)*x/(1 + k*Math.abs(x)); } n.ws.curve = c; }
+      setAP(n.tf.frequency, freqOf(P(n, 'tone')), 0.02); const m = P(n, 'mix'); setAP(n.wet.gain, m*0.7, 0.02); setAP(n.dry.gain, 1 - m, 0.02);
+    },
+    destroy(n){ audioTeardown(n, ['ws', 'tf', 'wet', 'dry']); }
   },
   adelay: {
     title:'Audio delay', kind:'audio', fam:'aud', w:260, ins:[{name:'in', kind:'audio', label:'In'},{name:'clock', kind:'gate', label:'Clock'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5281,10 +5448,12 @@ const DEFS = {
     audioIn(n, port){ return port === 'clock' ? null : n.ain; },
     pull(n){ if (rising(n, 'clock')){ const now = performance.now(); if (n.lastClk) n.clkPeriod = (now - n.lastClk)/1000; n.lastClk = now; } return null; },
     render(n){
-      pullNode(n.id); if (!n.d) return; const t = actx.currentTime, ss = syncSec(n), ms = ss ? Math.min(10000, ss*1000) : P(n, 'time'); syncInfo(n, ms);
-      n.d.delayTime.setTargetAtTime(ms/1000, t, 0.05); n.fbg.gain.setTargetAtTime(P(n, 'fb'), t, 0.02);
-      const m = P(n, 'mix'); n.wet.gain.setTargetAtTime(m, t, 0.02); n.dry.gain.setTargetAtTime(1 - m*0.5, t, 0.02);
-    }
+      pullNode(n.id); if (!n.d) return; const ss = syncSec(n), ms = ss ? Math.min(10000, ss*1000) : P(n, 'time'); syncInfo(n, ms);
+      setAP(n.d.delayTime, ms/1000, 0.05); setAP(n.fbg.gain, P(n, 'fb'), 0.02);
+      const m = P(n, 'mix'); setAP(n.wet.gain, m, 0.02); setAP(n.dry.gain, 1 - m*0.5, 0.02);
+    },
+    // The echo loop feeds itself, so it is cut apart here; otherwise it would keep running after the module is gone.
+    destroy(n){ audioTeardown(n, ['d', 'fbg', 'wet', 'dry']); }
   },
   areverb: {
     title:'Reverb', kind:'audio', fam:'aud', w:250, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5293,11 +5462,23 @@ const DEFS = {
     initAudio(n){ n.ain = stereoGain(); n.aout = stereoGain(); n.cv = actx.createConvolver(); n.wet = actx.createGain(); n.dry = actx.createGain(); n.ain.connect(n.cv); n.cv.connect(n.wet); n.wet.connect(n.aout); n.ain.connect(n.dry); n.dry.connect(n.aout); },
     audioIn(n){ return n.ain; },
     render(n){
-      if (!n.cv) return; const key = n.params.size + ':' + n.params.decay;
-      if (key !== n.irKey){ n.irKey = key; const sr = actx.sampleRate, len = Math.round(sr*n.params.size), b = actx.createBuffer(2, len, sr);
-        for (let c = 0; c < 2; c++){ const d = b.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random()*2 - 1)*Math.pow(1 - i/len, n.params.decay); } n.cv.buffer = b; }
-      const t = actx.currentTime, m = P(n, 'mix'); n.wet.gain.setTargetAtTime(m, t, 0.02); n.dry.gain.setTargetAtTime(1 - m*0.6, t, 0.02);
-    }
+      if (!n.cv) return;
+      const sz = Math.max(0.1, Math.round(n.params.size*10)/10), dc = Math.round(n.params.decay*10)/10, key = sz + ':' + dc, now = performance.now();
+      // The echo tail is rebuilt only once Size/Decay settle (150 ms), or at most twice a second while they keep moving (e.g. a preset morph).
+      // A new engine (after an audio restart) gets its tail straight away.
+      const fresh = n.irFor !== n.cv || n.irKey === undefined;
+      if (!fresh && key !== n.irKey){ if (key !== n.irWant){ n.irWant = key; n.irT = now; if (!n.irT0) n.irT0 = now; } }
+      if (fresh || (key !== n.irKey && (now - n.irT > 150 || now - n.irT0 > 500))){
+        n.irKey = key; n.irFor = n.cv; n.irWant = null; n.irT0 = 0;
+        const sr = actx.sampleRate, len = Math.round(sr*sz), b = actx.createBuffer(2, len, sr), env = new Float32Array(len), STEP = 64;
+        // The fade-out curve is worked out every 64 samples and filled in between (much cheaper than per sample).
+        for (let i = 0; i < len; i += STEP){ const a = Math.pow(1 - i/len, dc), e = Math.min(len, i + STEP), z = Math.pow(1 - e/len, dc); for (let j = i; j < e; j++) env[j] = a + (z - a)*(j - i)/STEP; }
+        for (let c = 0; c < 2; c++){ const d = b.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random()*2 - 1)*env[i]; }
+        n.cv.buffer = b;
+      }
+      const m = P(n, 'mix'); setAP(n.wet.gain, m, 0.02); setAP(n.dry.gain, 1 - m*0.6, 0.02);
+    },
+    destroy(n){ audioTeardown(n, ['cv', 'wet', 'dry']); }
   },
   amix: {
     title:'Audio mixer', kind:'audio', fam:'aud', w:250, ins:'abcd'.split('').map(k => ({name: k, kind:'audio', label: k.toUpperCase()})), outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5305,7 +5486,8 @@ const DEFS = {
     build(n){ const pct = v => Math.round(v*100) + '%'; return [...'abcd'.split('').map(k => slider(n, k, 'Level ' + k.toUpperCase(), 0, 1.5, 0.01, pct)), slider(n, 'master', 'Master', 0, 1.5, 0.01, pct)]; },
     initAudio(n){ n.aout = stereoGain(); n.g = {}; for (const k of 'abcd'){ n.g[k] = stereoGain(); n.g[k].connect(n.aout); } },
     audioIn(n, port){ return n.g && n.g[port]; },
-    render(n){ if (!n.g) return; const t = actx.currentTime; for (const k of 'abcd') n.g[k].gain.setTargetAtTime(P(n, k), t, 0.02); n.aout.gain.setTargetAtTime(P(n, 'master'), t, 0.02); }
+    render(n){ if (!n.g) return; for (const k of 'abcd') setAP(n.g[k].gain, P(n, k), 0.02); setAP(n.aout.gain, P(n, 'master'), 0.02); },
+    destroy(n){ audioTeardown(n, ['g']); }
   },
   atrig: {
     title:'Audio trigger', kind:'gate', fam:'aud', w:250, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'trig', kind:'gate', label:'Trigger'},{name:'gate', kind:'gate', label:'Gate'},{name:'level', kind:'mod', label:'Level'}],
@@ -5314,6 +5496,7 @@ const DEFS = {
       h('div', {class:'status', text:'Fires when the sound gets louder than the threshold, for example on each drum hit.'})]; },
     initAudio(n){ n.ain = stereoGain(); n.an = actx.createAnalyser(); n.an.fftSize = 1024; n.ain.connect(n.an); n.buf = new Float32Array(1024); },
     audioIn(n){ return n.ain; },
+    destroy(n){ audioTeardown(n, ['an']); },
     pull(n){
       let db = -90; if (n.an){ n.an.getFloatTimeDomainData(n.buf); let p = 0; for (let i = 0; i < 1024; i += 2){ const a = Math.abs(n.buf[i]); if (a > p) p = a; } db = p > 0 ? 20*Math.log10(p) : -90; }
       const now = performance.now(), over = db > P(n, 'thr');
@@ -5361,12 +5544,12 @@ const DEFS = {
       n.imgs = []; n.idx = 0; n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       const file = h('input', {type:'file', accept:'image/*', multiple: true, hidden: true});
       n.addFiles = async files => {
-        for (const f of files){ if (!f.type.startsWith('image/')) continue; try { const bmp = await createImageBitmap(f); n.imgs.push({bmp, name: f.name}); } catch(e){ toast('Couldn’t open ' + f.name); } }
+        for (const f of files){ if (!f.type.startsWith('image/')) continue; try { const bmp = await createImageBitmap(f); if (n.dead){ bmp.close(); continue; } n.imgs.push({bmp, name: f.name}); } catch(e){ toast('Couldn’t open ' + f.name); } }
         n.idx = Math.min(n.idx, Math.max(0, n.imgs.length - 1)); n.changed = performance.now(); imgInfo(n);
       };
       file.addEventListener('change', () => { n.addFiles([...file.files]); file.value = ''; });
       n.info = h('div', {class:'status', text:'No images. Load some, or drop them here.'});
-      return [h('div', {class:'btns'}, h('button', {class:'btn', text:'Load…', onclick: () => file.click()}), h('button', {class:'btn', text:'Next', onclick: () => imgStep(n, 1)}), h('button', {class:'btn', text:'Clear', onclick: () => { n.imgs = []; n.idx = 0; imgInfo(n); }})), file, n.info,
+      return [h('div', {class:'btns'}, h('button', {class:'btn', text:'Load…', onclick: () => file.click()}), h('button', {class:'btn', text:'Next', onclick: () => imgStep(n, 1)}), h('button', {class:'btn', text:'Clear', onclick: () => { imgFree(n); n.idx = 0; imgInfo(n); }})), file, n.info,
         slider(n, 'hold', 'Auto-advance', 0, 30, 0.1, v => v ? v.toFixed(1) + ' s' : 'Off'), slider(n, 'fade', 'Crossfade', 0, 3, 0.05, v => v.toFixed(2) + ' s'),
         h('div', {class:'status', text:'Images aren’t saved inside the patch file; load them again after opening a patch.'})];
     },
@@ -5380,11 +5563,16 @@ const DEFS = {
       const now = performance.now(), hold = P(n, 'hold');
       if (hold > 0 && now - (n.changed || 0) > hold*1000) imgStep(n, 1);
       const cur = n.imgs[n.idx].bmp, W = cur.width, H = cur.height, f = Math.max(0.0001, P(n, 'fade')*1000), k = Math.min(1, (now - (n.changed || 0))/f);
+      const fading = k < 1 && n.prevBmp;
+      // A still picture is drawn (and sent to the graphics card) once, not every frame; only crossfades redraw.
+      if (!fading && n.drawn === cur) return n.cv;
       fitCanvas(n.cv, W, H); const x = n.ctx; x.globalAlpha = 1;
-      if (k < 1 && n.prevBmp){ drawCover(x, n.prevBmp, W, H); x.globalAlpha = k; drawCover(x, cur, W, H); x.globalAlpha = 1; }
-      else x.drawImage(cur, 0, 0);
+      if (fading){ drawCover(x, n.prevBmp, W, H); x.globalAlpha = k; drawCover(x, cur, W, H); x.globalAlpha = 1; n.drawn = null; }
+      else { x.drawImage(cur, 0, 0); n.drawn = cur; }
+      n.cv.__ver = (n.cv.__ver || 0) + 1;
       return n.cv;
-    }
+    },
+    destroy(n){ n.dead = true; imgFree(n); }
   },
   gif: {
     title:'GIF player', kind:'video', fam:'src', w:260, ins:[{name:'restart', kind:'gate', label:'Restart'},{name:'step', kind:'gate', label:'Next frame'}],
@@ -5394,19 +5582,42 @@ const DEFS = {
       n.frames = []; n.fi = 0; n.acc = 0; n.dir = 1;
       const file = h('input', {type:'file', accept:'image/gif,image/webp,image/png,image/apng', hidden: true});
       n.loadFile = async f => {
-        n.info.textContent = 'Loading ' + f.name + '…'; n.frames = []; n.fi = 0;
+        // Each load gets a number; if another file is loaded meanwhile, this one stops and throws its frames away.
+        const tok = n.loadTok = (n.loadTok || 0) + 1, stale = () => tok !== n.loadTok || n.dead;
+        n.info.textContent = 'Loading ' + f.name + '…';
+        const got = []; let note = '';
         try {
           if ('ImageDecoder' in window){
-            const dec = new ImageDecoder({data: await f.arrayBuffer(), type: f.type || 'image/gif'}); await dec.tracks.ready;
-            const count = dec.tracks.selectedTrack.frameCount || 1;
-            for (let i = 0; i < count; i++){ const r = await dec.decode({frameIndex: i}); n.frames.push({bmp: await createImageBitmap(r.image), dur: Math.max(20, (r.image.duration || 100000)/1000)}); r.image.close(); }
-            dec.close();
+            const data = await f.arrayBuffer(); if (stale()) return;
+            const dec = new ImageDecoder({data, type: f.type || 'image/gif'});
+            try {
+              await dec.tracks.ready;
+              const count = dec.tracks.selectedTrack.frameCount || 1;
+              // Frames are kept to about 600 MB (or 1000 frames) so a huge GIF can't run the computer out of memory.
+              let bytes = 0;
+              for (let i = 0; i < count; i++){
+                if (stale()) break;
+                const r = await dec.decode({frameIndex: i});
+                if (stale()){ r.image.close(); break; }
+                let bmp; try { bmp = await createImageBitmap(r.image); } finally { r.image.close(); }
+                got.push({bmp, dur: Math.max(20, (r.image.duration || 100000)/1000)});
+                bytes += bmp.width*bmp.height*4;
+                if (i < count - 1 && (got.length >= 1000 || bytes > 600e6)){ note = ' (first ' + got.length + ' of ' + count + ', the rest is too big to hold)'; break; }
+              }
+            } finally { try { dec.close(); } catch(e){} }
+            if (stale()){ gifFree(got); return; }
+            // Swap in the new frames, then free the old ones.
+            const old = n.frames; n.frames = got; n.fi = 0; n.acc = 0; n.dir = 1; gifFree(old); gifImgOff(n);
           } else {
             // Older browsers: show the animation the browser plays itself.
-            n.imgEl = new Image(); n.imgEl.src = URL.createObjectURL(f); await n.imgEl.decode(); n.imgEl.style.cssText = 'position:fixed; left:-9999px; width:1px; height:1px'; document.body.append(n.imgEl);
+            const url = URL.createObjectURL(f), img = new Image(); img.src = url;
+            try { await img.decode(); } catch(e){ URL.revokeObjectURL(url); throw e; }
+            if (stale()){ URL.revokeObjectURL(url); return; }
+            gifImgOff(n); const old = n.frames; n.frames = []; gifFree(old);
+            img.style.cssText = 'position:fixed; left:-9999px; width:1px; height:1px'; document.body.append(img); n.imgEl = img; n.imgUrl = url;
           }
-          n.info.textContent = f.name + (n.frames.length ? ', ' + n.frames.length + ' frames' : '');
-        } catch(e){ n.info.textContent = 'Couldn’t play ' + f.name + ': ' + e.message; }
+          n.info.textContent = f.name + (n.frames.length ? ', ' + n.frames.length + ' frames' : '') + note;
+        } catch(e){ gifFree(got); if (!stale()) n.info.textContent = 'Couldn’t play ' + f.name + ': ' + e.message; }
       };
       file.addEventListener('change', () => { if (file.files[0]) n.loadFile(file.files[0]); file.value = ''; });
       n.info = h('div', {class:'status', text:'No GIF. Load one, or drop it here.'});
@@ -5433,8 +5644,9 @@ const DEFS = {
           else n.fi = (n.fi + 1) % N;
         }
       }
-      return n.frames[n.fi].bmp;
-    }
+      return n.frames[Math.min(n.fi, N - 1)].bmp;
+    },
+    destroy(n){ n.dead = true; n.loadTok = (n.loadTok || 0) + 1; gifFree(n.frames); n.frames = []; gifImgOff(n); }
   },
   amoeba: {
     title:'Amoeba', kind:'video', w:270, ins:[{name:'new', kind:'gate', label:'New shape'},{name:'pulse', kind:'gate', label:'Pulse'}], outs:[{name:'out', kind:'video', label:'Video'}],
@@ -5529,7 +5741,7 @@ const DEFS = {
           x.fill();
           if (style !== 'solid'){ x.strokeStyle = line; x.lineWidth = lw; x.stroke(); }
         }
-        if (style !== 'hidden' || m.f.length) { if (style === 'solid' || style === 'both' || style === 'hidden') { x.setTransform(1,0,0,1,0,0); return n.cv; } }
+        x.setTransform(1,0,0,1,0,0); return n.cv;
       }
       if (style === 'points'){ x.fillStyle = line; for (const p of P2){ x.beginPath(); x.arc(p[0], p[1], lw*1.6, 0, 6.283); x.fill(); } return n.cv; }
       x.strokeStyle = line; x.lineWidth = lw; x.beginPath();
@@ -5571,7 +5783,8 @@ const DEFS = {
       head.addEventListener('contextmenu', e => {
         if (e.target.closest('.jack, button')) return;
         e.preventDefault(); e.stopPropagation();
-        const inp = h('input', {type:'color'}); inp.value = n.params.color || '#ff3d3d'; inp.style.cssText = 'position:fixed; left:' + e.clientX + 'px; top:' + e.clientY + 'px; opacity:0; width:1px; height:1px';
+        document.querySelectorAll('input.ledpick').forEach(x => x.remove()); // one left over from a cancelled picker
+        const inp = h('input', {type:'color', class:'ledpick'}); inp.value = n.params.color || '#ff3d3d'; inp.style.cssText = 'position:fixed; left:' + e.clientX + 'px; top:' + e.clientY + 'px; opacity:0; width:1px; height:1px';
         document.body.append(inp);
         inp.addEventListener('input', () => { n.params.color = inp.value; n.lastSt = null; });
         inp.addEventListener('change', () => { n.params.color = inp.value; n.lastSt = null; save(); inp.remove(); });
@@ -5592,7 +5805,7 @@ const DEFS = {
 
 
   intbox: {
-    title:'Integer', kind:'mod', fam:'util', w:210, afterBuild(n){ n.el.classList.add('numcoll'); }, ins:[{name:'in', kind:'mod', label:'Set'},{name:'inc', kind:'gate', label:'+1'},{name:'dec', kind:'gate', label:'−1'}], outs:[{name:'out', kind:'mod', label:'Out'}],
+    title:'Integer', kind:'mod', fam:'util', w:210, ins:[{name:'in', kind:'mod', label:'Set'},{name:'inc', kind:'gate', label:'+1'},{name:'dec', kind:'gate', label:'−1'}], outs:[{name:'out', kind:'mod', label:'Out'}],
     params:{value:0, min:0, max:16, scale:false},
     afterBuild(n){ n.el.classList.add('collkeep'); n.num.classList.add('keepshow'); },
     build(n){
@@ -5613,7 +5826,7 @@ const DEFS = {
     render(n){ pullNode(n.id); if (document.activeElement !== n.num && +n.num.value !== n.params.value) n.num.value = n.params.value; }
   },
   floatbox: {
-    title:'Decimal', kind:'mod', fam:'util', w:210, afterBuild(n){ n.el.classList.add('numcoll'); }, ins:[{name:'in', kind:'mod', label:'Set'}], outs:[{name:'out', kind:'mod', label:'Out'}],
+    title:'Decimal', kind:'mod', fam:'util', w:210, ins:[{name:'in', kind:'mod', label:'Set'}], outs:[{name:'out', kind:'mod', label:'Out'}],
     params:{value:0, places:2},
     afterBuild(n){ n.el.classList.add('collkeep'); n.num.classList.add('keepshow'); },
     build(n){
@@ -5647,7 +5860,7 @@ const DEFS = {
       const trig = eq && !n.wasEq ? 1 : 0, other = !eq && n.wasEq ? 1 : 0; n.wasEq = eq; n.lastV = v;
       return {trig, gate: eq ? 1 : 0, other};
     },
-    render(n){ pullNode(n.id); n.lamp.firstChild.className = n.wasEq ? 'on hot' : ''; const t = 'Incoming: ' + (Math.round((n.lastV || 0)*1000)/1000); if (frameNo % 6 === 0 && t !== n.seen.textContent) n.seen.textContent = t; }
+    render(n){ pullNode(n.id); const lc = n.wasEq ? 'on hot' : ''; if (n.lamp.firstChild.className !== lc) n.lamp.firstChild.className = lc; const t = 'Incoming: ' + (Math.round((n.lastV || 0)*1000)/1000); if (frameNo % 6 === 0 && t !== n.seen.textContent) n.seen.textContent = t; }
   },
   ramp: {
     title:'Ramp', kind:'video', w:260, ins:[], outs:[{name:'out', kind:'video', label:'Video'}],
@@ -5685,8 +5898,8 @@ const DEFS = {
   lumakey: {
     title:'Luma key', kind:'video', w:260, ins:[{name:'in', kind:'video', label:'Foreground'},{name:'bg', kind:'video', label:'Background'}], outs:[{name:'out', kind:'video', label:'Out'}],
     params:{th:0.5, soft:0.08, inv:false, bgc:'#000000'},
-    build(n){ return [slider(n, 'th', 'Threshold', 0, 1, 0.005, v => Math.round(v*100) + '%'), slider(n, 'soft', 'Softness', 0, 0.5, 0.005, v => Math.round(v*100) + '%'), toggleRow(n, 'inv', 'Key out bright parts'), colorPick(n, 'bgc', 'Background color'),
-      h('div', {class:'status', text:'Dark parts of the foreground become see-through (or bright parts, when switched), showing the Background video or color.'})]; },
+    build(n){ return [slider(n, 'th', 'Threshold', 0, 1, 0.005, v => Math.round(v*100) + '%'), slider(n, 'soft', 'Softness', 0, 0.5, 0.005, v => Math.round(v*100) + '%'), toggleRow(n, 'inv', 'Key out dark parts'), colorPick(n, 'bgc', 'Background color'),
+      h('div', {class:'status', text:'Bright parts of the foreground become see-through (or dark parts, when Key out dark parts is on), showing the Background video or color.'})]; },
     pull(n){ const s = inputRaw(n, 'in'); if (!s) return null; const [W, H] = dims(s); if (!W) return null; const b = inputRaw(n, 'bg');
       return gpu(n, FS.lumakey, [s, b], {th: P(n, 'th'), soft: P(n, 'soft'), inv: n.params.inv ? 0 : 1, hasbg: b ? 1 : 0, bgc: colorRgb(n, 'bgc')}, W, H); }
   },
@@ -5775,7 +5988,7 @@ const DEFS = {
       if (!n.cv){ n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d'); n.sm = document.createElement('canvas'); n.smx = n.sm.getContext('2d', {willReadFrequently: true}); }
       if (n.cols !== cols || n.rows !== rows || n.W !== W || n.H !== H){
         n.cols = cols; n.rows = rows; n.W = W; n.H = H; const N = cols*rows;
-        n.px = new Float32Array(N); n.py = new Float32Array(N); n.vx = new Float32Array(N); n.vy = new Float32Array(N); n.prev = new Float32Array(N);
+        n.px = new Float32Array(N); n.py = new Float32Array(N); n.vx = new Float32Array(N); n.vy = new Float32Array(N); n.prev = new Float32Array(N); n.fresh = true;
         for (let j = 0, k = 0; j < rows; j++) for (let i = 0; i < cols; i++, k++){ n.px[k] = (i + 0.5)/cols*W; n.py[k] = (j + 0.5)/rows*H; }
         n.sm.width = cols; n.sm.height = rows; fitCanvas(n.cv, W, H);
         n.ctx.fillStyle = colorCss(n, 'bg'); n.ctx.fillRect(0, 0, W, H);
@@ -5790,13 +6003,13 @@ const DEFS = {
       x.globalCompositeOperation = 'source-over'; x.globalAlpha = 1 - P(n, 'trails');
       x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H); x.globalAlpha = 1;
       if (shape === 'glow') x.globalCompositeOperation = 'lighter';
-      const damp = Math.pow(0.04, dt);
+      const damp = Math.pow(0.04, dt), fresh = n.fresh; n.fresh = false;
       for (let j = 0, i3 = 0, kk = 0; j < rows; j++){
         for (let i = 0; i < cols; i++, kk++, i3 += 4){
           const r = d[i3]/255, g = d[i3 + 1]/255, b = d[i3 + 2]/255, l = 0.299*r + 0.587*g + 0.114*b;
           const hx = (i + 0.5)*cw, hy = (j + 0.5)*ch;
           // Movement in the video kicks particles; drift wanders; the spring pulls them home.
-          const ch2 = Math.abs(l - n.prev[kk]); n.prev[kk] = l;
+          const ch2 = fresh ? 0 : Math.abs(l - n.prev[kk]); n.prev[kk] = l; // the first frame only learns the picture (no burst)
           let vx = n.vx[kk], vy = n.vy[kk];
           if (ch2 > 0.08 && mot){ const a = (i*12.9898 + j*78.233 + t*3) % 6.283, f = (ch2 - 0.08)*mot*cw*1.5; vx += Math.cos(a)*f; vy += Math.sin(a)*f; }
           if (drift){ vx += Math.sin(t*0.9 + hy*0.013 + i*0.37)*drift*dt*6; vy += Math.cos(t*0.7 + hx*0.011 + j*0.41)*drift*dt*6; }
@@ -5886,6 +6099,7 @@ const DEFS = {
       x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H);
       const N = Math.round(P(n, 'count')), irr = P(n, 'complex'), sz = P(n, 'size'), t = n.time, S = H/2;
       const cols = [colorCss(n, 'ca'), colorCss(n, 'cb'), colorCss(n, 'cc')], st = n.params.style;
+      const dk = st === 'contour' ? colorRgb(n, 'dark') : null, dkCss = st === 'contour' ? colorCss(n, 'dark') : null; // shadow color, read once per frame
       const lay = n.lay || (n.lay = mkCanvas(1, 1)); // layer keeps the overlap mode away from the background
       fitCanvas(lay.cv, W, H); const L = lay.ctx;
       L.setTransform(1,0,0,1,0,0); L.globalCompositeOperation = 'source-over'; L.clearRect(0, 0, W, H);
@@ -5901,10 +6115,9 @@ const DEFS = {
         else if (st === 'contour'){
           const c = colorRgb(n, ['ca','cb','cc'][i % 3]);
           for (let k = 0; k <= 12; k++){ const f = k/12, m = Math.pow(f, 1.5)*0.85;
-            const dk = colorRgb(n, 'dark');
             path(1 - f*0.72); L.fillStyle = rgbCss([c[0] + (dk[0] - c[0])*m, c[1] + (dk[1] - c[1])*m, c[2] + (dk[2] - c[2])*m]); L.fill();
             if (k){ L.strokeStyle = rgbCss(dk, 0.45); L.lineWidth = 1/S; L.stroke(); } }
-          path(0.24); L.fillStyle = colorCss(n, 'dark'); L.fill(); path(1); L.strokeStyle = colorCss(n, 'dark'); L.lineWidth = 3/S; L.stroke();
+          path(0.24); L.fillStyle = dkCss; L.fill(); path(1); L.strokeStyle = dkCss; L.lineWidth = 3/S; L.stroke();
         }
         else { path(1); if (st !== 'outline') L.fill(); if (st !== 'fill'){ L.strokeStyle = st === 'both' ? colorCss(n, 'bg') : cols[i % 3]; L.stroke(); } }
       }
@@ -6124,13 +6337,20 @@ const DEFS = {
       const simpAudio = h('div', {class:'simpaudio'}, h('label', {class:'smic'}, srcOn, ' Record audio'), h('label', {class:'srcrow'}, h('span', {text:'Audio source'}), srcSel));
       const rc = h('button', {class:'collbtn', title:'Collapse the recorder', 'aria-label':'Collapse the recorder'}, h('span', {class:'dchev'}));
       rc.addEventListener('click', () => { const on = !n.el.classList.contains('rcoll'); n.el.classList.toggle('rcoll', on); try { localStorage.setItem(STORE + ':rcoll', on ? '1' : ''); } catch(e){} });
-      if (localStorage.getItem(STORE + ':rcoll')) n.el.classList.add('rcoll');
+      try { if (localStorage.getItem(STORE + ':rcoll')) n.el.classList.add('rcoll'); } catch(e){}
       n.el.append(h('header', {}, rc, h('span', {class:'t', text:'Recorder'}), n.status),
         h('div', {class:'recrow'}, n.recBtn, n.time, n.recSum = h('button', {class:'recsum', title:'Change recording settings', onclick: () => { document.getElementById('setbtn').click(); }})), simpAudio,
-        h('div', {class:'meterwrap'}, n.mcv, n.pk), n.takesHead = h('div', {class:'takeshead'}, h('span', {text:'Takes and stills'}), h('button', {class:'btn on headlive', text:'Back to live', hidden: true, onclick: () => hidePreview()}), h('button', {class:'btn', text:'Clear', title:'Remove every take and still from the list', onclick: () => clearTakes(n)}), h('button', {class:'btn', text:'Save all', title:'Save every take and still', onclick: async () => {
-          const rows = [...n.list.querySelectorAll('.take')].reverse();
-          for (const r of rows){ const t = n.takes.find(x => x.url === r.dataset.url); const b = [...r.querySelectorAll('.btn')].find(x => x.textContent === 'Save' || x.textContent === 'Saved'); if (t && b && b.textContent === 'Save'){ await saveTake(n, t, b); await new Promise(res => setTimeout(res, 350)); } }
-          toast('Saved all takes.'); }})), n.list);
+        h('div', {class:'meterwrap'}, n.mcv, n.pk), n.takesHead = h('div', {class:'takeshead'}, h('span', {text:'Takes and stills'}), h('button', {class:'btn on headlive', text:'Back to live', hidden: true, onclick: () => hidePreview()}), h('button', {class:'btn', text:'Clear', title:'Remove every take and still from the list', onclick: () => clearTakes(n)}), n.saveAllBtn = h('button', {class:'btn', text:'Save all', title:'Save every take and still', onclick: async () => {
+          if (n.savingAll) return; // already saving: a second press does nothing
+          const todo = n.takes.filter(t => !t.saved).reverse(); // oldest first
+          if (!todo.length){ toast('Every take is already saved.'); return; }
+          n.savingAll = true; n.saveAllBtn.disabled = true;
+          let ok = 0;
+          try {
+            for (const t of todo){ if (!n.takes.includes(t) || t.saved) continue; if (await saveTake(n, t, t.saveBtn)) ok++; await new Promise(res => setTimeout(res, 350)); }
+          } finally { n.savingAll = false; n.saveAllBtn.disabled = false; }
+          toast(ok === todo.length ? 'Saved ' + (ok === 1 ? 'the take.' : 'all ' + ok + ' takes.') : 'Saved ' + ok + ' of ' + todo.length + ' takes.'); }})), n.list);
+      n.takesLabel = n.takesHead.firstChild;
       for (const p of DEFS.recorder.ins) dockPort(n, p, dockBot);
     },
     initAudio(n){
@@ -6168,7 +6388,7 @@ const DEFS = {
         if (s !== n.lastS){ n.status.textContent = s; n.lastS = s; }
       }
     },
-    destroy(n){ if (recActive(n)) { n.discard = true; stopRec(n); } n.takes.forEach(t => URL.revokeObjectURL(t.url)); }
+    destroy(n){ if (recActive(n)) { n.discard = true; stopRec(n); } n.takes.forEach(t => URL.revokeObjectURL(t.url)); } // not reached today (the recorder is built in and never removed); kept as a safety net
   }
 };
 
@@ -6189,7 +6409,7 @@ async function clearTakes(n){
   if (un && !await askDialog(un + (un === 1 ? ' take hasn’t' : ' takes haven’t') + ' been saved. Clear the list anyway?', {ok: 'Clear', cancel: 'Keep them'})) return;
   if (pvUrl) hidePreview();
   for (const t of n.takes) URL.revokeObjectURL(t.url);
-  n.takes = []; n.list.replaceChildren(); refreshStageSrc();
+  n.takes = []; n.list.replaceChildren(); refreshStageSrc(); takesSize(n);
 }
 function recSrc(n){ const s = recMainOn() ? toDraw(pullNode('main')) : inputOf(n, 'video'); return s ? conformOut(s) : s; }
 function startRec(n, retry){
@@ -6212,9 +6432,7 @@ function startRec(n, retry){
     const pick = steps[steps.length - 1] || 12;
     if (pick < recFps){ recFps = pick; if (!retry) toast('The app is drawing about ' + lastFps + ' frames a second, so this take records at ' + recFps + ' fps to stay smooth.'); }
   }
-  n.recFps = recFps;
   try { vs = n.rc.captureStream(recFps); } catch(e){ n.status.textContent = 'This browser can’t capture canvas video.'; n.status.classList.add('err'); setRecUI(n, false); return; }
-  n.vtrack = null;
   const tracks = [...vs.getVideoTracks()];
   if (n.dest) tracks.push(...n.dest.stream.getAudioTracks());
   const stream = new MediaStream(tracks);
@@ -6276,10 +6494,9 @@ function startRec(n, retry){
       }
     }
     if (webm && webm !== mime && !(retry && retry.webm)){
-      retry = Object.assign({}, retry, {webm: true});
       n.discard = true; n.retryWith = {mime: webm, webm: true, tried};
-      const diag = 'MP4 failed: “' + msg + '” (tried ' + tried.map(m => m.replace('video/mp4;codecs=', '')).join(' / ') + ') at ' + n.rc.width + '×' + n.rc.height + ', ' + (rs.fps || 30) + ' fps. Recording in WebM instead.';
-      toast(diag); n.lastDiag = diag;
+      const diag = 'MP4 failed: “' + msg + '” (tried ' + tried.map(m => m.replace('video/mp4;codecs=', '')).join(' / ') + ') at ' + n.rc.width + '×' + n.rc.height + ', ' + recFps + ' fps. Recording in WebM instead.';
+      toast(diag);
       setTimeout(() => { n.status.textContent = diag; n.status.title = diag; }, 400);
       try { n.rec.stop(); } catch(e){}
       return;
@@ -6308,7 +6525,7 @@ function addTake(n, blob, dur, ext, info){
   const still = ext === 'png';
   const t = {no: still ? (n.stillNo = (n.stillNo || 0) + 1) : ++n.takeNo, blob, ext, url: URL.createObjectURL(blob)};
   n.takes.unshift(t);
-  const saveBtn = h('button', {class:'btn', text:'Save'});
+  const saveBtn = h('button', {class:'btn', text:'Save'}); t.saveBtn = saveBtn;
   saveBtn.addEventListener('click', () => saveTake(n, t, saveBtn));
   const del = h('button', {class:'btn', text:'Delete'});
   const live = h('button', {class:'btn livebtn on', text:'Back to live', hidden: true, onclick: () => hidePreview()});
@@ -6318,30 +6535,45 @@ function addTake(n, blob, dur, ext, info){
   const el = h('div', {class:'take' + (still ? ' still' : ''), 'data-url': t.url}, nm, live, saveBtn, del);
   del.addEventListener('click', () => {
     if (pvUrl === t.url) hidePreview();
-    URL.revokeObjectURL(t.url); el.remove(); n.takes = n.takes.filter(x => x !== t); refreshStageSrc();
+    URL.revokeObjectURL(t.url); el.remove(); n.takes = n.takes.filter(x => x !== t); refreshStageSrc(); takesSize(n);
   });
   n.list.prepend(el);
-  refreshStageSrc();
+  refreshStageSrc(); takesSize(n);
+}
+// Takes are kept in memory until saved. The list header shows how much that is, and a warning comes up
+// once at each extra gigabyte, because a long show can fill the computer's memory.
+function takesSize(n){
+  const b = n.takes.filter(t => !t.saved).reduce((a, t) => a + t.blob.size, 0);
+  if (n.takesLabel) n.takesLabel.textContent = 'Takes and stills' + (b ? ' · ' + fmtSize(b) + ' unsaved' : '');
+  const gb = Math.floor(b/1e9);
+  if (gb > (n.sizeWarned || 0)) toast(gb + ' GB of recordings aren’t saved yet and are held in memory. Save (or delete) takes you’re done with.');
+  n.sizeWarned = gb; // goes back down as takes are saved, so it can warn again later
 }
 let dlP = null;
 function getDownloads(){
   if (!dlP) dlP = (window.claude && typeof window.claude.use === 'function') ? Promise.resolve(window.claude.use('downloads')).catch(() => null) : Promise.resolve(null);
   return dlP;
 }
+// Returns true when the take was saved. A take already being saved isn't saved twice.
 async function saveTake(n, t, btn){
-  const filename = (t.ext === 'png' ? 'seeds-still-' : 'seeds-take-') + t.no + '.' + t.ext;
-  const dl = await getDownloads();
-  if (dl){
-    try { await dl.save({filename, data: t.blob}); btn.textContent = 'Saved'; t.saved = true; }
-    catch(e){
-      if (e && e.code === 'declined') return;
-      if (e && e.code === 'rate_limited') { toast('A save is already waiting for you to confirm.'); return; }
-      toast('Couldn’t save: ' + ((e && e.message) || 'unknown error'));
+  if (t.saving) return false;
+  t.saving = true; if (btn) btn.disabled = true;
+  const done = () => { if (btn) btn.textContent = 'Saved'; t.saved = true; takesSize(n); return true; };
+  try {
+    const filename = (t.ext === 'png' ? 'seeds-still-' : 'seeds-take-') + t.no + '.' + t.ext;
+    const dl = await getDownloads();
+    if (dl){
+      try { await dl.save({filename, data: t.blob}); return done(); }
+      catch(e){
+        if (e && e.code === 'declined') return false;
+        if (e && e.code === 'rate_limited') { toast('A save is already waiting for you to confirm.'); return false; }
+        toast('Couldn’t save: ' + ((e && e.message) || 'unknown error'));
+      }
+      return false;
     }
-    return;
-  }
-  const a = h('a', {href: t.url, download: filename}); document.body.append(a); a.click(); a.remove();
-  btn.textContent = 'Saved'; t.saved = true;
+    const a = h('a', {href: t.url, download: filename}); document.body.append(a); a.click(); a.remove();
+    return done();
+  } finally { t.saving = false; if (btn) btn.disabled = false; }
 }
 
 /* ---------- node DOM ---------- */
@@ -6350,6 +6582,16 @@ function makeJack(n, p, dir, small){
   n.jacks[dir + ':' + p.name] = jack;
   jack.addEventListener('pointerdown', e => onJackDown(e, n, p, dir));
   return jack;
+}
+// One drag with the mouse, pen or finger: follows that pointer until it's released, cancelled (the system took it,
+// e.g. a touch gesture or an app switch) or its capture is lost, and always cleans up exactly once.
+// end(ev, cancelled) gets cancelled = true when the drag didn't finish with a normal release.
+function pointerSession(el, e, {move, end}){
+  let done = false; const pid = e.pointerId, types = ['pointermove', 'pointerup', 'pointercancel'].concat(el === window ? [] : ['lostpointercapture']);
+  if (el !== window){ try { el.setPointerCapture(pid); } catch(err){} }
+  const fin = ev => { if (done || ev.pointerId !== pid) return; done = true; for (const t of types) el.removeEventListener(t, on); if (end) end(ev, ev.type !== 'pointerup'); };
+  const on = ev => { if (ev.type === 'pointermove'){ if (!done && ev.pointerId === pid && move) move(ev); } else fin(ev); };
+  for (const t of types) el.addEventListener(t, on);
 }
 function portEl(n, p, dir){ return h('div', {class:'port'}, makeJack(n, p, dir), h('span', {text: p.label})); }
 function addNode(type, x, y, params, id){
@@ -6378,6 +6620,7 @@ function addNode(type, x, y, params, id){
     h('div', {class:'outs'}, def.outs.map(p => portEl(n, p, 'out')))) : null;
   const kids = [].concat(def.build(n));
   if (type === 'screen') titleEl.textContent = n.params.label;
+  if (MEM_TYPES.has(type)) kids.splice(1, 0, memUI(n)); // stored shapes go second; added before counting, so the module's own last control isn't marked advanced
   const baseCount = kids.length;
   const EXTRA = {rotate: ['edgec', 'Corner color'], vzoom: ['edgec', 'Edge color'], crop: ['edgec', 'Outside color'], mixer: ['bgc', 'Background'],
     key: ['bgc', 'Background'], stutter: ['flash', 'Strobe color'], blobs: ['dark', 'Shadow']};
@@ -6397,7 +6640,6 @@ function addNode(type, x, y, params, id){
     n.dflt = n.dflt || {}; n.dflt.modoff = 0;
     kids.push(slider(n, 'modoff', 'Offset', -1, 1, 0.01, v => (v > 0 ? '+' : '') + Math.round(v*100) + '%'), h('div', {class:'status modhint', text:'Offset moves the swing up or down. With the slider at its bottom: Depth 25% + Offset +75% sweeps the top half; Depth 12.5% + Offset +87.5% sweeps only the top quarter.'}));
   }
-  if (MEM_TYPES.has(type)) kids.splice(1, 0, memUI(n));
   // Shared extras (tint, mix, edge colors) count as advanced in Simple mode.
   for (let i = baseCount; i < kids.length; i++) kids[i].classList.add('adv');
   const body = h('div', {class:'body', 'data-nid': id}, kids);
@@ -6408,15 +6650,13 @@ function addNode(type, x, y, params, id){
   if (def.resizable){
     const rz = h('div', {class:'rz', title:'Drag to resize', 'aria-hidden':'true'});
     rz.addEventListener('pointerdown', e => {
-      e.stopPropagation(); e.preventDefault(); rz.setPointerCapture(e.pointerId);
+      e.stopPropagation(); e.preventDefault();
       const sx = e.clientX, sy = e.clientY, ow = n.el.offsetWidth, oy = def.resizable.get(n);
-      const mv = ev => {
+      pointerSession(rz, e, {move: ev => {
         n.params.w = Math.round(Math.max(def.w, Math.min(1400, ow + (ev.clientX - sx)/zoom)));
         n.el.style.width = n.params.w + 'px';
         def.resizable.set(n, oy + (ev.clientY - sy)/zoom);
-      };
-      const up = () => { rz.removeEventListener('pointermove', mv); rz.removeEventListener('pointerup', up); rz.removeEventListener('pointercancel', up); save(); };
-      rz.addEventListener('pointermove', mv); rz.addEventListener('pointerup', up); rz.addEventListener('pointercancel', up);
+      }, end: () => save()});
     });
     n.el.append(rz);
   }
@@ -6428,18 +6668,14 @@ function addNode(type, x, y, params, id){
     e.preventDefault();
     if (e.shiftKey){ setSel(n, !selected.has(n.id)); return; }
     if (!selected.has(n.id)){ clearSel(); setSel(n, true); }
-    head.setPointerCapture(e.pointerId);
     // Dragging a selected module moves the whole selection.
-    const group = selected.has(n.id) ? selNodes() : [n];
-    if (!selected.has(n.id)) clearSel();
+    const group = selNodes();
     const sx = e.clientX, sy = e.clientY, start = group.map(m => [m, m.x, m.y]);
     let extra = [0, 0], lastEv = e;
     const place = () => { const dx = (lastEv.clientX - sx)/zoom - extra[0]/zoom, dy = (lastEv.clientY - sy)/zoom - extra[1]/zoom;
       for (const [m, ox, oy] of start){ m.x = Math.round(ox + dx); m.y = Math.round(oy + dy); m.el.style.left = m.x + 'px'; m.el.style.top = m.y + 'px'; } };
     nodeDragging = v => { extra[0] += v[0]; extra[1] += v[1]; place(); };
-    const mv = ev => { lastEv = ev; autoPanAt(ev); place(); };
-    const up = () => { nodeDragging = null; autoPanV = [0, 0]; head.removeEventListener('pointermove', mv); head.removeEventListener('pointerup', up); head.removeEventListener('pointercancel', up); save(); };
-    head.addEventListener('pointermove', mv); head.addEventListener('pointerup', up); head.addEventListener('pointercancel', up);
+    pointerSession(head, e, {move: ev => { lastEv = ev; autoPanAt(ev); place(); }, end: () => { nodeDragging = null; autoPanV = [0, 0]; save(); }});
   });
   world.append(n.el);
   nodes.set(id, n);
@@ -6457,10 +6693,14 @@ function addNode(type, x, y, params, id){
 }
 // Keyboard edits (Delete, copy, paste, duplicate) only in Patch mode, where the selected modules are visible.
 function patchEditable(){ return !perf.on && !simple.on && !live.on && !document.body.classList.contains('sliders'); }
-function removeNode(id){
+// {batch: true} skips the cable/audio/group refresh, for removing many modules at once (see removeNodes);
+// the modules a group removes along with itself never refresh on their own either.
+let rmBatch = 0;
+function removeNode(id, opt){
   const n = nodes.get(id); if (!n || n.fixed) return;
   const def = DEFS[n.type];
-  def.destroy && def.destroy(n);
+  const batch = !!(opt && opt.batch);
+  rmBatch++; try { def.destroy && def.destroy(n); } finally { rmBatch--; } // a group's modules go with it, refreshed once below
   if (GLX) GLX.release(n);
   // A deleted module's sound must stop now: its output is unplugged here because syncAudio only rewires modules still in the patch.
   for (const k of ['aout', 'ain']) if (n[k]){ try { n[k].disconnect(); } catch(e){} }
@@ -6468,7 +6708,23 @@ function removeNode(id){
   delete perf.panels[id];
   edges = edges.filter(e => e.from.node !== id && e.to.node !== id);
   n.el.remove(); nodes.delete(id);
-  afterEdges();
+  // Forget it everywhere else it's remembered, so nothing points at a module that's gone.
+  selected.delete(id);
+  if (midiMap.some(m => m.node === id)) midiMap = midiMap.filter(m => m.node !== id);
+  if (keyMap.some(m => m.node === id)) keyMap = keyMap.filter(m => m.node !== id);
+  if (bank.maps.some(m => m.node === id)) bank.maps = bank.maps.filter(m => m.node !== id);
+  if (simple.input === id) simple.input = null; // Simple mode makes a new camera when it needs one
+  if (simple.mic === id) simple.mic = null;
+  if (simple.group === id) simple.group = null;
+  simple.slots.forEach((s, i) => { if (s === id) simple.slots[i] = null; });
+  if (!batch && !rmBatch) afterEdges();
+}
+// Remove many modules with one refresh at the end (clearing a big patch was getting slow).
+function removeNodes(ids){
+  let k = 0;
+  for (const id of ids){ const n = nodes.get(id); if (n && !n.fixed){ removeNode(id, {batch: true}); k++; } }
+  if (k) afterEdges();
+  return k;
 }
 
 /* ---------- output windows ---------- */
@@ -6554,23 +6810,26 @@ const dockTop = document.getElementById('docktop'), dockBot = document.getElemen
 const pvWrap = document.getElementById('pvwrap'), pvVideo = document.getElementById('pvvideo');
 const stageSrc = document.getElementById('stagesrc');
 const pvImg = document.getElementById('pvimg');
-let pvUrl = null;
+let pvUrl = null, pvTok = 0;
 function showPreview(url){
+  const tok = ++pvTok; // a newer click (or Back to live) makes this one's late answers be ignored
   const rec = nodes.get('rec'), t = rec && rec.takes.find(x => x.url === url), still = t && t.ext === 'png';
   pvWrap.hidden = false; pvUrl = url;
   if (still){ pvVideo.pause(); pvVideo.hidden = true; pvImg.hidden = false; pvImg.src = url; }
   else {
     pvImg.hidden = true; pvVideo.hidden = false; pvVideo.muted = false; pvVideo.src = url;
     applySink(pvVideo).then(() => pvVideo.play()).catch(err => {
+      // Another take was clicked meanwhile (that's what interrupts play), so this answer is about an old take: leave the new one alone.
+      if (tok !== pvTok) return;
       // Sound couldn't start (often the sound card is busy): play the picture muted and say why.
       pvVideo.muted = true;
-      pvVideo.play().then(() => toast('Playing without sound (' + (err.message || err.name) + '). Check Settings → Sound → Output, then click the take again.'))
-        .catch(e2 => toast('This take can’t play here: ' + (e2.message || e2.name) + '. You can still Save it.'));
+      pvVideo.play().then(() => { if (tok === pvTok) toast('Playing without sound (' + (err.message || err.name) + '). Check Settings → Sound → Output, then click the take again.'); })
+        .catch(e2 => { if (tok === pvTok) toast('This take can’t play here: ' + (e2.message || e2.name) + '. You can still Save it.'); });
     });
   }
   stageSrc.value = url; markPreviewRows();
 }
-function hidePreview(){ pvVideo.pause(); pvVideo.removeAttribute('src'); pvVideo.load(); pvImg.removeAttribute('src'); pvWrap.hidden = true; pvUrl = null; stageSrc.value = 'live'; markPreviewRows(); }
+function hidePreview(){ pvTok++; pvVideo.pause(); pvVideo.removeAttribute('src'); pvVideo.load(); pvImg.removeAttribute('src'); pvWrap.hidden = true; pvUrl = null; stageSrc.value = 'live'; markPreviewRows(); }
 // The take being shown gets a "Back to live" button next to Save and Delete.
 function markPreviewRows(){ document.querySelectorAll('.take').forEach(r => { const on = r.dataset.url === pvUrl; r.classList.toggle('showing', on); r.querySelector('.livebtn').hidden = true; }); const b = document.querySelector('.headlive'); if (b) b.hidden = !pvUrl; }
 // Snapshot: a full-size still of whatever the main view is showing.
@@ -6611,17 +6870,15 @@ document.getElementById('stagefs').addEventListener('click', () => {
 /* ---------- panel divider ---------- */
 const split = document.getElementById('split'), divider = document.getElementById('divider');
 function setSw(px){
-  const total = split.clientWidth, key = 'sw';
+  const total = split.clientWidth;
   px = Math.max(220, Math.min(total - 300, px));
-  split.style.setProperty('--' + key, px + 'px');
-  try { localStorage.setItem(STORE + ':' + key, String(px / total)); } catch(e){}
+  split.style.setProperty('--sw', px + 'px');
+  try { localStorage.setItem(STORE + ':sw', String(px / total)); } catch(e){}
 }
-for (const key of ['sw']){ try { const f = parseFloat(localStorage.getItem(STORE + ':' + key)); if (f > 0 && f < 1) split.style.setProperty('--' + key, (f*100) + '%'); } catch(e){} }
+try { const f = parseFloat(localStorage.getItem(STORE + ':sw')); if (f > 0 && f < 1) split.style.setProperty('--sw', (f*100) + '%'); } catch(e){}
 divider.addEventListener('pointerdown', e => {
-  e.preventDefault(); divider.setPointerCapture(e.pointerId);
-  const mv = ev => setSw(split.getBoundingClientRect().right - ev.clientX);
-  const up = () => { divider.removeEventListener('pointermove', mv); divider.removeEventListener('pointerup', up); divider.removeEventListener('pointercancel', up); };
-  divider.addEventListener('pointermove', mv); divider.addEventListener('pointerup', up); divider.addEventListener('pointercancel', up);
+  e.preventDefault();
+  pointerSession(divider, e, {move: ev => setSw(split.getBoundingClientRect().right - ev.clientX)});
 });
 divider.addEventListener('keydown', e => {
   const cur = document.querySelector('.side').offsetWidth;
@@ -6696,6 +6953,10 @@ function cablePath(a, b, pts){
   return `M${a.x},${a.y} C${a.x + dx},${a.y + sag} ${b.x - dx},${b.y + sag} ${b.x},${b.y}`;
 }
 function placeCable(c, a, b, pts, edge){
+  // Nothing moved since the last frame: leave the drawing alone (rewriting every cable each frame is slow on Windows).
+  const pk = pts && pts.length ? pts.join(' ') : '', skin = document.documentElement.getAttribute('data-skinbase') || '';
+  if (c.ax === a.x && c.ay === a.y && c.bx === b.x && c.by === b.y && c.pk === pk && c.skin === skin) return;
+  c.ax = a.x; c.ay = a.y; c.bx = b.x; c.by = b.y; c.pk = pk; c.skin = skin;
   const d = cablePath(a, b, pts);
   if (edge) syncHandles(c, edge);
   c.line.setAttribute('d', d); c.sheen.setAttribute('d', d.replace(/(-?[\d.]+),(-?[\d.]+)/g, (m, x, y) => x + ',' + (+y - 1.3)));
@@ -6822,7 +7083,6 @@ function syncHandles(c, edge){
   while (c.hdl.length > pts.length) c.hdl.pop().remove();
   while (c.hdl.length < pts.length){
     const r = document.createElementNS(SVGNS, 'rect'); r.setAttribute('class', 'bend'); r.setAttribute('width', 10); r.setAttribute('height', 10);
-    const i = c.hdl.length;
     r.addEventListener('pointerdown', ev => bendDrag(ev, edge, () => c.hdl.indexOf(r)));
     c.g.append(r); c.hdl.push(r);
   }
@@ -6832,13 +7092,8 @@ function syncHandles(c, edge){
 function bendDrag(ev, edge, idx){
   ev.stopPropagation(); ev.preventDefault();
   const i = idx(), sx = ev.clientX, sy = ev.clientY; let moved = false;
-  const mv = e => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 3) moved = true; if (moved) edge.pts[i] = worldPt(e); };
-  const up = e => {
-    window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up);
-    if (!moved && e.altKey){ edge.pts.splice(i, 1); if (!edge.pts.length) delete edge.pts; }
-    save();
-  };
-  window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+  pointerSession(window, ev, {move: e => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 3) moved = true; if (moved) edge.pts[i] = worldPt(e); },
+    end: (e, cancelled) => { if (!cancelled && !moved && e.altKey){ edge.pts.splice(i, 1); if (!edge.pts.length) delete edge.pts; } save(); }});
 }
 // Option/Alt-drag on an existing cable adds a bend where you grab it.
 function cableBendAt(ev, edge){
@@ -6859,7 +7114,7 @@ window.addEventListener('keydown', e => { if (e.key === 'Alt') document.body.cla
 window.addEventListener('keyup', e => { if (e.key === 'Alt') document.body.classList.remove('alting'); });
 window.addEventListener('blur', () => document.body.classList.remove('alting'));
 function afterEdges(){
-  edgeVer++; syncCableEls(); syncAudio(); refreshGroups(); save(); }
+  syncCableEls(); syncAudio(); refreshGroups(); save(); }
 
 /* ---------- pan ---------- */
 const zoomVal = document.getElementById('zoomval');
@@ -6893,7 +7148,7 @@ ws.addEventListener('wheel', e => {
   // A mouse wheel moves in big steps on one axis; a trackpad sends small, smooth amounts.
   const mouse = e.deltaMode !== 0 || (e.deltaX === 0 && Math.abs(e.deltaY) >= 40 && Math.abs(e.deltaY) % 1 === 0);
   if (e.shiftKey){ const d = e.deltaY || e.deltaX; pan.y -= d*k; applyPan(); save(); return; }
-  if (mouse && settings.wheel !== 'scroll'){ zoomAt(e.clientX, e.clientY, zoom * Math.exp(-e.deltaY*k*0.0018)); save(); return; }
+  if (mouse && settings.wheel !== 'scroll'){ zoomAt(e.clientX, e.clientY, zoom * Math.exp(-e.deltaY*k*0.0018)); return; } // zoomAt saves
   pan.x -= e.deltaX*k; pan.y -= e.deltaY*k; applyPan(); save();
 }, {passive:false});
 // Safari reports trackpad pinches as gesture events.
@@ -6934,23 +7189,21 @@ ws.addEventListener('pointerdown', e => {
   if (e.button === 2) return;
   if (e.shiftKey){
     const lasso = document.getElementById('lasso'), r0 = ws.getBoundingClientRect(), sx = e.clientX, sy = e.clientY;
-    ws.setPointerCapture(e.pointerId); lasso.hidden = false;
+    lasso.hidden = false;
     const box = ev => [Math.min(sx, ev.clientX), Math.min(sy, ev.clientY), Math.max(sx, ev.clientX), Math.max(sy, ev.clientY)];
     const mv = ev => { const [a, b, c, d] = box(ev); Object.assign(lasso.style, {left: (a - r0.left) + 'px', top: (b - r0.top) + 'px', width: (c - a) + 'px', height: (d - b) + 'px'}); };
-    const up = ev => {
-      ws.removeEventListener('pointermove', mv); ws.removeEventListener('pointerup', up); lasso.hidden = true;
+    mv(e);
+    pointerSession(ws, e, {move: mv, end: (ev, cancelled) => {
+      lasso.hidden = true; if (cancelled) return; // a cancelled lasso just goes away
       const [a, b, c, d] = box(ev);
       for (const n of nodes.values()){ if (n.fixed || !visibleNode(n)) continue; const r = n.el.getBoundingClientRect(); if (r.right > a && r.left < c && r.bottom > b && r.top < d) setSel(n, true); }
-    };
-    mv(e); ws.addEventListener('pointermove', mv); ws.addEventListener('pointerup', up);
+    }});
     return;
   }
   clearSel();
-  ws.setPointerCapture(e.pointerId); ws.classList.add('panning');
+  ws.classList.add('panning');
   const sx = e.clientX, sy = e.clientY, ox = pan.x, oy = pan.y;
-  const mv = ev => { pan.x = ox + ev.clientX - sx; pan.y = oy + ev.clientY - sy; applyPan(); };
-  const up = () => { ws.removeEventListener('pointermove', mv); ws.removeEventListener('pointerup', up); ws.removeEventListener('pointercancel', up); ws.classList.remove('panning'); save(); };
-  ws.addEventListener('pointermove', mv); ws.addEventListener('pointerup', up); ws.addEventListener('pointercancel', up);
+  pointerSession(ws, e, {move: ev => { pan.x = ox + ev.clientX - sx; pan.y = oy + ev.clientY - sy; applyPan(); }, end: () => { ws.classList.remove('panning'); save(); }});
 });
 
 /* ---------- persistence ---------- */
@@ -6962,15 +7215,23 @@ function serialize(){
     edges: edges.filter(e => !(nodes.get(e.from.node) || {}).noSave && !(nodes.get(e.to.node) || {}).noSave), presets, activePreset, midiMap, decor: decor.map(d => d.data), perform: {locked: perf.locked, panels: perf.panels}, bg: patchBg || undefined, keyMap: keyMap.length ? keyMap : undefined, bank: (bank.maps.length || bank.count !== 8) ? {count: bank.count, vals: bank.vals, maps: bank.maps.map(({s, node, key}) => ({s, node, key}))} : undefined,
     simple: {group: simple.group, input: simple.input, mic: simple.mic, micDev: simple.micDev || '', count: simpleCount(), slots: simple.slots, bypass: simple.bypass, saved: simple.saved}};
 }
-let quotaWarned = false;
+// When the browser refuses an autosave (patch too big), the warning comes back every few minutes while it keeps failing,
+// and a small ':stale' note is left so the next start can say the restored patch is an older one.
+let quotaWarnT = 0, autosaveStale = false;
 function save(){
   clearTimeout(saveT);
   saveT = setTimeout(() => {
     histPush();
     if (live.fadeState) return;
     const sd = serialize(); saveActiveClip(sd);
-    try { localStorage.setItem(STORE, JSON.stringify(sd)); }
-    catch(e){ if (!quotaWarned){ quotaWarned = true; toast('This patch is too big to autosave in the browser. Use Save to keep it.'); } }
+    try {
+      localStorage.setItem(STORE, JSON.stringify(sd));
+      if (autosaveStale){ autosaveStale = false; try { localStorage.removeItem(STORE + ':stale'); } catch(e2){} }
+    } catch(e){
+      if (!autosaveStale){ autosaveStale = true; try { localStorage.setItem(STORE + ':stale', String(Date.now())); } catch(e2){} }
+      const now = Date.now();
+      if (now - quotaWarnT > 5*60*1000){ quotaWarnT = now; toast('This patch is too big to autosave in the browser, so your recent changes aren’t kept if the page closes. Use Save to keep it.'); }
+    }
   }, 300);
 }
 function clearPatch(){
@@ -6981,7 +7242,7 @@ function clearPatch(){
   setMode('patch'); simple.group = simple.input = simple.mic = null; simple.slots = [null, null, null, null, null, null]; simple.bypass = [false, false, false, false, false, false];
   scope = null; scopeStack.length = 0; clearSel();
   perfExit(); perf.panels = {}; perf.locked = false;
-  for (const id of [...nodes.keys()]) removeNode(id);
+  removeNodes([...nodes.keys()]);
   edges = [];
   for (const d of decor) d.el.remove();
   decor = []; presets = []; activePreset = -1; midiMap = [];
@@ -6996,6 +7257,8 @@ function load(){
     if (d.name){ patchName = d.name; pnameEl.value = d.name; }
     const ok = applyPatch(d);
     if (ok === null || (!ok && d.nodes.length)) throw new Error('the saved patch couldn’t be rebuilt');
+    let stale = null; try { stale = localStorage.getItem(STORE + ':stale'); } catch(e2){}
+    if (stale){ autosaveStale = true; setTimeout(() => toast('This is an older copy of your patch: the last changes were too big to autosave. Open your saved file if you have one.'), 1200); }
     return ok;
   } catch(e){
     // The autosave couldn't be opened. Keep a copy before anything overwrites it, and start from a clean patch
@@ -7040,7 +7303,7 @@ function applyPatch(d){
     edges = (d.edges || []).filter(e => nodes.has(e.from.node) && nodes.has(e.to.node)
       && nodes.get(e.from.node).jacks['out:' + e.from.port] && nodes.get(e.to.node).jacks['in:' + e.to.port]);
     if (d.pan) pan = d.pan;
-    if (d.zoom) zoom = d.zoom;
+    if (d.zoom) zoom = Math.max(ZMIN, Math.min(ZMAX, +d.zoom || 1));
     // Older patches picked a Screen for the main view: patch it in directly.
     if (d.stageId && nodes.get(d.stageId) && nodes.get(d.stageId).type === 'screen' && !edges.some(e => e.to.node === 'main'))
       edges.push({from:{node: d.stageId, port:'thru'}, to:{node:'main', port:'in'}, kind:'video'});
@@ -7296,7 +7559,7 @@ function midiDevices(){
 }
 function midiMsg(e, inp){
   const st = e.data[0], d1 = e.data[1] || 0, d2 = e.data[2] || 0;
-  if (st === 0xF8 || st === 0xFA || st === 0xFB || st === 0xFC){ clipsClock(st); for (const n of nodes.values()) if (n.type === 'midiclock') midiClockMsg(n, st, inp); return; }
+  if (st === 0xF8 || st === 0xFA || st === 0xFB || st === 0xFC){ clipsClock(st, e.timeStamp); for (const n of nodes.values()) if (n.type === 'midiclock') midiClockMsg(n, st, inp); return; }
   if (st >= 0xf0) return;
   const type = st & 0xf0, ch = (st & 15) + 1;
   for (const n of nodes.values()) if (n.type === 'midi') midiToNode(n, type, ch, d1, d2, inp);
@@ -7405,8 +7668,27 @@ function recallPreset(i){
   }
   activePreset = i; renderPresets(); save();
 }
+// Delete preset i. Preset morph modules remember presets by position, so the ones after it move up one,
+// and a morph pointing at the deleted preset goes back to "Choose a preset" (instead of quietly jumping to the next one).
+function deletePreset(i){
+  if (!presets[i]) return;
+  presets.splice(i, 1);
+  if (activePreset === i) activePreset = -1; else if (activePreset > i) activePreset--;
+  const fix = ps => { for (const k of ['a', 'b']){ const v = ps[k]; if (v === '' || v == null) continue; if (+v === i) ps[k] = ''; else if (+v > i) ps[k] = String(+v - 1); } };
+  for (const n of nodes.values()) if (n.type === 'morph'){ fix(n.params); n.lastAmt = null; }
+  // Morph settings stored inside the other presets too, so recalling one later doesn't bring back an old position.
+  for (const p of presets) for (const sn of Object.values(p.snap || {})) if (sn.type === 'morph' && sn.params) fix(sn.params);
+  renderPresets(); save();
+}
 function renderPresets(){
   for (const n of nodes.values()) if (n.type === 'morph') morphRefresh(n);
+  // Same presets as last time (e.g. after a click): just move the highlight, so the chip under the mouse stays put
+  // and its double-click (rename) still arrives.
+  const sig = presets.map(p => p.name), last = chipsEl._last;
+  if (last && last.list.length === presets.length && presets.every((p, i) => last.list[i] === p && last.sig[i] === sig[i])){
+    chipsEl.querySelectorAll('.chip').forEach((b, i) => b.classList.toggle('on', i === activePreset));
+  } else {
+  chipsEl._last = {list: presets.slice(), sig};
   chipsEl.replaceChildren(...presets.map((p, i) => {
     const b = h('button', {class:'chip' + (i === activePreset ? ' on' : ''), title:'Click to recall. Double-click to rename.'}, p.name);
     b.addEventListener('click', () => recallPreset(i));
@@ -7415,15 +7697,16 @@ function renderPresets(){
       const ed = h('input', {class:'chipedit', 'aria-label':'Preset name'}); ed.value = p.name;
       b.replaceWith(ed); ed.focus(); ed.select();
       let done = false;
-      const fin = ok => { if (done) return; done = true; if (ok && ed.value.trim()) p.name = ed.value.trim(); renderPresets(); save(); };
+      const fin = ok => { if (done) return; done = true; if (ok && ed.value.trim()) p.name = ed.value.trim(); chipsEl._last = null; renderPresets(); save(); };
       ed.addEventListener('keydown', ev => { if (ev.key === 'Enter') fin(true); if (ev.key === 'Escape') fin(false); });
       ed.addEventListener('blur', () => fin(true));
     });
     const x = h('button', {class:'chipx', 'aria-label':'Delete ' + p.name, title:'Delete preset', text:'×'});
-    x.addEventListener('click', () => { presets.splice(i, 1); if (activePreset === i) activePreset = -1; else if (activePreset > i) activePreset--; renderPresets(); save(); });
+    x.addEventListener('click', () => deletePreset(i));
     return h('span', {class:'chipwrap'}, b, x);
   }));
   if (!presets.length) chipsEl.append(h('span', {class:'chipempty', text:'None yet. Set things up, then press Capture.'}));
+  }
   document.getElementById('pupd').disabled = activePreset < 0;
   // The dropdown always shows which preset is active, by name.
   const sel = document.getElementById('psel');
@@ -7435,7 +7718,7 @@ function renderPresets(){
   const sel = document.getElementById('psel');
   sel.addEventListener('change', () => { const i = +sel.value; if (i >= 0) recallPreset(i); });
   document.getElementById('pren').addEventListener('click', async () => { const p = presets[activePreset]; if (!p) return; const nm = await askDialog('Rename the preset:', {input: p.name, ok: 'Rename'}); if (nm && nm.trim()){ p.name = nm.trim(); renderPresets(); save(); } });
-  document.getElementById('pdel').addEventListener('click', async () => { const p = presets[activePreset]; if (!p) return; if (!await askDialog('Delete the preset “' + p.name + '”?', {ok: 'Delete'})) return; presets.splice(activePreset, 1); activePreset = -1; renderPresets(); save(); });
+  document.getElementById('pdel').addEventListener('click', async () => { const p = presets[activePreset]; if (!p) return; if (!await askDialog('Delete the preset “' + p.name + '”?', {ok: 'Delete'})) return; deletePreset(activePreset); });
 }
 document.getElementById('pcap').addEventListener('click', () => {
   let i = presets.length + 1; while (presets.some(p => p.name === 'Preset ' + i)) i++;
@@ -7454,6 +7737,7 @@ function removeDecor(item){ item.el.remove(); decor = decor.filter(d => d !== it
 window.addEventListener('keydown', e => {
   if (e.key !== 'Delete' && e.key !== 'Backspace') return;
   if (learn.on && learn.target) return;
+  if (!patchEditable()) return; // boxes and comments are only deleted in Patch mode, where they can be seen
   if (e.target.closest && e.target.closest('input, select, textarea, [contenteditable="true"]')) return;
   const sel = decor.find(d => d.el.classList.contains('sel'));
   if (sel){ e.preventDefault(); removeDecor(sel); }
@@ -7503,7 +7787,6 @@ function addDecor(dt){
     const isRz = e.target === rz;
     // Capture on the element that was grabbed: a box itself ignores the pointer so the patch behind it stays usable.
     const cap = e.target;
-    cap.setPointerCapture(e.pointerId);
     const sx = e.clientX, sy = e.clientY, o = {x: dt.x, y: dt.y, w: dt.w, h: dt.h};
     const mv = ev => {
       const dx = (ev.clientX - sx)/zoom, dy = (ev.clientY - sy)/zoom;
@@ -7513,8 +7796,7 @@ function addDecor(dt){
       } else { dt.x = Math.round(o.x + dx); dt.y = Math.round(o.y + dy); }
       place();
     };
-    const up = () => { cap.removeEventListener('pointermove', mv); cap.removeEventListener('pointerup', up); cap.removeEventListener('pointercancel', up); save(); };
-    cap.addEventListener('pointermove', mv); cap.addEventListener('pointerup', up); cap.addEventListener('pointercancel', up);
+    pointerSession(cap, e, {move: mv, end: () => save()});
   });
   place(); paint();
   world.insertBefore(el, world.firstChild);
@@ -7534,7 +7816,7 @@ logoIn.addEventListener('change', () => {
     const ar = img.width/img.height, w = Math.min(240, c.cv.width);
     addDecor({kind:'logo', x: logoAt.x, y: logoAt.y, w, h: Math.round(w/ar), ar, src}); save();
   };
-  img.onerror = () => toast('That image couldn’t be opened.');
+  img.onerror = () => { URL.revokeObjectURL(url); toast('That image couldn’t be opened.'); };
   img.src = url;
 });
 function addItem(type, x, y){
@@ -7547,13 +7829,13 @@ function addItem(type, x, y){
 }
 
 /* ---------- patch files ---------- */
-let patchName = 'Untitled', fileHandle = null, pendingSaveAs = false;
+// fileName: the patch name the file was opened or saved under. Renaming the patch saves a new file.
+let patchName = 'Untitled', fileHandle = null, fileName = null;
 const pnameEl = document.getElementById('pname');
 const PICKERS = 'showSaveFilePicker' in window && (() => { try { return window.self === window.top; } catch(e){ return false; } })();
 pnameEl.value = patchName;
 pnameEl.addEventListener('input', () => { patchName = pnameEl.value.trim() || 'Untitled'; save(); });
-pnameEl.addEventListener('keydown', e => { if (e.key === 'Enter'){ pnameEl.blur(); if (pendingSaveAs){ pendingSaveAs = false; downloadPatch(); } } if (e.key === 'Escape'){ pendingSaveAs = false; pnameEl.blur(); } });
-pnameEl.addEventListener('blur', () => pnameEl.classList.remove('asking'));
+pnameEl.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === 'Escape') pnameEl.blur(); });
 const slug = s => (s || 'untitled').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'untitled';
 async function downloadPatch(){
   const filename = slug(patchName) + '.seeds.json';
@@ -7570,15 +7852,22 @@ async function downloadPatch(){
 }
 // The file this patch lives in is remembered across restarts, so Save keeps writing to it without asking.
 function setFile(hd){
-  fileHandle = hd || null;
-  try { idb('readwrite', st => { try { return hd ? st.put(hd, 'curFile') : st.delete('curFile'); } catch(e){ return null; } }).catch(() => {}); } catch(e){}
+  fileHandle = hd || null; fileName = hd ? patchName : null;
+  try { idb('readwrite', st => { try { return hd ? st.put({hd, name: patchName}, 'curFile') : st.delete('curFile'); } catch(e){ return null; } }).catch(() => {}); } catch(e){}
 }
 async function canWrite(hd){
   try { if ((await hd.queryPermission({mode: 'readwrite'})) === 'granted') return true; return (await hd.requestPermission({mode: 'readwrite'})) === 'granted'; }
   catch(e){ return false; }
 }
 async function writeTo(hd){ const w = await hd.createWritable(); await w.write(JSON.stringify(serialize(), null, 1)); await w.close(); }
+// One save at a time (holding Cmd+S, or clicking Save twice, can't start a second one).
+let saving = false;
 async function savePatch(as){
+  if (saving) return;
+  saving = true;
+  try { await savePatchNow(as); } finally { saving = false; }
+}
+async function savePatchNow(as){
   // The name box is the patch name.
   const typed = (pnameEl.value || '').trim(); if (typed) patchName = typed;
   if (as){
@@ -7586,12 +7875,14 @@ async function savePatch(as){
     if (nm == null || !nm.trim()) return;
     patchName = nm.trim(); pnameEl.value = patchName; setFile(null);
   }
-  if (fileHandle && fileHandle.name.replace(/(\.seeds)?\.json$/i, '') !== slug(patchName)) setFile(null); // renamed: save as a new file
+  if (fileHandle && fileName !== patchName) setFile(null); // renamed: save as a new file
   // Save writes straight back to the file this patch was opened from or last saved to, with no dialog.
   // Only Save as (or the very first save of a new patch with no save folder chosen) asks where.
-  if (!as && fileHandle && await canWrite(fileHandle)){
-    try { await writeTo(fileHandle); toast('Saved ' + fileHandle.name + '.'); save(); return; }
-    catch(e){ setFile(null); } // the file was moved or deleted: fall through and save it fresh
+  if (!as && fileHandle){
+    if (await canWrite(fileHandle)){
+      try { await writeTo(fileHandle); toast('Saved ' + fileHandle.name + '.'); save(); return; }
+      catch(e){ setFile(null); } // the file was moved or deleted: fall through and save it fresh
+    } else setFile(null); // not allowed to write there any more: ask where to save instead
   }
   if (await dirReady()){ try { await saveToFolder(patchName); } catch(e){ toast('Couldn’t save: ' + e.message); } return; }
   if (PICKERS){
@@ -7600,7 +7891,7 @@ async function savePatch(as){
         const o = {suggestedName: slug(patchName) + '.seeds.json', types:[{description:'...Seeds patch', accept:{'application/json':['.json']}}]};
         setFile(await window.showSaveFilePicker(o));
       }
-      const w = await fileHandle.createWritable(); await w.write(JSON.stringify(serialize(), null, 1)); await w.close();
+      await writeTo(fileHandle);
       toast('Saved ' + fileHandle.name + '.'); save();
     } catch(e){ if (e.name !== 'AbortError') toast('Couldn’t save: ' + e.message); }
     return;
@@ -7636,7 +7927,7 @@ document.getElementById('fsaveas').addEventListener('click', () => savePatch(tru
 window.addEventListener('keydown', e => {
   if (!(e.metaKey || e.ctrlKey)) return;
   const k = e.key.toLowerCase();
-  if (k === 's'){ e.preventDefault(); savePatch(e.shiftKey); }
+  if (k === 's'){ e.preventDefault(); if (!e.repeat) savePatch(e.shiftKey); }
   if (k === 'o'){ e.preventDefault(); openPatch(); }
   if (k === 'n' && !e.shiftKey){ e.preventDefault(); newPatch(); }
   if (k === 'k' && !e.shiftKey){ e.preventDefault(); keyBtn.click(); }
@@ -7649,7 +7940,9 @@ const perfEl = document.getElementById('perf'), perfSurf = document.getElementBy
 const perfLockBtn = document.getElementById('plock'), perfBadge = document.getElementById('pbadge'), perfArrBtn = document.getElementById('parrange');
 const perfHidBtn = document.getElementById('phidden'), perfMenu = document.getElementById('pmenu');
 const modePatch = document.getElementById('mpatch'), modePerf = document.getElementById('mperf');
-const perfMods = () => [...nodes.values()].filter(n => !n.fixed && !n.noSave && !n.params.sys && n.type !== 'group' && !(simple.group && isInside(n.id, simple.group)));
+// Modules that get a panel. During a Clips crossfade the outgoing clip's modules are left out (they're about to go).
+const perfMods = () => { const going = live.fadeState ? new Set(live.fadeState.oldIds) : null;
+  return [...nodes.values()].filter(n => !n.fixed && !n.noSave && !n.params.sys && n.type !== 'group' && !(simple.group && isInside(n.id, simple.group)) && !(going && going.has(n.id))); };
 function perfState(n){ return perf.panels[n.id] || (perf.panels[n.id] = {x: null, y: 0, w: null, min: false, hide: false, off: []}); }
 function perfTitle(n){ return n.params.label || DEFS[n.type].title; }
 // Name shown in Perform mode: a custom name if one was given, otherwise the module's own title.
@@ -7748,10 +8041,6 @@ function perfArrange(all){
     st.x = x; st.y = y; n._pp.style.left = x + 'px'; n._pp.style.top = y + 'px';
     x += w + 16; rowH = Math.max(rowH, hh);
   }
-  if (!all){
-    // Newly shown panels go below everything already placed.
-    let maxY = 0; for (const n of perfMods()) if (n._pp && perfState(n).x !== null) maxY = Math.max(maxY, perfState(n).y + n._pp.offsetHeight);
-  }
 }
 function perfMenuUpdate(){
   const hidden = perfMods().filter(n => perfState(n).hide);
@@ -7832,7 +8121,7 @@ function isInside(id, gid){ let n = nodes.get(id); while (n && n.parent){ if (n.
 const descendants = g => [...nodes.values()].filter(n => isInside(n.id, g.id));
 function portInfo(n, port, dir){
   if (port.startsWith('p:')){ const k = port.slice(2); return {kind:'mod', label: (n.ctl && n.ctl[k] && n.ctl[k].label) || k}; }
-  const p = (dir === 'in' ? DEFS[n.type].ins : DEFS[n.type].outs).find(q => q.name === port) || (n.type === 'group' ? null : null);
+  const p = (dir === 'in' ? DEFS[n.type].ins : DEFS[n.type].outs).find(q => q.name === port) || null;
   return p ? {kind: p.kind, label: p.label} : {kind:'video', label: port};
 }
 // Ports a group shows: anything cabled across its edge, plus ports remembered when it was made.
@@ -8003,7 +8292,7 @@ ws.addEventListener('contextmenu', e => {
   }
   if (sel.length) items.push(['Copy (Cmd+C)', () => copySel()], ['Duplicate (Cmd+D)', () => { if (copySel(true)) pasteClip(); }]);
   if (clip) items.push(['Paste (Cmd+V)', () => pasteClip()]);
-  if (sel.length) items.push(['Delete ' + (sel.length === 1 ? 'module' : sel.length + ' modules'), () => { for (const m of sel) removeNode(m.id); clearSel(); }]);
+  if (sel.length) items.push(['Delete ' + (sel.length === 1 ? 'module' : sel.length + ' modules'), () => { removeNodes(sel.map(m => m.id)); clearSel(); }]);
   items.push(['Select all', () => { for (const m of nodes.values()) if (!m.fixed && visibleNode(m)) setSel(m, true); }]);
   if (!n) items.push(['Patch background color…', () => pickPatchBg()]);
   if (!n && patchBg) items.push(['Reset background color', () => { setPatchBg(null); save(); }]);
@@ -8013,7 +8302,7 @@ ws.addEventListener('contextmenu', e => {
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !ctx.hidden) hideMenu();
   if ((e.key === 'Delete' || e.key === 'Backspace') && selected.size && patchEditable() && !(e.target.closest && e.target.closest('input, select, textarea, [contenteditable="true"]')) && !(learn.on && learn.target)){
-    e.preventDefault(); for (const m of selNodes()) removeNode(m.id); clearSel();
+    e.preventDefault(); removeNodes(selNodes().map(m => m.id)); clearSel();
   }
 });
 
@@ -8200,7 +8489,7 @@ function setMode(m){
   if (m === 'simple') simpleEnter();
   if (m === 'live') liveEnter();
   if (m === 'sliders') slidersEnter(); else slidersExit();
-  if (typeof paintStrips === 'function') paintStrips();
+  paintStrips();
   for (const [b, k] of [[modePatch, 'patch'], [modePerf, 'perform'], [document.getElementById('mlive'), 'live'], [document.getElementById('msliders'), 'sliders'], [document.getElementById('msimple'), 'simple']]){ b.classList.toggle('on', m === k); b.setAttribute('aria-pressed', String(m === k)); }
   if (m === 'patch' && pendingFit){ pendingFit = false; requestAnimationFrame(() => fitAll()); }
 }
@@ -8208,7 +8497,7 @@ function setMode(m){
 /* ---------- Settings: Simple mode, tips, skins (saved for this app, not per patch) ---------- */
 const SETTINGS_KEY = STORE + ':settings';
 let settings = {simple: false, tips: true, skin: 'minimal', defaultSkin: 'minimal'};
-const firstSettings = !localStorage.getItem(STORE + ':settings');
+let firstSettings = false; try { firstSettings = !localStorage.getItem(STORE + ':settings'); } catch(e){}
 if (firstSettings && matchMedia('(pointer: coarse)').matches) settings.simple = true; // phones and tablets start simple
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch(e){}
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch(e){} };
@@ -8363,7 +8652,7 @@ const MODULE_HELP = {
   vecpat:'Crisp vector-style patterns: nested polygons, starbursts, checker tunnels, hexagon and triangle grids, zigzags and lattices, spinning and pulsing.',
   vosc:'An analog-style video oscillator: sine, triangle, saw, square or stepped-noise waves across the screen, in RGB or two colors. Patch video into FM to bend the waves.',
   wfold:'Folds bright parts back down (like an audio wave folder), turning gradients into rippling bands.',
-  lumakey:'Makes the dark (or bright) parts of a picture see-through, showing a background video or color.',
+  lumakey:'Makes part of a picture see-through by brightness, showing a background video or color. Threshold sets the brightness where the cut happens, Softness smooths the edge, and the switch chooses which side of the threshold (the darker or the brighter parts) is removed.',
   chromakey:'Green screen: one color becomes see-through, with tolerance, softness and spill removal.',
   vfilter:'Blur, sharpen, glow, invert, threshold, solarize, emboss, hue rotate or saturation.',
   displace:'Warps the picture by the brightness of a map video (or itself), for liquid and heat-haze looks.',
@@ -8530,12 +8819,17 @@ for (const t of MEM_TYPES){ const def = DEFS[t]; if (def && !def.ins.some(p => p
   def.ins.push({name:'store', kind:'gate', label:'Store shape'}, {name:'recall', kind:'mod', label:'Recall'}); } }
 
 /* ---------- Undo and redo ---------- */
-let histStack = [], redoStack = [], histLast = null, histBusy = false;
+let histStack = [], redoStack = [], histLast = null, histBusy = false, histBytes = 0;
+// Undo keeps up to 120 steps, and fewer when they're big (pictures in a patch): about 30 MB of text at most.
+const HIST_MAX = 120, HIST_BYTES = 15e6; // characters (2 bytes each)
 function histState(){ const d = serialize(); delete d.pan; delete d.zoom; return JSON.stringify(d); }
 function histPush(){
   if (histBusy || live.fadeState) return;
   const st = histState(); if (st === histLast) return;
-  if (histLast !== null){ histStack.push(histLast); if (histStack.length > 120) histStack.shift(); redoStack = []; }
+  if (histLast !== null){
+    histStack.push(histLast); histBytes += histLast.length; redoStack = [];
+    while (histStack.length > 1 && (histStack.length > HIST_MAX || histBytes > HIST_BYTES)) histBytes -= histStack.shift().length;
+  }
   histLast = st; updUndo();
 }
 function updUndo(){ document.getElementById('undobtn').disabled = !histStack.length; document.getElementById('redobtn').disabled = !redoStack.length; }
@@ -8544,7 +8838,7 @@ function reconcile(d){
   const wasPerf = perf.on; if (wasPerf) perfExit();
   if (simple.on) for (const id of [simple.input, ...simple.slots]) simpleReturnBody(nodes.get(id));
   const want = new Map((d.nodes || []).map(s => [s.id, s]));
-  for (const n of [...nodes.values()]) if (!n.fixed && nodes.has(n.id) && (!want.has(n.id) || want.get(n.id).type !== n.type)){ n.ungrouping = true; removeNode(n.id); }
+  for (const n of [...nodes.values()]) if (!n.fixed && !n.noSave && nodes.has(n.id) && (!want.has(n.id) || want.get(n.id).type !== n.type)){ n.ungrouping = true; removeNode(n.id); }
   for (const s of d.nodes || []){
     let n = nodes.get(s.id);
     if (!n){ n = addNode(s.type, s.x, s.y, JSON.parse(JSON.stringify(s.params)), s.id); if (!n) continue; }
@@ -8554,6 +8848,12 @@ function reconcile(d){
         if (JSON.stringify(n.params[k]) === JSON.stringify(v)) continue;
         const val = JSON.parse(JSON.stringify(v));
         if (n.ctl && n.ctl[k]) setParam(n, k, val); else n.params[k] = val;
+      }
+      // Settings the saved state didn't have (added since) go back to the module's default, or away.
+      const dp = DEFS[n.type].params || {};
+      for (const k of Object.keys(n.params)) if (!(k in (s.params || {}))){
+        if (k in dp){ const val = JSON.parse(JSON.stringify(dp[k])); if (JSON.stringify(n.params[k]) !== JSON.stringify(val)){ if (n.ctl && n.ctl[k]) setParam(n, k, val); else n.params[k] = val; } }
+        else delete n.params[k];
       }
       if (DEFS[n.type].refresh) DEFS[n.type].refresh(n);
       if (n.params.w) n.el.style.width = n.params.w + 'px';
@@ -8569,24 +8869,25 @@ function reconcile(d){
   presets = d.presets || []; activePreset = typeof d.activePreset === 'number' ? d.activePreset : -1; midiMap = d.midiMap || [];
   if (d.perform){ perf.panels = JSON.parse(JSON.stringify(d.perform.panels || {})); perf.locked = !!d.perform.locked; }
   setPatchBg(d.bg || null); keyMap = Array.isArray(d.keyMap) ? d.keyMap : []; setTimeout(markKeys, 0);
-  if (d.bank){ bank.count = d.bank.count || 8; bank.vals = (d.bank.vals || []).concat(Array(16).fill(0)).slice(0, 16); bank.maps = d.bank.maps || []; } else bank.maps = [];
-  if (document.body.classList.contains('sliders')) bankRender();
+  bankFrom(d);
+  if (document.body.classList.contains('sliders')) bankRender(); else bankMarks();
   if (d.simple) Object.assign(simple, JSON.parse(JSON.stringify({group: d.simple.group, input: d.simple.input, mic: d.simple.mic, micDev: d.simple.micDev || '', count: d.simple.count || 6,
     slots: d.simple.slots || simple.slots, bypass: d.simple.bypass || simple.bypass})));
   if (d.name){ patchName = d.name; pnameEl.value = patchName; }
   syncCableEls(); syncAudio(); refreshGroups(); applyScope(); renderPresets(); markMapped();
-  if (simple.on){ simpleWire(); simpleRender(); setSimpleCount(simpleCount()); }
+  // Simple mode needs its chain group and camera: an older state may not have them, so they're made again.
+  if (simple.on){ simpleEnsure(); simpleWire(); applyScope(); simpleRender(); setSimpleCount(simpleCount()); }
   if (wasPerf) perfEnter();
 }
 function undo(){
   if (!histStack.length) return;
-  redoStack.push(histLast); const prev = histStack.pop();
+  redoStack.push(histLast); const prev = histStack.pop(); histBytes -= prev.length;
   histBusy = true; try { reconcile(JSON.parse(prev)); } finally { histBusy = false; }
   histLast = histState(); updUndo(); save(); toast('Undone');
 }
 function redo(){
   if (!redoStack.length) return;
-  histStack.push(histLast); const nx = redoStack.pop();
+  histStack.push(histLast); histBytes += histLast.length; const nx = redoStack.pop();
   histBusy = true; try { reconcile(JSON.parse(nx)); } finally { histBusy = false; }
   histLast = histState(); updUndo(); save(); toast('Redone');
 }
@@ -8668,7 +8969,7 @@ const SIMPLE_EXAMPLES = [
   {id:'s-dream', name:'Dream echo', desc:'Soft color shift, a delayed echo and gentle ripples.', count: 3, slots: [['cadj', {hue:30, sat:1.3}], ['vdelay', {time:500, mix:0.5}], ['warp', {amp:0.015, freq:3}]]}
 ];
 function loadExample(ex){
-  const spec = ex.build();
+  const spec = JSON.parse(JSON.stringify(ex.build())); // a copy, so playing with the patch never changes a saved example
   if (settings.simple) setSimpleMode(false);
   clearPatch();
   applyPatch(Object.assign({v: 1}, spec, {nodes: spec.nodes, edges: spec.edges}));
@@ -8739,7 +9040,7 @@ document.getElementById('setquality').addEventListener('change', e => setQuality
     const row = document.getElementById('gfxrow'), cb = document.getElementById('setgfx'); row.hidden = false;
     nat.getGfxCompat().then(v => { cb.checked = !!v; });
     cb.addEventListener('change', async () => {
-      await nat.setGfxCompat(cb.checked);
+      try { await nat.setGfxCompat(cb.checked); } catch(e){ toast('Couldn’t change that setting: ' + ((e && e.message) || 'unknown error')); return; }
       if (await askDialog('Seeds needs to restart to change graphics settings. Restart now? (Save your patch and takes first.)', {ok: 'Restart now', cancel: 'Later'})) nat.relaunch();
     });
   }
@@ -8747,7 +9048,7 @@ document.getElementById('setquality').addEventListener('change', e => setQuality
     const row = document.getElementById('hwrow'), cb = document.getElementById('sethw'); row.hidden = false;
     nat.getHwEncode().then(v => { cb.checked = !!v; });
     cb.addEventListener('change', async () => {
-      await nat.setHwEncode(cb.checked);
+      try { await nat.setHwEncode(cb.checked); } catch(e){ toast('Couldn’t change that setting: ' + ((e && e.message) || 'unknown error')); return; }
       if (await askDialog('Seeds needs to restart to change how it records. Restart now? (Save your patch and takes first.)', {ok: 'Restart now', cancel: 'Later'})) nat.relaunch();
     });
   }
@@ -8762,7 +9063,11 @@ function backupNow(){
   if (backups.length && backups[0].state === st) return;
   backups.unshift({t: Date.now(), name: patchName, mods: [...nodes.values()].filter(n => !n.fixed && n.type !== 'group').length, state: st});
   backups = backups.slice(0, 8);
-  while (backups.length){ try { localStorage.setItem(BK_KEY, JSON.stringify(backups)); break; } catch(e){ backups.pop(); } }
+  // Storage full: drop the oldest until the rest fit. If not even the newest fits, keep what was stored before,
+  // so the list shown always matches what would come back after a restart.
+  let stored = false;
+  for (let k = backups.length; k > 0 && !stored; k--){ try { localStorage.setItem(BK_KEY, JSON.stringify(backups.slice(0, k))); backups = backups.slice(0, k); stored = true; } catch(e){} }
+  if (!stored){ try { backups = JSON.parse(localStorage.getItem(BK_KEY) || '[]') || []; } catch(e){ backups = []; } }
   renderBackups();
 }
 function renderBackups(){
@@ -8809,16 +9114,30 @@ function askDialog(msg, opts){
   });
 }
 // A tiny key-value store for things that can't go in localStorage (the chosen save folder).
+// Each use opens the database, does one job, and closes it again.
 const idb = (mode, fn) => new Promise((res, rej) => {
-  const r = indexedDB.open('seeds', 1);
+  let r; try { r = indexedDB.open('seeds', 1); } catch(e){ rej(e); return; }
   r.onupgradeneeded = () => r.result.createObjectStore('kv');
-  r.onsuccess = () => { const tx = r.result.transaction('kv', mode), st = tx.objectStore('kv'), q = fn(st); tx.oncomplete = () => res(q && q.result); tx.onerror = () => rej(tx.error); };
+  r.onsuccess = () => {
+    const db = r.result, end = () => { try { db.close(); } catch(e){} };
+    try {
+      const tx = db.transaction('kv', mode), st = tx.objectStore('kv'), q = fn(st);
+      tx.oncomplete = () => { end(); res(q && q.result); };
+      tx.onerror = () => { end(); rej(tx.error); };
+      tx.onabort = () => { end(); rej(tx.error || new Error('storage was interrupted')); };
+    } catch(e){ end(); rej(e); }
+  };
   r.onerror = () => rej(r.error);
 });
 let saveDir = null;
 idb('readonly', st => st.get('saveDir')).then(d => { saveDir = d || null; paintSaveDir(); }).catch(() => {});
 // Reconnect to the file the open patch was last saved to (only if the names still match).
-idb('readonly', st => st.get('curFile')).then(hd => { if (hd && !fileHandle && hd.name.replace(/(\.seeds)?\.json$/i, '') === slug(patchName)) fileHandle = hd; }).catch(() => {});
+// Older copies stored just the file; newer ones store the file and the patch name it was saved under.
+idb('readonly', st => st.get('curFile')).then(v => {
+  const hd = v && v.hd ? v.hd : v, nm = v && v.hd ? v.name : null;
+  if (!hd || !hd.name || fileHandle) return;
+  if (nm != null ? nm === patchName : hd.name.replace(/(\.seeds)?\.json$/i, '') === slug(patchName)){ fileHandle = hd; fileName = patchName; }
+}).catch(() => {});
 function paintSaveDir(){ const el = document.getElementById('fdirname'); if (el) el.textContent = saveDir ? 'Saving to: ' + saveDir.name : 'Asks where to save each time'; }
 async function chooseSaveDir(){
   if (!window.showDirectoryPicker){ toast('This browser can’t pick a folder. Patches are saved to Downloads.'); return; }
@@ -8997,7 +9316,7 @@ document.getElementById('fexpmods').addEventListener('click', () => exportCustom
 /* ---------- Your own examples ---------- */
 document.getElementById('fsaveex').addEventListener('click', async () => {
   const nm = await askDialog('Name this example:', {input: patchName && patchName !== 'Untitled' ? patchName : 'My example', ok: 'Save'}); if (!nm || !nm.trim()) return;
-  const d = serialize(); delete d.pan; delete d.zoom;
+  const d = JSON.parse(JSON.stringify(serialize())); delete d.pan; delete d.zoom; // its own copy: later edits don't change the example
   const i = userExamples.findIndex(x => x.name === nm.trim()), ex = {name: nm.trim(), desc: 'Saved ' + new Date().toLocaleDateString(), patch: d};
   if (i >= 0) userExamples[i] = ex; else userExamples.push(ex);
   saveUserExamples(); renderExamples(); toast('Saved “' + ex.name + '” to Examples.');
@@ -9191,8 +9510,10 @@ window.addEventListener('keydown', e => {
 }, true);
 window.addEventListener('keyup', e => {
   const m = keyMap.find(k => k.key === e.key.toLowerCase()); if (!m || !m.pad) return;
-  const n = nodes.get(m.node); if (n && n.pressUp) n.pressUp();
+  const n = nodes.get(m.node); if (n && n.pressUp){ n.pressUp(); n.keyHeld = null; }
 });
+// Switching to another window while a key is held: the key-up never arrives here, so let go of held pads now.
+window.addEventListener('blur', () => { for (const n of nodes.values()) if (n.keyHeld){ n.keyHeld = null; if (n.pressUp) n.pressUp(); } });
 
 /* ---------- Fonts for Text and 3D text: built in, plus fonts you import ---------- */
 const FONTS = [
@@ -9227,13 +9548,15 @@ function fontOptions(){ return [...FONTS.map(f => [f[0], f[1]]), ...userFonts.ma
 function fontPicker(n){
   const sel = h('select', {'aria-label':'Font'});
   const fill = () => { const cur = n.params.font; sel.replaceChildren(...fontOptions().map(([v, l]) => h('option', {value: v, text: l}))); sel.value = cur; if (sel.value !== cur){ sel.append(h('option', {value: cur, text: cur.replace(/^u:/, '') + ' (missing)'})); sel.value = cur; } };
-  fill(); (window.fontPickers = window.fontPickers || []).push(fill);
+  // Font menus refresh when a font is imported. Menus of deleted modules are dropped from the list.
+  fill(); window.fontPickers = (window.fontPickers || []).filter(f => nodes.get(f.n.id) === f.n).concat([{n, fill}]);
   sel.addEventListener('change', () => { n.params.font = sel.value; n.dirty = true; save(); });
   n.ctl = n.ctl || {}; n.ctl.font = {set(v){ n.params.font = v; fill(); }};
   const file = h('input', {type:'file', accept:'.ttf,.otf,.woff,.woff2,font/*', hidden: true});
   file.addEventListener('change', async () => { const f = file.files[0]; file.value = ''; if (!f) return; const nm = await importFont(f); if (nm){ n.params.font = 'u:' + nm; fill(); save(); } });
   return [row('Font', sel), file, h('button', {class:'btn', text:'Import font…', onclick: () => file.click()})];
 }
+function fontRefresh(){ window.fontPickers = (window.fontPickers || []).filter(f => nodes.get(f.n.id) === f.n); window.fontPickers.forEach(f => f.fill()); }
 async function addFontFace(name, data){ const ff = new FontFace(name, data); await ff.load(); document.fonts.add(ff); }
 async function importFont(file){
   const name = file.name.replace(/\.(ttf|otf|woff2?)$/i, '').replace(/["\\]/g, '').trim() || 'Imported font';
@@ -9241,28 +9564,35 @@ async function importFont(file){
     const data = await file.arrayBuffer(); await addFontFace(name, data);
     userFonts = userFonts.filter(f => f.name !== name).concat([{name, data}]);
     try { await idb('readwrite', st => st.put(userFonts, 'fonts')); } catch(e){}
-    (window.fontPickers || []).forEach(f => f()); toast('Added the font “' + name + '”. It’s saved in this app for next time.');
+    fontRefresh(); toast('Added the font “' + name + '”. It’s saved in this app for next time.');
     return name;
   } catch(e){ toast('Couldn’t use that font file: ' + e.message); return null; }
 }
 idb('readonly', st => st.get('fonts')).then(async list => {
   if (!Array.isArray(list)) return;
   for (const f of list){ try { await addFontFace(f.name, f.data); userFonts.push(f); } catch(e){} }
-  (window.fontPickers || []).forEach(f => f());
+  fontRefresh();
 }).catch(() => {});
 
 /* ---------- Clips: launch whole patches like clips (click, MIDI note, or on the beat) ---------- */
 const LIVE_KEY = STORE + ':liveset';
 const live = {on: false, slots: [], count: 16, bpm: 120, quant: '0', extSync: false, layout: 'learned', learnSlot: -1, active: -1, pending: null, fadeState: null,
-  out: null, bpmId: null, t0: performance.now(), ticks: 0, mixFrom: 0, mixTo: 0, t0f: 0, dur: 0};
+  out: null, bpmId: null, t0: performance.now(), beat0: 0, ticks: 0, mixFrom: 0, mixTo: 0, t0f: 0, dur: 0};
+// A stored or imported set can have missing or broken slots: each becomes an empty slot, and there are always 32.
+function cleanSlots(list){
+  const out = (Array.isArray(list) ? list : []).slice(0, 32).map(s => (s && typeof s === 'object') ? Object.assign({name: '', patch: null, note: null, ch: null}, s, {patch: s.patch && Array.isArray(s.patch.nodes) ? s.patch : null}) : {name: '', patch: null, note: null, ch: null});
+  while (out.length < 32) out.push({name: '', patch: null, note: null, ch: null});
+  return out;
+}
 try { const v = JSON.parse(localStorage.getItem(LIVE_KEY) || 'null'); if (v){ live.slots = v.slots || []; live.bpm = v.bpm || 120; live.count = v.count || 16; live.quant = v.quant || '0'; live.layout = v.layout || 'learned'; } } catch(e){}
-while (live.slots.length < 32) live.slots.push({name: '', patch: null, note: null, ch: null});
-let liveSaveT = null;
+live.slots = cleanSlots(live.slots);
+let liveSaveT = null, liveQuotaWarned = false;
 function liveSave(){
   clearTimeout(liveSaveT);
   liveSaveT = setTimeout(() => {
     const data = JSON.stringify({slots: live.slots, bpm: live.bpm, count: live.count, quant: live.quant, layout: live.layout});
-    try { localStorage.setItem(LIVE_KEY, data); } catch(e){ toast('This set is too big to keep in the app. Use Export set… to save it as a file.'); }
+    // Too big for the browser's storage: say so once (not on every change), and keep working.
+    try { localStorage.setItem(LIVE_KEY, data); liveQuotaWarned = false; } catch(e){ if (!liveQuotaWarned){ liveQuotaWarned = true; toast('This set is too big to keep in the app. Use Export set… to save it as a file.'); } }
   }, 250);
 }
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -9284,7 +9614,10 @@ function remapPatch(src){
   return d;
 }
 // Beats since the Clips transport started (from MIDI clock ticks when synced).
-function clipPos(){ return live.extSync && live.ticks > 0 ? live.ticks/24 : (performance.now() - live.t0)/1000*live.bpm/60; }
+// Without MIDI clock: the beats counted up to the last tempo change (beat0), plus the time since then at the current tempo,
+// so changing the tempo never moves the beat grid (a queued clip still starts on the beat it was waiting for).
+function freePos(){ return live.beat0 + (performance.now() - live.t0)/1000*live.bpm/60; }
+function clipPos(){ return live.extSync && live.ticks > 0 ? live.ticks/24 : freePos(); }
 function clipTrigger(i){
   const sl = live.slots[i]; if (!sl || !sl.patch) return;
   clipsBpm();
@@ -9293,10 +9626,18 @@ function clipTrigger(i){
   clipLaunch(i);
 }
 // The playing clip's patch keeps every change you make, in any mode.
-function saveActiveClip(d){ if (live.active < 0 || !live.slots[live.active] || live.fadeState) return; live.slots[live.active].patch = d || serialize(); liveSave(); }
+// Slots keep their own copy, so later edits to the running patch never reach into another slot.
+const copyPatch = d => JSON.parse(JSON.stringify(d));
+function saveActiveClip(d){ if (live.active < 0 || !live.slots[live.active] || live.fadeState) return; live.slots[live.active].patch = copyPatch(d || serialize()); liveSave(); }
+// The patch-wide fader bank from a saved patch (none saved: the usual 8 faders, all at zero, nothing linked).
+function bankFrom(d){
+  if (d.bank){ bank.count = d.bank.count || 8; bank.vals = (d.bank.vals || []).concat(Array(16).fill(0)).slice(0, 16); bank.maps = copyPatch(d.bank.maps || []); }
+  else { bank.count = 8; bank.vals = Array(16).fill(0); bank.maps = []; }
+}
 function clipLaunch(i){
-  const sl = live.slots[i]; if (!sl || !sl.patch) return;
-  live.pending = null;
+  const sl = live.slots[i];
+  live.pending = null; // cleared first, so a queued launch of a slot that was emptied doesn't retry every frame
+  if (!sl || !sl.patch){ liveRender(); return; }
   if (live.fadeState) clipFinish();
   saveActiveClip();
   const d = remapPatch(sl.patch);
@@ -9309,17 +9650,23 @@ function clipLaunch(i){
     const nn = addNode(s.type, s.x, s.y, s.params, s.id); if (!nn) continue;
     nn.parent = s.parent || undefined; if (s.collapsed) setCollapsed(nn, true);
     // A camera that's already running keeps running: the new clip borrows its picture, so there's no black flash.
+    // Same camera: the new module asks for the device the old one is really using ('' = the default camera,
+    // which only counts as the same when the old module was also on the default).
     if (nn.type === 'camera'){
-      const o = oldIds.map(id => nodes.get(id)).find(m => m && m.type === 'camera' && m.stream && !m.sharedOut && (m.params.deviceId || '') === (nn.params.deviceId || ''));
-      if (o){ nn.stream = o.stream; nn.video.srcObject = o.stream; nn.video.play().catch(() => {}); o.sharedOut = true; if (nn.btn){ nn.btn.textContent = 'Stop camera'; nn.btn.classList.add('on'); } if (nn.status) nn.status.textContent = (o.status && o.status.textContent !== 'Off') ? o.status.textContent : 'On'; }
+      const want = nn.params.deviceId || '';
+      const same = m => { const have = m.params.deviceId || ''; if (!want) return !have; if (have === want) return true;
+        try { const t = m.stream.getVideoTracks()[0]; return !!t && t.getSettings().deviceId === want; } catch(e){ return false; } };
+      const o = oldIds.map(id => nodes.get(id)).find(m => m && m.type === 'camera' && m.stream && !m.sharedOut && same(m));
+      if (o){ nn.camH = o.camH; nn.stream = o.stream; nn.video.srcObject = o.stream; nn.video.play().catch(() => {}); o.sharedOut = true; if (nn.btn){ nn.btn.textContent = 'Stop camera'; nn.btn.classList.add('on'); } if (nn.status) nn.status.textContent = (o.status && o.status.textContent !== 'Off') ? o.status.textContent : 'On'; }
     }
   }
-  const ok = id => id === 'main' || id === 'rec' || nodes.has(id);
-  const newEdges = (d.edges || []).filter(e => ok(e.from.node) && ok(e.to.node));
+  // Only cables whose both ends exist (as when opening a patch file).
+  const newEdges = (d.edges || []).filter(e => e && e.from && e.to && nodes.has(e.from.node) && nodes.has(e.to.node)
+    && nodes.get(e.from.node).jacks['out:' + e.from.port] && nodes.get(e.to.node).jacks['in:' + e.to.port]);
   const newMain = (newEdges.find(e => e.to.node === 'main' && e.to.port === 'in') || {}).from;
   // The patch-wide settings switch to the new clip straight away.
   presets = d.presets || []; activePreset = typeof d.activePreset === 'number' ? d.activePreset : -1; midiMap = d.midiMap || []; keyMap = d.keyMap || [];
-  if (d.bank){ bank.count = d.bank.count || 8; bank.vals = (d.bank.vals || []).concat(Array(16).fill(0)).slice(0, 16); bank.maps = d.bank.maps || []; } else { bank.maps = []; }
+  bankFrom(d);
   perf.panels = (d.perform && d.perform.panels) || {}; perf.locked = !!(d.perform && d.perform.locked);
   setPatchBg(d.bg || null);
   for (const x of decor) x.el.remove(); decor = []; for (const dt of d.decor || []) addDecor(dt);
@@ -9355,9 +9702,12 @@ function liveTick(){
   if (live.pending && clipPos() >= live.pending.at - 0.01) clipLaunch(live.pending.i);
   if (live.on && live.pending && frameNo % 8 === 0){ const el = liveGrid.children[live.pending.i]; if (el) el.classList.toggle('blink'); }
 }
+// The hidden tempo module for Clips and Simple mode. It always lives in the main patch (never inside a group,
+// so deleting a group can't take it away).
 function clipsBpm(){
   let b = nodes.get(live.bpmId);
-  if (!b){ b = addNode('bpm', 0, 0, {bpm: live.bpm, sys: true}); b.noSave = true; b.params.sys = true; live.bpmId = b.id; applyScope(); }
+  if (!b){ const keep = scope; scope = null; try { b = addNode('bpm', 0, 0, {bpm: live.bpm, sys: true}); } finally { scope = keep; } b.noSave = true; b.params.sys = true; live.bpmId = b.id; applyScope(); }
+  b.parent = undefined;
   return b;
 }
 function liveEnter(){ if (live.on) return; live.on = true; document.body.classList.add('live'); clipsBpm(); liveRender(); }
@@ -9391,8 +9741,8 @@ function liveRender(){
     file.addEventListener('change', async () => { const f = file.files[0]; file.value = ''; if (!f) return; try { const d = JSON.parse(await f.text()); if (!Array.isArray(d.nodes)) throw new Error('not a ...Seeds patch'); s.patch = d; s.name = (d.name && d.name !== 'Untitled') ? d.name : f.name.replace(/(\.seeds)?\.json$/i, ''); liveSave(); liveRender(); } catch(err){ toast('Couldn’t load that patch: ' + err.message); } });
     const menu = h('div', {class:'lbtns'},
       h('button', {class:'btn', text:'Load patch…', onclick: e => { e.stopPropagation(); file.click(); }}),
-      h('button', {class:'btn', text:'Use current patch', title:'Put the patch that’s running now into this clip', onclick: e => { e.stopPropagation(); s.patch = serialize(); s.name = patchName && patchName !== 'Untitled' ? patchName : 'Clip ' + (i + 1); liveSave(); liveRender(); }}),
-      s.patch ? h('button', {class:'btn', text:'Clear', onclick: e => { e.stopPropagation(); if (live.active === i) live.active = -1; s.patch = null; liveSave(); liveRender(); }}) : null);
+      h('button', {class:'btn', text:'Use current patch', title:'Put the patch that’s running now into this clip', onclick: e => { e.stopPropagation(); s.patch = copyPatch(serialize()); s.name = patchName && patchName !== 'Untitled' ? patchName : 'Clip ' + (i + 1); liveSave(); liveRender(); }}),
+      s.patch ? h('button', {class:'btn', text:'Clear', onclick: e => { e.stopPropagation(); if (live.pending && live.pending.i === i) live.pending = null; if (live.active === i){ if (live.fadeState) clipFinish(); live.active = -1; } s.patch = null; liveSave(); liveRender(); }}) : null);
     const trans = h('select', {class:'ltrans', 'aria-label':'How this clip comes in'}, h('option', {value:'fade', text:'Crossfade'}), h('option', {value:'sync', text:'Fade in beats'}), h('option', {value:'cut', text:'Cut'}));
     trans.value = s.trans || 'fade';
     const fade = h('input', {type:'range', min: 0.1, max: 10, step: 0.1, value: s.fade ?? 1.5, 'aria-label':'Fade time'});
@@ -9419,13 +9769,15 @@ function liveRender(){
   lay.replaceChildren(h('option', {value:'learned', text:'Learned notes'}), ...Object.entries(LAYOUTS).map(([k, L]) => h('option', {value: k, text: L.name})), ...userLayouts.map(L => h('option', {value: 'u:' + L.name, text: L.name + ' (saved)'})));
   lay.value = live.layout;
 }
+// Tap tempo (Clips and Simple mode share it): taps within 2.5 s of each other set the tempo.
+let taps = [];
+function tapTempo(){ const now = performance.now(); taps = taps.filter(t => now - t < 2500); taps.push(now); if (taps.length >= 2) setClipsBpm((60000/((taps[taps.length-1] - taps[0])/(taps.length - 1))).toFixed(1)); }
 // Clips tempo: drives quantized launches, beat-length fades and every Sync BPM effect in the clips.
-function setClipsBpm(v){ live.bpm = Math.max(20, Math.min(2000, +v || 120)); const b = nodes.get(live.bpmId); if (b) setParam(b, 'bpm', live.bpm); document.getElementById('lbpm').value = (+live.bpm).toFixed(1); const sb = document.getElementById('sbpm'); if (sb) sb.value = (+live.bpm).toFixed(1); liveSave(); }
+function setClipsBpm(v){ live.beat0 = freePos(); live.t0 = performance.now(); live.bpm = Math.max(20, Math.min(2000, +v || 120)); const b = nodes.get(live.bpmId); if (b) setParam(b, 'bpm', live.bpm); document.getElementById('lbpm').value = (+live.bpm).toFixed(1); const sb = document.getElementById('sbpm'); if (sb) sb.value = (+live.bpm).toFixed(1); liveSave(); }
 {
   const inp = document.getElementById('lbpm'); inp.value = live.bpm;
   inp.addEventListener('change', () => setClipsBpm(inp.value));
-  let taps = [];
-  document.getElementById('ltap').addEventListener('click', () => { const now = performance.now(); taps = taps.filter(t => now - t < 2500); taps.push(now); if (taps.length >= 2) setClipsBpm((60000/((taps[taps.length-1] - taps[0])/(taps.length - 1))).toFixed(1)); });
+  document.getElementById('ltap').addEventListener('click', tapTempo);
   document.getElementById('lsync').addEventListener('click', () => { live.extSync = !live.extSync; if (live.extSync){ midiInit().catch(err => toast(err.message)); toast('Following MIDI clock. Start your drum machine or sequencer.'); } liveRender(); });
   const q = document.getElementById('lquant'); q.replaceChildren(...QUANTS.map(([v, l]) => h('option', {value: v, text: l}))); q.value = live.quant;
   q.addEventListener('change', () => { live.quant = q.value; liveSave(); });
@@ -9445,18 +9797,24 @@ document.getElementById('lexport').addEventListener('click', () => downloadJson(
 {
   const f = document.getElementById('limportf');
   document.getElementById('limport').addEventListener('click', () => f.click());
-  f.addEventListener('change', async () => { const file = f.files[0]; f.value = ''; if (!file) return; try { const d = JSON.parse(await file.text()); if (!Array.isArray(d.slots)) throw new Error('not a clips set'); live.slots = d.slots.slice(0, 32); while (live.slots.length < 32) live.slots.push({name:'', patch:null, note:null, ch:null}); live.bpm = d.bpm || live.bpm; live.count = d.count || Math.max(2, Math.min(32, d.slots.length)); live.quant = d.quant || live.quant; live.active = -1; liveSave(); liveRender(); toast('Loaded the clips set.'); } catch(e){ toast('Couldn’t load that set: ' + e.message); } });
+  f.addEventListener('change', async () => { const file = f.files[0]; f.value = ''; if (!file) return; try { const d = JSON.parse(await file.text()); if (!Array.isArray(d.slots)) throw new Error('not a clips set'); if (live.fadeState) clipFinish(); live.pending = null; live.slots = cleanSlots(d.slots); live.bpm = d.bpm || live.bpm; live.count = d.count || Math.max(2, Math.min(32, d.slots.length)); live.quant = d.quant || live.quant; live.active = -1; liveSave(); liveRender(); toast('Loaded the clips set.'); } catch(e){ toast('Couldn’t load that set: ' + e.message); } });
 }
 // MIDI clock: counts ticks for quantizing and works out the tempo when Sync is on.
+// t is when the message arrived (the MIDI event's own time stamp), so a busy frame doesn't make ticks look late.
 let clkTimes = [];
-function clipsClock(st){
-  if (st === 0xFA){ live.ticks = 0; clkTimes = []; if (live.extSync){ live.t0 = performance.now(); } return; }
-  if (st === 0xFC) return;
+function clipsClock(st, t){
+  const now = t || performance.now();
+  if (st === 0xFA){ live.ticks = 0; clkTimes = []; if (live.extSync){ live.t0 = now; live.beat0 = 0; } return; }
+  // Stop and Continue: the gap while stopped must not count as one very slow beat.
+  if (st === 0xFC || st === 0xFB){ clkTimes = []; return; }
   if (st !== 0xF8) return;
   live.ticks++;
-  const now = performance.now(); clkTimes.push(now); if (clkTimes.length > 48) clkTimes.shift();
-  if (live.extSync && clkTimes.length >= 24 && live.ticks % 12 === 0){
-    const iv = (clkTimes[clkTimes.length - 1] - clkTimes[0])/(clkTimes.length - 1), bpm = 60000/(iv*24);
+  clkTimes.push(now); if (clkTimes.length > 48) clkTimes.shift();
+  if (live.extSync && clkTimes.length >= 36 && live.ticks % 12 === 0){
+    // Tempo from the middle value of every one-beat span (24 ticks) in the window, so one late tick can't swing it.
+    const spans = []; for (let k = 24; k < clkTimes.length; k++) spans.push(clkTimes[k] - clkTimes[k - 24]);
+    spans.sort((a, b) => a - b);
+    const beat = spans[spans.length >> 1], bpm = 60000/beat;
     if (bpm > 19 && bpm < 2001 && Math.abs(bpm - live.bpm) > 0.05) setClipsBpm(bpm.toFixed(1));
   }
 }
@@ -9565,9 +9923,10 @@ function bankDrag(e, i, jack){
   };
   let hov = null;
   const mv = ev => { ln.setAttribute('x2', ev.clientX); ln.setAttribute('y2', ev.clientY); const r = rowAt(ev.clientX, ev.clientY); if (r !== hov){ if (hov) hov.classList.remove('banktarget'); hov = r; if (hov) hov.classList.add('banktarget'); } };
+  const stop = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', cancel); svgEl.remove(); if (hov) hov.classList.remove('banktarget'); };
+  const cancel = () => stop(); // the drag was interrupted (touch taken over by the system): just tidy up
   const up = ev => {
-    window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); svgEl.remove();
-    if (hov) hov.classList.remove('banktarget');
+    stop();
     const row = rowAt(ev.clientX, ev.clientY);
     if (!row){ toast('Drop the line onto a slider (or its purple jack) in a module.'); return; }
     const n = nodes.get(row._bk ? row._bk.node : row.dataset.node), key = row._bk ? row._bk.key : row.dataset.key;
@@ -9577,7 +9936,7 @@ function bankDrag(e, i, jack){
     toast('Fader ' + (i + 1) + ' → ' + DEFS[n.type].title + ': ' + nice + '. ' + (bankCtl(n, key) === 'menu' ? 'The fader steps through its choices; move it to the current one to pick it up.' : 'Move the fader past the control’s value to pick it up.'));
     bankMarks(); bankHints(); save();
   };
-  window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+  window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', cancel);
 }
 document.getElementById('bankminus').addEventListener('click', () => { bank.count = Math.max(1, bank.count - 1); bankRender(); save(); });
 document.getElementById('bankplus').addEventListener('click', () => { bank.count = Math.min(16, bank.count + 1); bankRender(); save(); });
@@ -9664,8 +10023,7 @@ function picChanged(){
 {
   const inp = document.getElementById('sbpm'); inp.value = live.bpm;
   inp.addEventListener('change', () => { clipsBpm(); setClipsBpm(inp.value); inp.value = live.bpm; });
-  let taps = [];
-  document.getElementById('stap').addEventListener('click', () => { clipsBpm(); const now = performance.now(); taps = taps.filter(t => now - t < 2500); taps.push(now); if (taps.length >= 2){ setClipsBpm((60000/((taps[taps.length-1] - taps[0])/(taps.length - 1))).toFixed(1)); inp.value = live.bpm; } });
+  document.getElementById('stap').addEventListener('click', () => { clipsBpm(); tapTempo(); inp.value = live.bpm; });
 }
 /* ---------- Desktop app updates (desktop/preload.js → window.seedsNative.updates) ----------
    Only in the desktop app, as in ...Thunder Plus: File ▾ → Check for updates…, and when a newer version is out an Update
@@ -9709,19 +10067,21 @@ document.getElementById('femm').addEventListener('click', () => {
   document.body.append(ov);
   requestAnimationFrame(() => requestAnimationFrame(() => ov.classList.add('show')));
   let closed = false;
-  const close = () => { if (closed) return; closed = true; ov.classList.remove('show'); setTimeout(() => ov.remove(), 500); };
+  const esc = e => { if (e.key === 'Escape') close(); };
+  const close = () => { if (closed) return; closed = true; window.removeEventListener('keydown', esc); ov.classList.remove('show'); setTimeout(() => ov.remove(), 500); };
   ov.addEventListener('click', close);
   // A wink after it appears, then it fades away by itself after 3 seconds.
   const wk = ov.querySelector('.wink');
   setTimeout(() => wk && wk.classList.add('on'), 1100); setTimeout(() => wk && wk.classList.remove('on'), 1550);
   setTimeout(close, 3000);
-  window.addEventListener('keydown', function k(e){ if (e.key === 'Escape'){ close(); window.removeEventListener('keydown', k); } });
+  window.addEventListener('keydown', esc);
 });
 // Native drag-and-drop of selected text or pictures is never wanted inside the app (files dragged in from outside still work).
 document.addEventListener('dragstart', e => { if (!(e.target.closest && e.target.closest('[draggable="true"]'))) e.preventDefault(); });
 document.addEventListener('pointerdown', e => { if (e.target.closest && e.target.closest('.bank, .node, .ppanel, .scard') && !e.target.closest('input[type=text], input[type=number], textarea, [contenteditable="true"]')) { const sel = window.getSelection && window.getSelection(); if (sel && sel.type === 'Range') sel.removeAllRanges(); } }, true);
 { const b = document.getElementById('lbarcoll'); const set = on => { document.body.classList.toggle('lbarmin', on); b.title = on ? 'Show all controls' : 'Show fewer controls'; try { localStorage.setItem(STORE + ':lbarmin', on ? '1' : ''); } catch(e){} };
-  set(!!localStorage.getItem(STORE + ':lbarmin')); b.addEventListener('click', () => set(!document.body.classList.contains('lbarmin'))); }
+  let was = false; try { was = !!localStorage.getItem(STORE + ':lbarmin'); } catch(e){}
+  set(was); b.addEventListener('click', () => set(!document.body.classList.contains('lbarmin'))); }
 /* ---------- Docked jacks: double-click to shrink to just the jack ---------- */
 { let mini = {}; try { mini = JSON.parse(localStorage.getItem(STORE + ':minidock') || '{}') || {}; } catch(e){}
   const apply = () => document.querySelectorAll('.dock .dockport').forEach(p => { const k = p.querySelector('.jack') && p.querySelector('.jack').dataset.port; p.classList.toggle('mini', !!mini[(p.closest('#docktop') ? 'main:' : 'rec:') + k]); });
@@ -9769,7 +10129,8 @@ document.addEventListener('pointerdown', e => { if (e.target.closest && e.target
     w(0, 'RIFF'); v.setUint32(4, 36 + n*2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
     v.setUint32(24, sr, true); v.setUint32(28, sr*2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n*2, true);
     for (let i = 0; i < n; i++){ const env = Math.min(1, i/800, (n - i)/800); v.setInt16(44 + i*2, Math.sin(i/sr*2*Math.PI*440)*9000*env, true); }
-    const a = new Audio(URL.createObjectURL(new Blob([buf], {type:'audio/wav'})));
+    const url = URL.createObjectURL(new Blob([buf], {type:'audio/wav'})), a = new Audio(url);
+    const free = () => URL.revokeObjectURL(url); a.addEventListener('ended', free); a.addEventListener('error', free); setTimeout(free, 5000);
     if (settings.audioOut && a.setSinkId) a.setSinkId(settings.audioOut).catch(() => {});
     a.play().then(() => toast('Test tone 2: playing a plain sound file.')).catch(err => toast('Test tone 2 couldn’t play: ' + (err.message || err.name)));
   });
