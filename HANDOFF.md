@@ -15,6 +15,25 @@ Start a new chat with: *"Clone matthettich/seeds and read HANDOFF.md, then …"*
 - User tests on: Windows laptop (Intel Core Ultra 9, RTX 4070 Laptop GPU, audio interface on ASIO) and MacBook Pro M4. Mac ≈120 fps, Windows was ≈33–50 fps.
 - User is not a developer: give spelled-out build steps (PowerShell vs Command Prompt, `cd` paths, file sizes to check), and always say which files changed (just the HTML, or `main.js`/`preload.js` too).
 
+## Nov 3 review (senior code review + fixes)
+- **Live (`main`) hotfixes:** frame loop can't freeze (next frame booked first; each module's render caught on its own);
+  Tint GPU leak (`n._gt` was both GPU pictures and a timestamp; timestamp is now `n._genT`); deleted audio modules unplugged
+  and Presentation panels removed in `removeNode`; Delete/copy/paste only in Patch mode (`patchEditable()`); a broken patch
+  file or autosave never wipes/overwrites (autosave copy goes to Settings → Backups); mic start has a request token like
+  the camera; Record can't double-start (`recActive`, `recBusy`); Video mixer keeps cables into hidden inputs.
+- **Beta:** everything else from the review — GPU upload textures owned per module (always `texImage2D`: `texSubImage2D`
+  takes Chrome off its fast video path and blocked the main thread), shader failures cached, Restart audio keeps mic /
+  video player / reverb / distortion, `syncAudio` only rewires when audio connections change, audio modules have
+  `destroy`, GIF/Image/Stutter/Looper/Reverb memory and CPU fixes, cables not redrawn when unchanged, preset delete fixes
+  morph indexes, clip slots/examples store copies, MIDI clock median tempo + Stop/Continue, quantize keeps beat position
+  across tempo changes, undo history capped by size, `removeNodes()` for batch deletes, `pointerSession()` drag helper,
+  single-instance desktop app, updater stream/reader cleanup.
+- **Luma key:** the switch's label was backwards; the *label* changed to "Key out dark parts" (picture unchanged, so
+  saved patches look the same).
+- **Not done yet:** move the Clips set and fonts from localStorage to IndexedDB; drive frames from a Worker/output window
+  when the web tab is hidden (Electron is fine); bigger structure work (one mode state machine, recorder session object,
+  shared audio-effect builder). Test scripts used: smoke test + targeted Playwright checks (headless, fake camera/mic).
+
 ## The app file (`index.html`, ~9.7k lines, ~886 KB)
 Single file, no dependencies. Landmarks (line numbers approximate):
 
