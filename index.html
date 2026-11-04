@@ -1301,7 +1301,40 @@ function drawCover(ctx, src, W, H){
 function fitCanvas(cv, w, h){ if (cv.width !== w || cv.height !== h){ cv.width = w; cv.height = h; } }
 
 function row(label, ctl, val){ return h('label', {class: val ? 'row' : 'row wide'}, h('span', {text: label}), ctl, val || null); }
-function slider(n, key, label, min, max, step, fmt, onchange, modable = true){
+// Typed values: a number with its unit multiplier (kHz → ×1000, ms → seconds), so "1.5k", "1500 Hz" and "1.5 kHz" all mean the same.
+// Left/Right readouts (Pan) count Left as negative; Center is zero.
+const _numIn = s => { s = String(s).trim(); if (/^center$/i.test(s)) return 0; const m = s.replace(/−/g, '-').replace(',', '.').match(/-?\d*\.?\d+/); if (!m) return NaN; const v = parseFloat(m[0]); return /^l\b/i.test(s) ? -Math.abs(v) : v; };
+const _unitMul = s => { s = String(s); return /\d\s*k(hz)?\b/i.test(s) ? 1000 : /\d\s*ms\b/i.test(s) ? 0.001 : /\d\s*s$/i.test(s.trim()) ? 1 : /\d\s*hz\b/i.test(s) ? 1 : null; };
+// Turn what was typed back into a slider value, whatever the readout shows (percent, 200%, Hz, ms or s, L/R…).
+// A bare number takes the unit of the readout it replaced.
+function sliderFromText(txt, shown, fmt, min, max, step, cur){
+  const raw = _numIn(txt); if (isNaN(raw)) return NaN;
+  const disp = v => { try { const s = fmt(v), x = _numIn(s); return x*(_unitMul(s) != null ? _unitMul(s) : 1); } catch(e){ return NaN; } };
+  // A bare number is in the readout's unit. On sliders whose readout switches unit, other units are tried when that's out of range ("440" under "1.2 kHz" means 440 Hz).
+  let lo = Infinity, hi = -Infinity; for (let i = 0; i <= 20; i++){ const d = disp(min + (max - min)*i/20); if (isFinite(d)){ lo = Math.min(lo, d); hi = Math.max(hi, d); } }
+  const typedMul = _unitMul(txt), sm = _unitMul(shown);
+  let fmtMin = '', fmtMax = ''; try { fmtMin = fmt(min); fmtMax = fmt(max); } catch(e){}
+  const mixed = _unitMul(fmtMin) !== _unitMul(fmtMax); // readouts that switch unit along the slider (ms → s, Hz → kHz)
+  const muls = typedMul != null ? [typedMul] : mixed ? [sm != null ? sm : 1, 1, 0.001, 1000] : [sm != null ? sm : 1];
+  const fits = x => x >= lo - Math.abs(lo)*1e-6 - 1e-9 && x <= hi + Math.abs(hi)*1e-6 + 1e-9;
+  const target = raw*(muls.find(m => fits(raw*m)) ?? muls[0]);
+  // Straight-line readouts (plain numbers, percents, ms): solve exactly.
+  const d0 = disp(min), d1 = disp(max), a = (d1 - d0)/(max - min);
+  if (isFinite(a) && a !== 0 && isFinite(d0)){
+    const tol = Math.abs(d1 - d0)*0.02 + 1e-9; let lin = true;
+    for (let i = 1; i < 10 && lin; i++){ const v = min + (max - min)*i/10, d = disp(v); if (!(Math.abs(d - (d0 + a*(v - min))) <= tol)) lin = false; }
+    if (lin) return min + (target - d0)/a;
+  }
+  // Anything else (Hz curves, Left/Right): pick the slider position whose readout is nearest, closest to where it was on a tie.
+  const N = Math.max(2, Math.min(2001, Math.round((max - min)/(step || (max - min)/1000)) + 1));
+  let best = NaN, bd = Infinity;
+  const tryV = v => { const d = Math.abs(disp(v) - target); if (d < bd - 1e-9 || (Math.abs(d - bd) <= 1e-9 && Math.abs(v - cur) < Math.abs(best - cur))){ bd = d; best = v; } };
+  for (let i = 0; i < N; i++) tryV(min + (max - min)*i/(N - 1));
+  if (!isNaN(best) && step && (max - min)/(N - 1) > step*1.5){ const span = (max - min)/(N - 1), b0 = best; for (let v = Math.max(min, b0 - span); v <= Math.min(max, b0 + span); v += step) tryV(v); }
+  return best;
+}
+// parse (optional): turns the typed text into a value; without it the readout is worked backwards (sliderFromText).
+function slider(n, key, label, min, max, step, fmt, onchange, modable = true, parse){
   const out = h('span', {class:'val', title:'Double-click to type a value'});
   const inp = h('input', {type:'range', min, max, step, 'aria-label': label});
   inp.value = n.params[key];
@@ -1311,18 +1344,17 @@ function slider(n, key, label, min, max, step, fmt, onchange, modable = true){
   out.addEventListener('dblclick', e => {
     e.stopPropagation();
     if (out.querySelector('input')) return;
-    const shown = fmt(n.params[key]), num = (shown.match(/[-−]?\d+(\.\d+)?/) || [''])[0].replace('−', '-');
+    const shown = fmt(n.params[key]), num = /^l\b/i.test(shown.trim()) ? String(_numIn(shown)) : (shown.match(/[-−]?\d+(\.\d+)?/) || [''])[0].replace('−', '-');
     const ed = h('input', {type:'text', class:'valedit', 'aria-label': label + ' value', inputmode:'decimal'});
     ed.value = num; out.replaceChildren(ed); ed.focus(); ed.select();
     let done = false;
     const finish = commit => {
       if (done) return; done = true;
-      if (commit){
-        const txt = ed.value.trim().replace(',', '.');
-        let v = parseFloat(txt.replace('−', '-'));
-        if (!isNaN(v)){
-          if (fmt(max).includes('%')) v /= 100;
-          else if (/ms/i.test(txt) && / s$/.test(fmt(max))) v /= 1000;
+      // Left as it was: keep the exact value (the readout is rounded).
+      if (commit && ed.value.trim() !== num){
+        const txt = ed.value.trim();
+        let v = parse ? parse(txt) : sliderFromText(txt, shown, fmt, min, max, step, n.params[key]);
+        if (typeof v === 'number' && !isNaN(v)){
           v = Math.max(min, Math.min(max, v));
           n.params[key] = +v.toFixed(6); inp.value = v; onchange && onchange(); save();
         }
@@ -1402,7 +1434,7 @@ function drawScope(cv, hist, hi, color, unipolar){
   x.strokeStyle = color; x.lineWidth = 2*dpr; x.beginPath();
   const L = hist.length;
   for (let i = 0; i < L; i++){
-    const v = hist[(hi + i) % L], px = i/(L - 1)*W, py = base - v*amp;
+    const v = hist[(hi + i) % L], px = L > 1 ? i/(L - 1)*W : W, py = base - v*amp;
     i ? x.lineTo(px, py) : x.moveTo(px, py);
   }
   x.stroke();
@@ -1416,7 +1448,8 @@ function P(n, key){
   let r = base + v * (m.max - m.min); // full depth can reach every part of the slider from any starting point
   r = Math.max(m.min, Math.min(m.max, r));
   r = Math.round((r - m.min) / m.step) * m.step + m.min;
-  return +r.toFixed(6);
+  // Rounding to the step can land just past the top (when the range isn't a whole number of steps).
+  return +Math.min(m.max, r).toFixed(6);
 }
 function modPass(){
   if (frameNo % 3) return; // the eye doesn't need slider readouts redrawn every frame
@@ -1511,6 +1544,8 @@ class FrameBuf {
   trim(now, keep, maxN){
     while (this.buf.length > 1 && this.buf[1].t < now - keep) this.pool.push(this.buf.shift());
     while (this.buf.length > maxN) this.pool.push(this.buf.shift());
+    // Keep only a few spare pictures for reuse; after a long delay is shortened the rest are let go.
+    if (this.pool.length > 4) this.pool.length = 4;
   }
 }
 function frameAt(frames, t){
@@ -1641,11 +1676,11 @@ const GLX = (() => {
 precision highp float; in vec2 uv; out vec4 o; uniform sampler2D tex0, tex1, tex2, tex3; uniform vec2 res; uniform float time;
 vec2 cov(vec2 u, vec2 s){ float ar = s.x/s.y, ao = res.x/res.y; vec2 k = ar > ao ? vec2(ao/ar, 1.) : vec2(1., ar/ao); return (u - .5)*k + .5; }
 `;
-  let gen = 1, lost = false, progs, uploads, buf;
+  let gen = 1, lost = false, progs, shared, buf;
   function init(){
     buf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, buf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]), gl.STATIC_DRAW);
-    progs = new Map(); uploads = new WeakMap();
+    progs = new Map(); shared = new Map();
   }
   init();
   // Graphics can reset (for example after sleep); rebuild everything when it comes back.
@@ -1664,45 +1699,102 @@ vec2 cov(vec2 u, vec2 s){ float ar = s.x/s.y, ao = res.x/res.y; vec2 k = ar > ao
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.tex, 0);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
-    dispose(){ if (this.gen === gen && !lost){ gl.deleteTexture(this.tex); gl.deleteFramebuffer(this.fbo); } this.gen = -1; }
+    dispose(){
+      if (this.gen === gen && !lost){ gl.deleteTexture(this.tex); gl.deleteFramebuffer(this.fbo); for (const u of this.m || []) freeUpload(u); }
+      this.m = null; this.gen = -1;
+    }
   }
+  // Shaders are built once. One that fails is remembered as failed, so it isn't rebuilt (and leaked) every frame.
   function prog(src){
-    let p = progs.get(src); if (p) return p;
-    const mk = (type, s) => { const sh = gl.createShader(type); gl.shaderSource(sh, s); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh)); return sh; };
-    const pr = gl.createProgram();
-    gl.attachShader(pr, mk(gl.VERTEX_SHADER, VS)); gl.attachShader(pr, mk(gl.FRAGMENT_SHADER, HEAD + src));
-    gl.bindAttribLocation(pr, 0, 'p'); gl.linkProgram(pr);
-    if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr));
+    let p = progs.get(src); if (p){ if (p.err) throw p.err; return p; }
+    const made = [];
+    const mk = (type, s) => { const sh = gl.createShader(type); made.push(sh); gl.shaderSource(sh, s); gl.compileShader(sh); if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(sh) || 'Shader didn’t compile'); return sh; };
+    let pr = null;
+    try {
+      pr = gl.createProgram();
+      gl.attachShader(pr, mk(gl.VERTEX_SHADER, VS)); gl.attachShader(pr, mk(gl.FRAGMENT_SHADER, HEAD + src));
+      gl.bindAttribLocation(pr, 0, 'p'); gl.linkProgram(pr);
+      if (!gl.getProgramParameter(pr, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(pr) || 'Shader didn’t link');
+    } catch(e){
+      for (const sh of made) gl.deleteShader(sh);
+      if (pr) gl.deleteProgram(pr);
+      // A lost graphics context makes every build fail; don't remember those, they work again after the restore.
+      if (!gl.isContextLost()) progs.set(src, {err: e});
+      throw e;
+    }
+    // The linked program keeps what it needs; the shader objects can go.
+    for (const sh of made){ gl.detachShader(pr, sh); gl.deleteShader(sh); }
     p = {pr, loc: {}}; progs.set(src, p); return p;
   }
+  // Pictures from the camera, video files and 2D canvases are copied to the GPU into textures owned by
+  // the module that reads them (one per input slot), reused frame after frame and freed with the module.
+  // Camera and video elements are also shared through a small cache, so a camera read by several effects
+  // is still copied only once a frame; the cache keeps up to 16 elements and frees the oldest.
+  const SHARED_MAX = 16; let pruneF = 0;
+  function uploadInto(u, v){
+    const [w, hh] = dims(v);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    if (u.w === w && u.h === hh) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, v);
+    else { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v); u.w = w; u.h = hh; }
+    u.f = frameNo; u.ver = v.__ver; u.src = v;
+  }
+  function newUpload(){ const u = {tex: gl.createTexture(), f: -1, w: -1, h: -1, src: null, gen}; gl.bindTexture(gl.TEXTURE_2D, u.tex); texParams(); return u; }
+  function freeUpload(u){ if (u && u.gen === gen && !lost) gl.deleteTexture(u.tex); }
+  // Media elements (camera, video player) and generator pictures (they keep one canvas): one shared texture each,
+  // uploaded once a frame, or for generators only when their version changes.
+  function sharedUpload(v){
+    // Every few seconds, elements nobody has read for a while (a removed camera, player or generator) are let go.
+    if (frameNo - pruneF > 300){ pruneF = frameNo; for (const [k, old] of shared) if (old.used < frameNo - 300){ shared.delete(k); freeUpload(old); } }
+    let u = shared.get(v);
+    if (u && u.gen !== gen){ shared.delete(v); u = null; }
+    if (u){ u.used = frameNo; shared.delete(v); shared.set(v, u); } // most recently used goes last
+    else {
+      u = newUpload(); u.used = frameNo; shared.set(v, u);
+      while (shared.size > SHARED_MAX){ const [k, old] = shared.entries().next().value; shared.delete(k); freeUpload(old); }
+    }
+    gl.bindTexture(gl.TEXTURE_2D, u.tex);
+    if (u.src !== v || (v.__ver !== undefined ? u.ver !== v.__ver : u.f !== frameNo)) uploadInto(u, v);
+    return u;
+  }
+  // Canvases (often a different one each frame from Video delay, Slit-scan, Looper): the reading module's own texture for that slot.
+  function slotUpload(owner, i, v){
+    const m = owner.m || (owner.m = []);
+    let u = m[i];
+    if (!u || u.gen !== gen){ u = m[i] = newUpload(); }
+    gl.bindTexture(gl.TEXTURE_2D, u.tex);
+    if (u.src !== v || u.f !== frameNo) uploadInto(u, v);
+    return u;
+  }
+  // Each pass draws into a target (a module's picture, or the screen canvas when target is null).
+  // The target picture owns the upload textures for its 2D inputs; screen copies use screenUp.
+  const screenUp = {m: null};
   function pass(src, target, inputs, uni, W, H){
     const p = prog(src);
+    inputs = (inputs || []).map(v => v instanceof Tex && v.gen !== gen ? null : v); // a picture from before a graphics reset is gone
     if (target){ gl.bindFramebuffer(gl.FRAMEBUFFER, target.fbo); W = target.width; H = target.height; }
     else { gl.bindFramebuffer(gl.FRAMEBUFFER, null); if (cv.width !== W || cv.height !== H){ cv.width = W; cv.height = H; } }
     gl.viewport(0, 0, W, H); gl.useProgram(p.pr);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf); gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
     const L = name => (name in p.loc) ? p.loc[name] : (p.loc[name] = gl.getUniformLocation(p.pr, name));
     // Empty texture slots are cleared, so a shader never reads the picture it's drawing into (a feedback loop the GPU rejects).
-    for (let i = 0; i < 4; i++) if (!(inputs || [])[i]){ gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, null); }
-    (inputs || []).forEach((v, i) => {
+    for (let i = 0; i < 4; i++) if (!inputs[i]){ gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, null); }
+    const owner = target || screenUp;
+    inputs.forEach((v, i) => {
       if (!v) return;
       gl.activeTexture(gl.TEXTURE0 + i);
       if (v instanceof Tex) gl.bindTexture(gl.TEXTURE_2D, v.tex);
-      else {
-        // Camera frames and 2D canvases are uploaded once per frame, however many GPU modules read them.
-        let u = uploads.get(v);
-        if (!u){ u = {tex: gl.createTexture(), f: -1}; gl.bindTexture(gl.TEXTURE_2D, u.tex); texParams(); uploads.set(v, u); }
-        gl.bindTexture(gl.TEXTURE_2D, u.tex);
-        const fresh = v.__ver !== undefined ? u.ver !== v.__ver : u.f !== frameNo; // generator pictures carry a version; others upload once a frame
-        if (fresh){ gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v); u.f = frameNo; u.ver = v.__ver; }
-      }
+      else if (v instanceof HTMLVideoElement || v.__ver !== undefined) sharedUpload(v);
+      else slotUpload(owner, i, v);
       const l = L('tex' + i); if (l) gl.uniform1i(l, i);
     });
     const lr = L('res'); if (lr) gl.uniform2f(lr, W, H);
-    const lt = L('time'); if (lt) gl.uniform1f(lt, (performance.now()/1000) % 3600);
+    // Shader time wraps every 6 hours (it was every hour), so moving patterns jump far less often; much longer would make
+    // fast patterns step, because the GPU keeps time to about 2 ms at 6 hours (8 ms at a day).
+    const lt = L('time'); if (lt) gl.uniform1f(lt, (performance.now()/1000) % 21600);
     for (const [k, v] of Object.entries(uni || {})){
       const l = L(k); if (!l) continue;
-      if (typeof v === 'number') gl.uniform1f(l, v);
+      if (typeof v === 'number' || typeof v === 'boolean') gl.uniform1f(l, +v);
+      else if (!v || typeof v.length !== 'number') continue;
       else if (v.length === 2) gl.uniform2fv(l, v); else if (v.length === 3) gl.uniform3fv(l, v); else gl.uniform4fv(l, v);
     }
     gl.drawArrays(gl.TRIANGLES, 0, 6);
@@ -1835,6 +1927,9 @@ const PIC_SIZES = ['720', '1080', '1440', '2160'];
 const OUT = {aspect: 'source', res: '1080', fit: 'crop'};
 try { Object.assign(OUT, JSON.parse(localStorage.getItem(STORE + ':outfmt') || '{}')); } catch(e){}
 if (!PIC_SIZES.includes(String(OUT.res))) OUT.res = '1080';
+// A damaged or unknown saved shape would make every size NaN; fall back to following the video.
+if (!['source', '16:9', '4:3', '3:2', '1:1', '4:5', '9:16', '21:9'].includes(OUT.aspect)) OUT.aspect = 'source';
+if (OUT.fit !== 'fit' && OUT.fit !== 'crop') OUT.fit = 'crop';
 const evenPx = v => Math.max(2, Math.round(v/2)*2);
 // Width and height for proportions ar (width ÷ height) at the chosen size: the short side is the Size.
 function sizeFor(ar){ const r = +OUT.res; return ar >= 1 ? [evenPx(r*ar), r] : [r, evenPx(r/ar)]; }
@@ -1847,7 +1942,7 @@ function outDims(src){
   if (OUT.aspect !== 'source') return sizeFor(shapeAr());
   const [sw, sh] = src ? dims(src) : [0, 0]; return sw && sh ? sizeFor(sw/sh) : [0, 0];
 }
-const genSize = n => picDims().map(v => Math.max(2, Math.round(v*QS)));
+const genSize = () => picDims().map(v => Math.max(2, Math.round(v*QS)));
 function barsCanvas(cv, vals, color){
   const dpr = window.devicePixelRatio || 1, W = Math.round(cv.clientWidth*dpr), H = Math.round(cv.clientHeight*dpr);
   if (!W || !H) return; fitCanvas(cv, W, H);
@@ -2093,7 +2188,7 @@ void main(){ vec3 c = S(uv), r;
  else if (mode < 2.5){ vec3 b = blur(2. + amt*8.); r = c + max(b - .45, 0.)*amt*2.5; }
  else if (mode < 3.5) r = mix(c, 1. - c, amt);
  else if (mode < 4.5){ float l = dot(c, vec3(.299,.587,.114)); r = vec3(step(amt, l)); }
- else if (mode < 5.5){ r = mix(c, abs(c - vec3(amt)) + (c.r > amt ? 0. : 0.), 1.); r = vec3(c.r > amt ? 1. - c.r : c.r, c.g > amt ? 1. - c.g : c.g, c.b > amt ? 1. - c.b : c.b); }
+ else if (mode < 5.5){ r = vec3(c.r > amt ? 1. - c.r : c.r, c.g > amt ? 1. - c.g : c.g, c.b > amt ? 1. - c.b : c.b); }
  else if (mode < 6.5){ vec2 px = (1. + amt*3.)/res; vec3 e = S(uv - px) - S(uv + px); float l = dot(e, vec3(.333)); r = vec3(.5 + l*2.); }
  else if (mode < 7.5){ float a = amt*6.2831853; mat3 m = mat3(.299,.587,.114,.299,.587,.114,.299,.587,.114); vec3 g = c*m; vec3 d = c - g; float cs = cos(a), sn = sin(a); vec3 k = vec3(.57735); r = g + d*cs + cross(k, d)*sn + k*dot(k, d)*(1. - cs); }
  else { float l = dot(c, vec3(.299,.587,.114)); r = mix(vec3(l), c, amt*2.); }
@@ -2836,7 +2931,8 @@ let genFps = 30;
 // True when any trigger input changed since the last check, so pulses are never missed while redrawing less often.
 function gatesChanged(n){
   let ch = false; n._gv = n._gv || {};
-  for (const p of DEFS[n.type].ins){ if (p.kind !== 'gate') continue; const v = readIn(n, p.name, 0) > 0.5 ? 1 : 0; if (n._gv[p.name] !== v){ n._gv[p.name] = v; ch = true; } }
+  // High and low the same way trigger inputs read them (rising): anything above zero, so short, weak pulses aren't missed.
+  for (const p of DEFS[n.type].ins){ if (p.kind !== 'gate') continue; const v = readIn(n, p.name, 0) > 0.0001 ? 1 : 0; if (n._gv[p.name] !== v){ n._gv[p.name] = v; ch = true; } }
   return ch;
 }
 
@@ -2864,16 +2960,41 @@ async function applySink(el){
   try { await el.setSinkId(want); } catch(e){ if (want){ try { await el.setSinkId(''); } catch(e2){} } }
 }
 // Restart the audio engine (after changing devices, or if another program grabbed the sound card).
+let audioRestarting = null;
 async function restartAudio(){
-  const old = actx; actx = null;
-  if (old){ try { await old.close(); } catch(e){} }
-  for (const n of nodes.values()){
-    for (const k of ['ain','aout','g','vol','msrc','an','meter']) n[k] = undefined;
-    // An audio file element can only feed one engine, so players get a fresh one (keeping the file and position).
-    if (n.type === 'aplayer' && n.audio){ const o = n.audio, a = new Audio(); a.preload = 'auto'; a.loop = o.loop; if (o.src){ a.src = o.src; a.currentTime = o.currentTime || 0; } const was = !o.paused; o.pause(); n.audio = a; if (was) setTimeout(() => apPlay(n), 100); }
-  }
-  audioProblem = '';
-  ensureAudio(); toast('Audio restarted.');
+  if (audioRestarting) return audioRestarting; // a second press while one is running waits for it
+  audioRestarting = (async () => {
+    // The old engine stays in place while it closes, so modules drawing in the meantime still have a working one.
+    const old = actx;
+    if (old){ try { await Promise.race([old.close(), new Promise(r => setTimeout(r, 1500))]); } catch(e){} }
+    // From here to the end nothing waits, so no frame ever sees the engine half rebuilt.
+    const mics = [];
+    for (const n of nodes.values()){
+      // Audio inputs need their microphone fed into the new engine: they're stopped here and started again below.
+      if (n.type === 'audioin' && n.stream){ mics.push(n); stopMic(n); }
+      for (const k of ['ain','aout','g','vol','msrc','an','meter']) n[k] = undefined;
+      // Remembered values that would stop the new engine's parts being set up: Reverb's echo, Distortion's curve, an input's gain.
+      delete n.irKey; delete n.lastD; delete n.lastGain;
+      // An audio file element can only feed one engine, so players get a fresh one (keeping the file and position).
+      if (n.type === 'aplayer' && n.audio){ const o = n.audio, a = new Audio(); a.preload = 'auto'; a.loop = o.loop; if (o.src){ a.src = o.src; a.currentTime = o.currentTime || 0; } const was = !o.paused; o.pause(); n.audio = a; if (was) setTimeout(() => apPlay(n), 100); }
+      // The same for the Video player's sound: a fresh video element with the same file, position, loop and play state.
+      if (n.type === 'player' && n.video){
+        const o = n.video, v = h('video', {playsinline:true, preload:'auto'}), t = o.currentTime || 0, was = !o.paused && !o.ended;
+        v.muted = true; v.loop = o.loop; v.playbackRate = o.playbackRate; v.onerror = o.onerror;
+        if (o.src){
+          v.src = o.src; v.currentTime = t;
+          v.addEventListener('loadedmetadata', () => { if (Math.abs(v.currentTime - t) > 0.05) try { v.currentTime = t; } catch(e){} }, {once: true});
+        }
+        o.onerror = null; o.pause(); o.remove(); media.append(v); n.video = v; applySink(v);
+        if (was) v.play().catch(() => {});
+      }
+    }
+    audioProblem = ''; actx = null; audioSig = '';
+    ensureAudio();
+    for (const n of mics) if (nodes.get(n.id) === n) startMic(n);
+    toast('Audio restarted.');
+  })();
+  try { await audioRestarting; } finally { audioRestarting = null; }
 }
 function soundState(){
   if (!actx) return {on: false, text: 'Sound is off. Press Sound on (or Start audio in Settings).'};
@@ -2893,19 +3014,29 @@ function makeMeter(src){
   const an = [0,1].map(i => { const a = actx.createAnalyser(); a.fftSize = 1024; a.smoothingTimeConstant = 0; sp.connect(a, i); return a; });
   return {an, buf: new Float32Array(1024), lvl:[-90,-90], pk:[-90,-90], pkT:[0,0], clipT:-1e9, t:0, rf:0};
 }
+// Each audio part gets a number, so the list of connections can be compared from one change to the next.
+const _aIds = new WeakMap(); let _aNext = 1, audioSig = '';
+const aId = o => { let i = _aIds.get(o); if (!i){ i = _aNext++; _aIds.set(o, i); } return i; };
+// Rewires the sound only when the audio connections actually change, so moving a video or control cable mid-show never clicks or drops the sound.
 function syncAudio(){
-  if (!actx) return;
-  for (const n of nodes.values()) if (n.aout) { try { n.aout.disconnect(); } catch(e){} }
+  if (!actx){ audioSig = ''; return; }
+  const links = [], sends = [];
   for (const e of edges){
     if (e.kind !== 'audio') continue;
     const a = nodes.get(e.from.node), b = nodes.get(e.to.node);
     if (!a || !b || !a.aout) continue;
     const dest = DEFS[b.type].audioIn && DEFS[b.type].audioIn(b, e.to.port);
-    if (dest) a.aout.connect(dest);
+    if (dest) links.push([a.aout, dest]);
   }
   // Audio Sends reach every Receive with the same name.
+  for (const r of nodes.values()) if (r.type === 'receive' && r.aout) for (const s of nodes.values()) if (s.type === 'send' && s.ain && s.params.label === r.params.label) sends.push([s.ain, r.aout]);
+  const sig = aId(actx) + '|' + links.map(([a, d]) => aId(a) + '>' + aId(d)).join(',') + '|' + sends.map(([a, d]) => aId(a) + '>' + aId(d)).join(',');
+  if (sig === audioSig) return;
+  audioSig = sig;
+  for (const n of nodes.values()) if (n.aout) { try { n.aout.disconnect(); } catch(e){} }
   for (const s of nodes.values()) if (s.type === 'send' && s.ain){ try { s.ain.disconnect(); } catch(e){} }
-  for (const r of nodes.values()) if (r.type === 'receive' && r.aout) for (const s of nodes.values()) if (s.type === 'send' && s.ain && s.params.label === r.params.label) s.ain.connect(r.aout);
+  for (const [a, d] of links) a.connect(d);
+  for (const [a, d] of sends) a.connect(d);
 }
 function drawMeter(cv, m, readout){
   const dpr = window.devicePixelRatio || 1, W = Math.round(cv.clientWidth*dpr), H = Math.round(cv.clientHeight*dpr);
@@ -2970,20 +3101,24 @@ async function startCam(n, retried){
   n.status.textContent = 'Asking for camera access…';
   const hh = camHeight(), w = Math.round(hh*16/9); n.camH = hh; // the picture size (Size under the main view)
   n.camAsk = (n.camAsk || 0) + 1; const ask = n.camAsk; n.camStarting = true; if (n.btn){ n.btn.textContent = 'Starting… (click to stop)'; }
+  // A newer start, a Stop, or removing the module replaces this request; then it must leave everything alone.
+  const stale = () => ask !== n.camAsk || nodes.get(n.id) !== n;
   try {
     const s = await navigator.mediaDevices.getUserMedia({audio:false, video:{
       deviceId: n.params.deviceId ? {exact: n.params.deviceId} : undefined,
       width:{ideal:w}, height:{ideal:hh}, frameRate:{ideal:30}}});
+    if (stale()){ s.getTracks().forEach(t => t.stop()); return; }
     n.camStarting = false;
-    if (ask !== n.camAsk || nodes.get(n.id) !== n){ s.getTracks().forEach(t => t.stop()); return; } // a newer start, a Stop, or removal replaced this one
     n.stream = s; n.video.srcObject = s;
     try { await n.video.play(); } catch(e){}
-    if (ask !== n.camAsk) return; // stopped while the picture was starting
+    if (stale()) return; // stopped while the picture was starting
     n.btn.textContent = 'Stop camera'; n.btn.classList.add('on');
     await fillDevices(n.devSel, 'videoinput', n.params.deviceId, 'Default camera');
+    if (stale()) return;
     const t = s.getVideoTracks()[0], st = t.getSettings();
     n.status.textContent = (t.label || 'Camera') + '\n' + (st.width||'?') + '×' + (st.height||'?') + (st.frameRate ? ', ' + Math.round(st.frameRate) + ' fps' : '');
   } catch(err){
+    if (stale()) return;
     n.camStarting = false;
     if (!retried && n.params.deviceId && (err.name === 'OverconstrainedError' || err.name === 'NotFoundError')){
       n.params.deviceId = ''; save(); return startCam(n, true);
@@ -8857,7 +8992,11 @@ function backupNow(){
   if (backups.length && backups[0].state === st) return;
   backups.unshift({t: Date.now(), name: patchName, mods: [...nodes.values()].filter(n => !n.fixed && n.type !== 'group').length, state: st});
   backups = backups.slice(0, 8);
-  while (backups.length){ try { localStorage.setItem(BK_KEY, JSON.stringify(backups)); break; } catch(e){ backups.pop(); } }
+  // Storage full: drop the oldest until the rest fit. If not even the newest fits, keep what was stored before,
+  // so the list shown always matches what would come back after a restart.
+  let stored = false;
+  for (let k = backups.length; k > 0 && !stored; k--){ try { localStorage.setItem(BK_KEY, JSON.stringify(backups.slice(0, k))); backups = backups.slice(0, k); stored = true; } catch(e){} }
+  if (!stored){ try { backups = JSON.parse(localStorage.getItem(BK_KEY) || '[]') || []; } catch(e){ backups = []; } }
   renderBackups();
 }
 function renderBackups(){
