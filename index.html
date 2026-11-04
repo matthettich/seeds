@@ -1734,8 +1734,9 @@ vec2 cov(vec2 u, vec2 s){ float ar = s.x/s.y, ao = res.x/res.y; vec2 k = ar > ao
   function uploadInto(u, v){
     const [w, hh] = dims(v);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    if (u.w === w && u.h === hh) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, v);
-    else { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v); u.w = w; u.h = hh; }
+    // Always texImage2D: Chrome only has its fast GPU-to-GPU path for camera/video frames on texImage2D;
+    // texSubImage2D copies each frame through the CPU (measured: the default patch went from ~3 to ~1 fps).
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v); u.w = w; u.h = hh;
     u.f = frameNo; u.ver = v.__ver; u.src = v;
   }
   function newUpload(){ const u = {tex: gl.createTexture(), f: -1, w: -1, h: -1, src: null, gen}; gl.bindTexture(gl.TEXTURE_2D, u.tex); texParams(); return u; }
