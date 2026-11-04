@@ -2074,7 +2074,7 @@ void main(){ vec3 c = texture(tex0, uv).rgb; vec3 v = c*gain + off;
  else o = vec4(fold(v.r), fold(v.g), fold(v.b), 1.); }`,
   lumakey: `uniform float th, soft, inv, hasbg; uniform vec3 bgc;
 void main(){ vec3 c = texture(tex0, uv).rgb; float l = dot(c, vec3(.299,.587,.114));
- float a = smoothstep(th - soft, th + soft, l); if (inv > .5) a = 1. - a;
+ float a = smoothstep(th - soft - 1e-4, th + soft + 1e-4, l); if (inv > .5) a = 1. - a; // padded: equal edges at Softness 0 are undefined in GLSL
  vec3 b = hasbg > .5 ? texture(tex1, uv).rgb : bgc; o = vec4(mix(b, c, a), 1.); }`,
   chromakey: `uniform vec3 kc, bgc; uniform float tol, soft, spill, hasbg;
 vec2 cbcr(vec3 c){ return vec2(-.169*c.r - .331*c.g + .5*c.b, .5*c.r - .419*c.g - .081*c.b); }
@@ -5529,7 +5529,7 @@ const DEFS = {
           x.fill();
           if (style !== 'solid'){ x.strokeStyle = line; x.lineWidth = lw; x.stroke(); }
         }
-        if (style !== 'hidden' || m.f.length) { if (style === 'solid' || style === 'both' || style === 'hidden') { x.setTransform(1,0,0,1,0,0); return n.cv; } }
+        x.setTransform(1,0,0,1,0,0); return n.cv;
       }
       if (style === 'points'){ x.fillStyle = line; for (const p of P2){ x.beginPath(); x.arc(p[0], p[1], lw*1.6, 0, 6.283); x.fill(); } return n.cv; }
       x.strokeStyle = line; x.lineWidth = lw; x.beginPath();
@@ -5571,7 +5571,8 @@ const DEFS = {
       head.addEventListener('contextmenu', e => {
         if (e.target.closest('.jack, button')) return;
         e.preventDefault(); e.stopPropagation();
-        const inp = h('input', {type:'color'}); inp.value = n.params.color || '#ff3d3d'; inp.style.cssText = 'position:fixed; left:' + e.clientX + 'px; top:' + e.clientY + 'px; opacity:0; width:1px; height:1px';
+        document.querySelectorAll('input.ledpick').forEach(x => x.remove()); // one left over from a cancelled picker
+        const inp = h('input', {type:'color', class:'ledpick'}); inp.value = n.params.color || '#ff3d3d'; inp.style.cssText = 'position:fixed; left:' + e.clientX + 'px; top:' + e.clientY + 'px; opacity:0; width:1px; height:1px';
         document.body.append(inp);
         inp.addEventListener('input', () => { n.params.color = inp.value; n.lastSt = null; });
         inp.addEventListener('change', () => { n.params.color = inp.value; n.lastSt = null; save(); inp.remove(); });
@@ -5592,7 +5593,7 @@ const DEFS = {
 
 
   intbox: {
-    title:'Integer', kind:'mod', fam:'util', w:210, afterBuild(n){ n.el.classList.add('numcoll'); }, ins:[{name:'in', kind:'mod', label:'Set'},{name:'inc', kind:'gate', label:'+1'},{name:'dec', kind:'gate', label:'−1'}], outs:[{name:'out', kind:'mod', label:'Out'}],
+    title:'Integer', kind:'mod', fam:'util', w:210, ins:[{name:'in', kind:'mod', label:'Set'},{name:'inc', kind:'gate', label:'+1'},{name:'dec', kind:'gate', label:'−1'}], outs:[{name:'out', kind:'mod', label:'Out'}],
     params:{value:0, min:0, max:16, scale:false},
     afterBuild(n){ n.el.classList.add('collkeep'); n.num.classList.add('keepshow'); },
     build(n){
@@ -5613,7 +5614,7 @@ const DEFS = {
     render(n){ pullNode(n.id); if (document.activeElement !== n.num && +n.num.value !== n.params.value) n.num.value = n.params.value; }
   },
   floatbox: {
-    title:'Decimal', kind:'mod', fam:'util', w:210, afterBuild(n){ n.el.classList.add('numcoll'); }, ins:[{name:'in', kind:'mod', label:'Set'}], outs:[{name:'out', kind:'mod', label:'Out'}],
+    title:'Decimal', kind:'mod', fam:'util', w:210, ins:[{name:'in', kind:'mod', label:'Set'}], outs:[{name:'out', kind:'mod', label:'Out'}],
     params:{value:0, places:2},
     afterBuild(n){ n.el.classList.add('collkeep'); n.num.classList.add('keepshow'); },
     build(n){
@@ -5647,7 +5648,7 @@ const DEFS = {
       const trig = eq && !n.wasEq ? 1 : 0, other = !eq && n.wasEq ? 1 : 0; n.wasEq = eq; n.lastV = v;
       return {trig, gate: eq ? 1 : 0, other};
     },
-    render(n){ pullNode(n.id); n.lamp.firstChild.className = n.wasEq ? 'on hot' : ''; const t = 'Incoming: ' + (Math.round((n.lastV || 0)*1000)/1000); if (frameNo % 6 === 0 && t !== n.seen.textContent) n.seen.textContent = t; }
+    render(n){ pullNode(n.id); const lc = n.wasEq ? 'on hot' : ''; if (n.lamp.firstChild.className !== lc) n.lamp.firstChild.className = lc; const t = 'Incoming: ' + (Math.round((n.lastV || 0)*1000)/1000); if (frameNo % 6 === 0 && t !== n.seen.textContent) n.seen.textContent = t; }
   },
   ramp: {
     title:'Ramp', kind:'video', w:260, ins:[], outs:[{name:'out', kind:'video', label:'Video'}],
@@ -5685,8 +5686,8 @@ const DEFS = {
   lumakey: {
     title:'Luma key', kind:'video', w:260, ins:[{name:'in', kind:'video', label:'Foreground'},{name:'bg', kind:'video', label:'Background'}], outs:[{name:'out', kind:'video', label:'Out'}],
     params:{th:0.5, soft:0.08, inv:false, bgc:'#000000'},
-    build(n){ return [slider(n, 'th', 'Threshold', 0, 1, 0.005, v => Math.round(v*100) + '%'), slider(n, 'soft', 'Softness', 0, 0.5, 0.005, v => Math.round(v*100) + '%'), toggleRow(n, 'inv', 'Key out bright parts'), colorPick(n, 'bgc', 'Background color'),
-      h('div', {class:'status', text:'Dark parts of the foreground become see-through (or bright parts, when switched), showing the Background video or color.'})]; },
+    build(n){ return [slider(n, 'th', 'Threshold', 0, 1, 0.005, v => Math.round(v*100) + '%'), slider(n, 'soft', 'Softness', 0, 0.5, 0.005, v => Math.round(v*100) + '%'), toggleRow(n, 'inv', 'Key out dark parts'), colorPick(n, 'bgc', 'Background color'),
+      h('div', {class:'status', text:'Bright parts of the foreground become see-through (or dark parts, when Key out dark parts is on), showing the Background video or color.'})]; },
     pull(n){ const s = inputRaw(n, 'in'); if (!s) return null; const [W, H] = dims(s); if (!W) return null; const b = inputRaw(n, 'bg');
       return gpu(n, FS.lumakey, [s, b], {th: P(n, 'th'), soft: P(n, 'soft'), inv: n.params.inv ? 0 : 1, hasbg: b ? 1 : 0, bgc: colorRgb(n, 'bgc')}, W, H); }
   },
@@ -5775,7 +5776,7 @@ const DEFS = {
       if (!n.cv){ n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d'); n.sm = document.createElement('canvas'); n.smx = n.sm.getContext('2d', {willReadFrequently: true}); }
       if (n.cols !== cols || n.rows !== rows || n.W !== W || n.H !== H){
         n.cols = cols; n.rows = rows; n.W = W; n.H = H; const N = cols*rows;
-        n.px = new Float32Array(N); n.py = new Float32Array(N); n.vx = new Float32Array(N); n.vy = new Float32Array(N); n.prev = new Float32Array(N);
+        n.px = new Float32Array(N); n.py = new Float32Array(N); n.vx = new Float32Array(N); n.vy = new Float32Array(N); n.prev = new Float32Array(N); n.fresh = true;
         for (let j = 0, k = 0; j < rows; j++) for (let i = 0; i < cols; i++, k++){ n.px[k] = (i + 0.5)/cols*W; n.py[k] = (j + 0.5)/rows*H; }
         n.sm.width = cols; n.sm.height = rows; fitCanvas(n.cv, W, H);
         n.ctx.fillStyle = colorCss(n, 'bg'); n.ctx.fillRect(0, 0, W, H);
@@ -5790,13 +5791,13 @@ const DEFS = {
       x.globalCompositeOperation = 'source-over'; x.globalAlpha = 1 - P(n, 'trails');
       x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H); x.globalAlpha = 1;
       if (shape === 'glow') x.globalCompositeOperation = 'lighter';
-      const damp = Math.pow(0.04, dt);
+      const damp = Math.pow(0.04, dt), fresh = n.fresh; n.fresh = false;
       for (let j = 0, i3 = 0, kk = 0; j < rows; j++){
         for (let i = 0; i < cols; i++, kk++, i3 += 4){
           const r = d[i3]/255, g = d[i3 + 1]/255, b = d[i3 + 2]/255, l = 0.299*r + 0.587*g + 0.114*b;
           const hx = (i + 0.5)*cw, hy = (j + 0.5)*ch;
           // Movement in the video kicks particles; drift wanders; the spring pulls them home.
-          const ch2 = Math.abs(l - n.prev[kk]); n.prev[kk] = l;
+          const ch2 = fresh ? 0 : Math.abs(l - n.prev[kk]); n.prev[kk] = l; // the first frame only learns the picture (no burst)
           let vx = n.vx[kk], vy = n.vy[kk];
           if (ch2 > 0.08 && mot){ const a = (i*12.9898 + j*78.233 + t*3) % 6.283, f = (ch2 - 0.08)*mot*cw*1.5; vx += Math.cos(a)*f; vy += Math.sin(a)*f; }
           if (drift){ vx += Math.sin(t*0.9 + hy*0.013 + i*0.37)*drift*dt*6; vy += Math.cos(t*0.7 + hx*0.011 + j*0.41)*drift*dt*6; }
@@ -5886,6 +5887,7 @@ const DEFS = {
       x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H);
       const N = Math.round(P(n, 'count')), irr = P(n, 'complex'), sz = P(n, 'size'), t = n.time, S = H/2;
       const cols = [colorCss(n, 'ca'), colorCss(n, 'cb'), colorCss(n, 'cc')], st = n.params.style;
+      const dk = st === 'contour' ? colorRgb(n, 'dark') : null, dkCss = st === 'contour' ? colorCss(n, 'dark') : null; // shadow color, read once per frame
       const lay = n.lay || (n.lay = mkCanvas(1, 1)); // layer keeps the overlap mode away from the background
       fitCanvas(lay.cv, W, H); const L = lay.ctx;
       L.setTransform(1,0,0,1,0,0); L.globalCompositeOperation = 'source-over'; L.clearRect(0, 0, W, H);
@@ -5901,10 +5903,9 @@ const DEFS = {
         else if (st === 'contour'){
           const c = colorRgb(n, ['ca','cb','cc'][i % 3]);
           for (let k = 0; k <= 12; k++){ const f = k/12, m = Math.pow(f, 1.5)*0.85;
-            const dk = colorRgb(n, 'dark');
             path(1 - f*0.72); L.fillStyle = rgbCss([c[0] + (dk[0] - c[0])*m, c[1] + (dk[1] - c[1])*m, c[2] + (dk[2] - c[2])*m]); L.fill();
             if (k){ L.strokeStyle = rgbCss(dk, 0.45); L.lineWidth = 1/S; L.stroke(); } }
-          path(0.24); L.fillStyle = colorCss(n, 'dark'); L.fill(); path(1); L.strokeStyle = colorCss(n, 'dark'); L.lineWidth = 3/S; L.stroke();
+          path(0.24); L.fillStyle = dkCss; L.fill(); path(1); L.strokeStyle = dkCss; L.lineWidth = 3/S; L.stroke();
         }
         else { path(1); if (st !== 'outline') L.fill(); if (st !== 'fill'){ L.strokeStyle = st === 'both' ? colorCss(n, 'bg') : cols[i % 3]; L.stroke(); } }
       }
@@ -6124,13 +6125,20 @@ const DEFS = {
       const simpAudio = h('div', {class:'simpaudio'}, h('label', {class:'smic'}, srcOn, ' Record audio'), h('label', {class:'srcrow'}, h('span', {text:'Audio source'}), srcSel));
       const rc = h('button', {class:'collbtn', title:'Collapse the recorder', 'aria-label':'Collapse the recorder'}, h('span', {class:'dchev'}));
       rc.addEventListener('click', () => { const on = !n.el.classList.contains('rcoll'); n.el.classList.toggle('rcoll', on); try { localStorage.setItem(STORE + ':rcoll', on ? '1' : ''); } catch(e){} });
-      if (localStorage.getItem(STORE + ':rcoll')) n.el.classList.add('rcoll');
+      try { if (localStorage.getItem(STORE + ':rcoll')) n.el.classList.add('rcoll'); } catch(e){}
       n.el.append(h('header', {}, rc, h('span', {class:'t', text:'Recorder'}), n.status),
         h('div', {class:'recrow'}, n.recBtn, n.time, n.recSum = h('button', {class:'recsum', title:'Change recording settings', onclick: () => { document.getElementById('setbtn').click(); }})), simpAudio,
-        h('div', {class:'meterwrap'}, n.mcv, n.pk), n.takesHead = h('div', {class:'takeshead'}, h('span', {text:'Takes and stills'}), h('button', {class:'btn on headlive', text:'Back to live', hidden: true, onclick: () => hidePreview()}), h('button', {class:'btn', text:'Clear', title:'Remove every take and still from the list', onclick: () => clearTakes(n)}), h('button', {class:'btn', text:'Save all', title:'Save every take and still', onclick: async () => {
-          const rows = [...n.list.querySelectorAll('.take')].reverse();
-          for (const r of rows){ const t = n.takes.find(x => x.url === r.dataset.url); const b = [...r.querySelectorAll('.btn')].find(x => x.textContent === 'Save' || x.textContent === 'Saved'); if (t && b && b.textContent === 'Save'){ await saveTake(n, t, b); await new Promise(res => setTimeout(res, 350)); } }
-          toast('Saved all takes.'); }})), n.list);
+        h('div', {class:'meterwrap'}, n.mcv, n.pk), n.takesHead = h('div', {class:'takeshead'}, h('span', {text:'Takes and stills'}), h('button', {class:'btn on headlive', text:'Back to live', hidden: true, onclick: () => hidePreview()}), h('button', {class:'btn', text:'Clear', title:'Remove every take and still from the list', onclick: () => clearTakes(n)}), n.saveAllBtn = h('button', {class:'btn', text:'Save all', title:'Save every take and still', onclick: async () => {
+          if (n.savingAll) return; // already saving: a second press does nothing
+          const todo = n.takes.filter(t => !t.saved).reverse(); // oldest first
+          if (!todo.length){ toast('Every take is already saved.'); return; }
+          n.savingAll = true; n.saveAllBtn.disabled = true;
+          let ok = 0;
+          try {
+            for (const t of todo){ if (!n.takes.includes(t) || t.saved) continue; if (await saveTake(n, t, t.saveBtn)) ok++; await new Promise(res => setTimeout(res, 350)); }
+          } finally { n.savingAll = false; n.saveAllBtn.disabled = false; }
+          toast(ok === todo.length ? 'Saved ' + (ok === 1 ? 'the take.' : 'all ' + ok + ' takes.') : 'Saved ' + ok + ' of ' + todo.length + ' takes.'); }})), n.list);
+      n.takesLabel = n.takesHead.firstChild;
       for (const p of DEFS.recorder.ins) dockPort(n, p, dockBot);
     },
     initAudio(n){
@@ -6168,7 +6176,7 @@ const DEFS = {
         if (s !== n.lastS){ n.status.textContent = s; n.lastS = s; }
       }
     },
-    destroy(n){ if (recActive(n)) { n.discard = true; stopRec(n); } n.takes.forEach(t => URL.revokeObjectURL(t.url)); }
+    destroy(n){ if (recActive(n)) { n.discard = true; stopRec(n); } n.takes.forEach(t => URL.revokeObjectURL(t.url)); } // not reached today (the recorder is built in and never removed); kept as a safety net
   }
 };
 
@@ -6189,7 +6197,7 @@ async function clearTakes(n){
   if (un && !await askDialog(un + (un === 1 ? ' take hasn’t' : ' takes haven’t') + ' been saved. Clear the list anyway?', {ok: 'Clear', cancel: 'Keep them'})) return;
   if (pvUrl) hidePreview();
   for (const t of n.takes) URL.revokeObjectURL(t.url);
-  n.takes = []; n.list.replaceChildren(); refreshStageSrc();
+  n.takes = []; n.list.replaceChildren(); refreshStageSrc(); takesSize(n);
 }
 function recSrc(n){ const s = recMainOn() ? toDraw(pullNode('main')) : inputOf(n, 'video'); return s ? conformOut(s) : s; }
 function startRec(n, retry){
@@ -6212,9 +6220,7 @@ function startRec(n, retry){
     const pick = steps[steps.length - 1] || 12;
     if (pick < recFps){ recFps = pick; if (!retry) toast('The app is drawing about ' + lastFps + ' frames a second, so this take records at ' + recFps + ' fps to stay smooth.'); }
   }
-  n.recFps = recFps;
   try { vs = n.rc.captureStream(recFps); } catch(e){ n.status.textContent = 'This browser can’t capture canvas video.'; n.status.classList.add('err'); setRecUI(n, false); return; }
-  n.vtrack = null;
   const tracks = [...vs.getVideoTracks()];
   if (n.dest) tracks.push(...n.dest.stream.getAudioTracks());
   const stream = new MediaStream(tracks);
@@ -6276,10 +6282,9 @@ function startRec(n, retry){
       }
     }
     if (webm && webm !== mime && !(retry && retry.webm)){
-      retry = Object.assign({}, retry, {webm: true});
       n.discard = true; n.retryWith = {mime: webm, webm: true, tried};
-      const diag = 'MP4 failed: “' + msg + '” (tried ' + tried.map(m => m.replace('video/mp4;codecs=', '')).join(' / ') + ') at ' + n.rc.width + '×' + n.rc.height + ', ' + (rs.fps || 30) + ' fps. Recording in WebM instead.';
-      toast(diag); n.lastDiag = diag;
+      const diag = 'MP4 failed: “' + msg + '” (tried ' + tried.map(m => m.replace('video/mp4;codecs=', '')).join(' / ') + ') at ' + n.rc.width + '×' + n.rc.height + ', ' + recFps + ' fps. Recording in WebM instead.';
+      toast(diag);
       setTimeout(() => { n.status.textContent = diag; n.status.title = diag; }, 400);
       try { n.rec.stop(); } catch(e){}
       return;
@@ -6308,7 +6313,7 @@ function addTake(n, blob, dur, ext, info){
   const still = ext === 'png';
   const t = {no: still ? (n.stillNo = (n.stillNo || 0) + 1) : ++n.takeNo, blob, ext, url: URL.createObjectURL(blob)};
   n.takes.unshift(t);
-  const saveBtn = h('button', {class:'btn', text:'Save'});
+  const saveBtn = h('button', {class:'btn', text:'Save'}); t.saveBtn = saveBtn;
   saveBtn.addEventListener('click', () => saveTake(n, t, saveBtn));
   const del = h('button', {class:'btn', text:'Delete'});
   const live = h('button', {class:'btn livebtn on', text:'Back to live', hidden: true, onclick: () => hidePreview()});
@@ -6318,30 +6323,45 @@ function addTake(n, blob, dur, ext, info){
   const el = h('div', {class:'take' + (still ? ' still' : ''), 'data-url': t.url}, nm, live, saveBtn, del);
   del.addEventListener('click', () => {
     if (pvUrl === t.url) hidePreview();
-    URL.revokeObjectURL(t.url); el.remove(); n.takes = n.takes.filter(x => x !== t); refreshStageSrc();
+    URL.revokeObjectURL(t.url); el.remove(); n.takes = n.takes.filter(x => x !== t); refreshStageSrc(); takesSize(n);
   });
   n.list.prepend(el);
-  refreshStageSrc();
+  refreshStageSrc(); takesSize(n);
+}
+// Takes are kept in memory until saved. The list header shows how much that is, and a warning comes up
+// once at each extra gigabyte, because a long show can fill the computer's memory.
+function takesSize(n){
+  const b = n.takes.filter(t => !t.saved).reduce((a, t) => a + t.blob.size, 0);
+  if (n.takesLabel) n.takesLabel.textContent = 'Takes and stills' + (b ? ' · ' + fmtSize(b) + ' unsaved' : '');
+  const gb = Math.floor(b/1e9);
+  if (gb > (n.sizeWarned || 0)) toast(gb + ' GB of recordings aren’t saved yet and are held in memory. Save (or delete) takes you’re done with.');
+  n.sizeWarned = gb; // goes back down as takes are saved, so it can warn again later
 }
 let dlP = null;
 function getDownloads(){
   if (!dlP) dlP = (window.claude && typeof window.claude.use === 'function') ? Promise.resolve(window.claude.use('downloads')).catch(() => null) : Promise.resolve(null);
   return dlP;
 }
+// Returns true when the take was saved. A take already being saved isn't saved twice.
 async function saveTake(n, t, btn){
-  const filename = (t.ext === 'png' ? 'seeds-still-' : 'seeds-take-') + t.no + '.' + t.ext;
-  const dl = await getDownloads();
-  if (dl){
-    try { await dl.save({filename, data: t.blob}); btn.textContent = 'Saved'; t.saved = true; }
-    catch(e){
-      if (e && e.code === 'declined') return;
-      if (e && e.code === 'rate_limited') { toast('A save is already waiting for you to confirm.'); return; }
-      toast('Couldn’t save: ' + ((e && e.message) || 'unknown error'));
+  if (t.saving) return false;
+  t.saving = true; if (btn) btn.disabled = true;
+  const done = () => { if (btn) btn.textContent = 'Saved'; t.saved = true; takesSize(n); return true; };
+  try {
+    const filename = (t.ext === 'png' ? 'seeds-still-' : 'seeds-take-') + t.no + '.' + t.ext;
+    const dl = await getDownloads();
+    if (dl){
+      try { await dl.save({filename, data: t.blob}); return done(); }
+      catch(e){
+        if (e && e.code === 'declined') return false;
+        if (e && e.code === 'rate_limited') { toast('A save is already waiting for you to confirm.'); return false; }
+        toast('Couldn’t save: ' + ((e && e.message) || 'unknown error'));
+      }
+      return false;
     }
-    return;
-  }
-  const a = h('a', {href: t.url, download: filename}); document.body.append(a); a.click(); a.remove();
-  btn.textContent = 'Saved'; t.saved = true;
+    const a = h('a', {href: t.url, download: filename}); document.body.append(a); a.click(); a.remove();
+    return done();
+  } finally { t.saving = false; if (btn) btn.disabled = false; }
 }
 
 /* ---------- node DOM ---------- */
@@ -6350,6 +6370,16 @@ function makeJack(n, p, dir, small){
   n.jacks[dir + ':' + p.name] = jack;
   jack.addEventListener('pointerdown', e => onJackDown(e, n, p, dir));
   return jack;
+}
+// One drag with the mouse, pen or finger: follows that pointer until it's released, cancelled (the system took it,
+// e.g. a touch gesture or an app switch) or its capture is lost, and always cleans up exactly once.
+// end(ev, cancelled) gets cancelled = true when the drag didn't finish with a normal release.
+function pointerSession(el, e, {move, end}){
+  let done = false; const pid = e.pointerId, types = ['pointermove', 'pointerup', 'pointercancel'].concat(el === window ? [] : ['lostpointercapture']);
+  if (el !== window){ try { el.setPointerCapture(pid); } catch(err){} }
+  const fin = ev => { if (done || ev.pointerId !== pid) return; done = true; for (const t of types) el.removeEventListener(t, on); if (end) end(ev, ev.type !== 'pointerup'); };
+  const on = ev => { if (ev.type === 'pointermove'){ if (!done && ev.pointerId === pid && move) move(ev); } else fin(ev); };
+  for (const t of types) el.addEventListener(t, on);
 }
 function portEl(n, p, dir){ return h('div', {class:'port'}, makeJack(n, p, dir), h('span', {text: p.label})); }
 function addNode(type, x, y, params, id){
@@ -6378,6 +6408,7 @@ function addNode(type, x, y, params, id){
     h('div', {class:'outs'}, def.outs.map(p => portEl(n, p, 'out')))) : null;
   const kids = [].concat(def.build(n));
   if (type === 'screen') titleEl.textContent = n.params.label;
+  if (MEM_TYPES.has(type)) kids.splice(1, 0, memUI(n)); // stored shapes go second; added before counting, so the module's own last control isn't marked advanced
   const baseCount = kids.length;
   const EXTRA = {rotate: ['edgec', 'Corner color'], vzoom: ['edgec', 'Edge color'], crop: ['edgec', 'Outside color'], mixer: ['bgc', 'Background'],
     key: ['bgc', 'Background'], stutter: ['flash', 'Strobe color'], blobs: ['dark', 'Shadow']};
@@ -6397,7 +6428,6 @@ function addNode(type, x, y, params, id){
     n.dflt = n.dflt || {}; n.dflt.modoff = 0;
     kids.push(slider(n, 'modoff', 'Offset', -1, 1, 0.01, v => (v > 0 ? '+' : '') + Math.round(v*100) + '%'), h('div', {class:'status modhint', text:'Offset moves the swing up or down. With the slider at its bottom: Depth 25% + Offset +75% sweeps the top half; Depth 12.5% + Offset +87.5% sweeps only the top quarter.'}));
   }
-  if (MEM_TYPES.has(type)) kids.splice(1, 0, memUI(n));
   // Shared extras (tint, mix, edge colors) count as advanced in Simple mode.
   for (let i = baseCount; i < kids.length; i++) kids[i].classList.add('adv');
   const body = h('div', {class:'body', 'data-nid': id}, kids);
@@ -6408,15 +6438,13 @@ function addNode(type, x, y, params, id){
   if (def.resizable){
     const rz = h('div', {class:'rz', title:'Drag to resize', 'aria-hidden':'true'});
     rz.addEventListener('pointerdown', e => {
-      e.stopPropagation(); e.preventDefault(); rz.setPointerCapture(e.pointerId);
+      e.stopPropagation(); e.preventDefault();
       const sx = e.clientX, sy = e.clientY, ow = n.el.offsetWidth, oy = def.resizable.get(n);
-      const mv = ev => {
+      pointerSession(rz, e, {move: ev => {
         n.params.w = Math.round(Math.max(def.w, Math.min(1400, ow + (ev.clientX - sx)/zoom)));
         n.el.style.width = n.params.w + 'px';
         def.resizable.set(n, oy + (ev.clientY - sy)/zoom);
-      };
-      const up = () => { rz.removeEventListener('pointermove', mv); rz.removeEventListener('pointerup', up); rz.removeEventListener('pointercancel', up); save(); };
-      rz.addEventListener('pointermove', mv); rz.addEventListener('pointerup', up); rz.addEventListener('pointercancel', up);
+      }, end: () => save()});
     });
     n.el.append(rz);
   }
@@ -6428,18 +6456,14 @@ function addNode(type, x, y, params, id){
     e.preventDefault();
     if (e.shiftKey){ setSel(n, !selected.has(n.id)); return; }
     if (!selected.has(n.id)){ clearSel(); setSel(n, true); }
-    head.setPointerCapture(e.pointerId);
     // Dragging a selected module moves the whole selection.
-    const group = selected.has(n.id) ? selNodes() : [n];
-    if (!selected.has(n.id)) clearSel();
+    const group = selNodes();
     const sx = e.clientX, sy = e.clientY, start = group.map(m => [m, m.x, m.y]);
     let extra = [0, 0], lastEv = e;
     const place = () => { const dx = (lastEv.clientX - sx)/zoom - extra[0]/zoom, dy = (lastEv.clientY - sy)/zoom - extra[1]/zoom;
       for (const [m, ox, oy] of start){ m.x = Math.round(ox + dx); m.y = Math.round(oy + dy); m.el.style.left = m.x + 'px'; m.el.style.top = m.y + 'px'; } };
     nodeDragging = v => { extra[0] += v[0]; extra[1] += v[1]; place(); };
-    const mv = ev => { lastEv = ev; autoPanAt(ev); place(); };
-    const up = () => { nodeDragging = null; autoPanV = [0, 0]; head.removeEventListener('pointermove', mv); head.removeEventListener('pointerup', up); head.removeEventListener('pointercancel', up); save(); };
-    head.addEventListener('pointermove', mv); head.addEventListener('pointerup', up); head.addEventListener('pointercancel', up);
+    pointerSession(head, e, {move: ev => { lastEv = ev; autoPanAt(ev); place(); }, end: () => { nodeDragging = null; autoPanV = [0, 0]; save(); }});
   });
   world.append(n.el);
   nodes.set(id, n);
@@ -6457,10 +6481,14 @@ function addNode(type, x, y, params, id){
 }
 // Keyboard edits (Delete, copy, paste, duplicate) only in Patch mode, where the selected modules are visible.
 function patchEditable(){ return !perf.on && !simple.on && !live.on && !document.body.classList.contains('sliders'); }
-function removeNode(id){
+// {batch: true} skips the cable/audio/group refresh, for removing many modules at once (see removeNodes);
+// the modules a group removes along with itself never refresh on their own either.
+let rmBatch = 0;
+function removeNode(id, opt){
   const n = nodes.get(id); if (!n || n.fixed) return;
   const def = DEFS[n.type];
-  def.destroy && def.destroy(n);
+  const batch = !!(opt && opt.batch);
+  rmBatch++; try { def.destroy && def.destroy(n); } finally { rmBatch--; } // a group's modules go with it, refreshed once below
   if (GLX) GLX.release(n);
   // A deleted module's sound must stop now: its output is unplugged here because syncAudio only rewires modules still in the patch.
   for (const k of ['aout', 'ain']) if (n[k]){ try { n[k].disconnect(); } catch(e){} }
@@ -6468,7 +6496,23 @@ function removeNode(id){
   delete perf.panels[id];
   edges = edges.filter(e => e.from.node !== id && e.to.node !== id);
   n.el.remove(); nodes.delete(id);
-  afterEdges();
+  // Forget it everywhere else it's remembered, so nothing points at a module that's gone.
+  selected.delete(id);
+  if (midiMap.some(m => m.node === id)) midiMap = midiMap.filter(m => m.node !== id);
+  if (keyMap.some(m => m.node === id)) keyMap = keyMap.filter(m => m.node !== id);
+  if (bank.maps.some(m => m.node === id)) bank.maps = bank.maps.filter(m => m.node !== id);
+  if (simple.input === id) simple.input = null; // Simple mode makes a new camera when it needs one
+  if (simple.mic === id) simple.mic = null;
+  if (simple.group === id) simple.group = null;
+  simple.slots.forEach((s, i) => { if (s === id) simple.slots[i] = null; });
+  if (!batch && !rmBatch) afterEdges();
+}
+// Remove many modules with one refresh at the end (clearing a big patch was getting slow).
+function removeNodes(ids){
+  let k = 0;
+  for (const id of ids){ const n = nodes.get(id); if (n && !n.fixed){ removeNode(id, {batch: true}); k++; } }
+  if (k) afterEdges();
+  return k;
 }
 
 /* ---------- output windows ---------- */
@@ -6554,23 +6598,26 @@ const dockTop = document.getElementById('docktop'), dockBot = document.getElemen
 const pvWrap = document.getElementById('pvwrap'), pvVideo = document.getElementById('pvvideo');
 const stageSrc = document.getElementById('stagesrc');
 const pvImg = document.getElementById('pvimg');
-let pvUrl = null;
+let pvUrl = null, pvTok = 0;
 function showPreview(url){
+  const tok = ++pvTok; // a newer click (or Back to live) makes this one's late answers be ignored
   const rec = nodes.get('rec'), t = rec && rec.takes.find(x => x.url === url), still = t && t.ext === 'png';
   pvWrap.hidden = false; pvUrl = url;
   if (still){ pvVideo.pause(); pvVideo.hidden = true; pvImg.hidden = false; pvImg.src = url; }
   else {
     pvImg.hidden = true; pvVideo.hidden = false; pvVideo.muted = false; pvVideo.src = url;
     applySink(pvVideo).then(() => pvVideo.play()).catch(err => {
+      // Another take was clicked meanwhile (that's what interrupts play), so this answer is about an old take: leave the new one alone.
+      if (tok !== pvTok) return;
       // Sound couldn't start (often the sound card is busy): play the picture muted and say why.
       pvVideo.muted = true;
-      pvVideo.play().then(() => toast('Playing without sound (' + (err.message || err.name) + '). Check Settings → Sound → Output, then click the take again.'))
-        .catch(e2 => toast('This take can’t play here: ' + (e2.message || e2.name) + '. You can still Save it.'));
+      pvVideo.play().then(() => { if (tok === pvTok) toast('Playing without sound (' + (err.message || err.name) + '). Check Settings → Sound → Output, then click the take again.'); })
+        .catch(e2 => { if (tok === pvTok) toast('This take can’t play here: ' + (e2.message || e2.name) + '. You can still Save it.'); });
     });
   }
   stageSrc.value = url; markPreviewRows();
 }
-function hidePreview(){ pvVideo.pause(); pvVideo.removeAttribute('src'); pvVideo.load(); pvImg.removeAttribute('src'); pvWrap.hidden = true; pvUrl = null; stageSrc.value = 'live'; markPreviewRows(); }
+function hidePreview(){ pvTok++; pvVideo.pause(); pvVideo.removeAttribute('src'); pvVideo.load(); pvImg.removeAttribute('src'); pvWrap.hidden = true; pvUrl = null; stageSrc.value = 'live'; markPreviewRows(); }
 // The take being shown gets a "Back to live" button next to Save and Delete.
 function markPreviewRows(){ document.querySelectorAll('.take').forEach(r => { const on = r.dataset.url === pvUrl; r.classList.toggle('showing', on); r.querySelector('.livebtn').hidden = true; }); const b = document.querySelector('.headlive'); if (b) b.hidden = !pvUrl; }
 // Snapshot: a full-size still of whatever the main view is showing.
@@ -6611,17 +6658,15 @@ document.getElementById('stagefs').addEventListener('click', () => {
 /* ---------- panel divider ---------- */
 const split = document.getElementById('split'), divider = document.getElementById('divider');
 function setSw(px){
-  const total = split.clientWidth, key = 'sw';
+  const total = split.clientWidth;
   px = Math.max(220, Math.min(total - 300, px));
-  split.style.setProperty('--' + key, px + 'px');
-  try { localStorage.setItem(STORE + ':' + key, String(px / total)); } catch(e){}
+  split.style.setProperty('--sw', px + 'px');
+  try { localStorage.setItem(STORE + ':sw', String(px / total)); } catch(e){}
 }
-for (const key of ['sw']){ try { const f = parseFloat(localStorage.getItem(STORE + ':' + key)); if (f > 0 && f < 1) split.style.setProperty('--' + key, (f*100) + '%'); } catch(e){} }
+try { const f = parseFloat(localStorage.getItem(STORE + ':sw')); if (f > 0 && f < 1) split.style.setProperty('--sw', (f*100) + '%'); } catch(e){}
 divider.addEventListener('pointerdown', e => {
-  e.preventDefault(); divider.setPointerCapture(e.pointerId);
-  const mv = ev => setSw(split.getBoundingClientRect().right - ev.clientX);
-  const up = () => { divider.removeEventListener('pointermove', mv); divider.removeEventListener('pointerup', up); divider.removeEventListener('pointercancel', up); };
-  divider.addEventListener('pointermove', mv); divider.addEventListener('pointerup', up); divider.addEventListener('pointercancel', up);
+  e.preventDefault();
+  pointerSession(divider, e, {move: ev => setSw(split.getBoundingClientRect().right - ev.clientX)});
 });
 divider.addEventListener('keydown', e => {
   const cur = document.querySelector('.side').offsetWidth;
@@ -6696,6 +6741,10 @@ function cablePath(a, b, pts){
   return `M${a.x},${a.y} C${a.x + dx},${a.y + sag} ${b.x - dx},${b.y + sag} ${b.x},${b.y}`;
 }
 function placeCable(c, a, b, pts, edge){
+  // Nothing moved since the last frame: leave the drawing alone (rewriting every cable each frame is slow on Windows).
+  const pk = pts && pts.length ? pts.join(' ') : '', skin = document.documentElement.getAttribute('data-skinbase') || '';
+  if (c.ax === a.x && c.ay === a.y && c.bx === b.x && c.by === b.y && c.pk === pk && c.skin === skin) return;
+  c.ax = a.x; c.ay = a.y; c.bx = b.x; c.by = b.y; c.pk = pk; c.skin = skin;
   const d = cablePath(a, b, pts);
   if (edge) syncHandles(c, edge);
   c.line.setAttribute('d', d); c.sheen.setAttribute('d', d.replace(/(-?[\d.]+),(-?[\d.]+)/g, (m, x, y) => x + ',' + (+y - 1.3)));
@@ -6822,7 +6871,6 @@ function syncHandles(c, edge){
   while (c.hdl.length > pts.length) c.hdl.pop().remove();
   while (c.hdl.length < pts.length){
     const r = document.createElementNS(SVGNS, 'rect'); r.setAttribute('class', 'bend'); r.setAttribute('width', 10); r.setAttribute('height', 10);
-    const i = c.hdl.length;
     r.addEventListener('pointerdown', ev => bendDrag(ev, edge, () => c.hdl.indexOf(r)));
     c.g.append(r); c.hdl.push(r);
   }
@@ -6832,13 +6880,8 @@ function syncHandles(c, edge){
 function bendDrag(ev, edge, idx){
   ev.stopPropagation(); ev.preventDefault();
   const i = idx(), sx = ev.clientX, sy = ev.clientY; let moved = false;
-  const mv = e => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 3) moved = true; if (moved) edge.pts[i] = worldPt(e); };
-  const up = e => {
-    window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up);
-    if (!moved && e.altKey){ edge.pts.splice(i, 1); if (!edge.pts.length) delete edge.pts; }
-    save();
-  };
-  window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+  pointerSession(window, ev, {move: e => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 3) moved = true; if (moved) edge.pts[i] = worldPt(e); },
+    end: (e, cancelled) => { if (!cancelled && !moved && e.altKey){ edge.pts.splice(i, 1); if (!edge.pts.length) delete edge.pts; } save(); }});
 }
 // Option/Alt-drag on an existing cable adds a bend where you grab it.
 function cableBendAt(ev, edge){
@@ -6859,7 +6902,7 @@ window.addEventListener('keydown', e => { if (e.key === 'Alt') document.body.cla
 window.addEventListener('keyup', e => { if (e.key === 'Alt') document.body.classList.remove('alting'); });
 window.addEventListener('blur', () => document.body.classList.remove('alting'));
 function afterEdges(){
-  edgeVer++; syncCableEls(); syncAudio(); refreshGroups(); save(); }
+  syncCableEls(); syncAudio(); refreshGroups(); save(); }
 
 /* ---------- pan ---------- */
 const zoomVal = document.getElementById('zoomval');
@@ -6893,7 +6936,7 @@ ws.addEventListener('wheel', e => {
   // A mouse wheel moves in big steps on one axis; a trackpad sends small, smooth amounts.
   const mouse = e.deltaMode !== 0 || (e.deltaX === 0 && Math.abs(e.deltaY) >= 40 && Math.abs(e.deltaY) % 1 === 0);
   if (e.shiftKey){ const d = e.deltaY || e.deltaX; pan.y -= d*k; applyPan(); save(); return; }
-  if (mouse && settings.wheel !== 'scroll'){ zoomAt(e.clientX, e.clientY, zoom * Math.exp(-e.deltaY*k*0.0018)); save(); return; }
+  if (mouse && settings.wheel !== 'scroll'){ zoomAt(e.clientX, e.clientY, zoom * Math.exp(-e.deltaY*k*0.0018)); return; } // zoomAt saves
   pan.x -= e.deltaX*k; pan.y -= e.deltaY*k; applyPan(); save();
 }, {passive:false});
 // Safari reports trackpad pinches as gesture events.
@@ -6934,23 +6977,21 @@ ws.addEventListener('pointerdown', e => {
   if (e.button === 2) return;
   if (e.shiftKey){
     const lasso = document.getElementById('lasso'), r0 = ws.getBoundingClientRect(), sx = e.clientX, sy = e.clientY;
-    ws.setPointerCapture(e.pointerId); lasso.hidden = false;
+    lasso.hidden = false;
     const box = ev => [Math.min(sx, ev.clientX), Math.min(sy, ev.clientY), Math.max(sx, ev.clientX), Math.max(sy, ev.clientY)];
     const mv = ev => { const [a, b, c, d] = box(ev); Object.assign(lasso.style, {left: (a - r0.left) + 'px', top: (b - r0.top) + 'px', width: (c - a) + 'px', height: (d - b) + 'px'}); };
-    const up = ev => {
-      ws.removeEventListener('pointermove', mv); ws.removeEventListener('pointerup', up); lasso.hidden = true;
+    mv(e);
+    pointerSession(ws, e, {move: mv, end: (ev, cancelled) => {
+      lasso.hidden = true; if (cancelled) return; // a cancelled lasso just goes away
       const [a, b, c, d] = box(ev);
       for (const n of nodes.values()){ if (n.fixed || !visibleNode(n)) continue; const r = n.el.getBoundingClientRect(); if (r.right > a && r.left < c && r.bottom > b && r.top < d) setSel(n, true); }
-    };
-    mv(e); ws.addEventListener('pointermove', mv); ws.addEventListener('pointerup', up);
+    }});
     return;
   }
   clearSel();
-  ws.setPointerCapture(e.pointerId); ws.classList.add('panning');
+  ws.classList.add('panning');
   const sx = e.clientX, sy = e.clientY, ox = pan.x, oy = pan.y;
-  const mv = ev => { pan.x = ox + ev.clientX - sx; pan.y = oy + ev.clientY - sy; applyPan(); };
-  const up = () => { ws.removeEventListener('pointermove', mv); ws.removeEventListener('pointerup', up); ws.removeEventListener('pointercancel', up); ws.classList.remove('panning'); save(); };
-  ws.addEventListener('pointermove', mv); ws.addEventListener('pointerup', up); ws.addEventListener('pointercancel', up);
+  pointerSession(ws, e, {move: ev => { pan.x = ox + ev.clientX - sx; pan.y = oy + ev.clientY - sy; applyPan(); }, end: () => { ws.classList.remove('panning'); save(); }});
 });
 
 /* ---------- persistence ---------- */
@@ -6962,15 +7003,23 @@ function serialize(){
     edges: edges.filter(e => !(nodes.get(e.from.node) || {}).noSave && !(nodes.get(e.to.node) || {}).noSave), presets, activePreset, midiMap, decor: decor.map(d => d.data), perform: {locked: perf.locked, panels: perf.panels}, bg: patchBg || undefined, keyMap: keyMap.length ? keyMap : undefined, bank: (bank.maps.length || bank.count !== 8) ? {count: bank.count, vals: bank.vals, maps: bank.maps.map(({s, node, key}) => ({s, node, key}))} : undefined,
     simple: {group: simple.group, input: simple.input, mic: simple.mic, micDev: simple.micDev || '', count: simpleCount(), slots: simple.slots, bypass: simple.bypass, saved: simple.saved}};
 }
-let quotaWarned = false;
+// When the browser refuses an autosave (patch too big), the warning comes back every few minutes while it keeps failing,
+// and a small ':stale' note is left so the next start can say the restored patch is an older one.
+let quotaWarnT = 0, autosaveStale = false;
 function save(){
   clearTimeout(saveT);
   saveT = setTimeout(() => {
     histPush();
     if (live.fadeState) return;
     const sd = serialize(); saveActiveClip(sd);
-    try { localStorage.setItem(STORE, JSON.stringify(sd)); }
-    catch(e){ if (!quotaWarned){ quotaWarned = true; toast('This patch is too big to autosave in the browser. Use Save to keep it.'); } }
+    try {
+      localStorage.setItem(STORE, JSON.stringify(sd));
+      if (autosaveStale){ autosaveStale = false; try { localStorage.removeItem(STORE + ':stale'); } catch(e2){} }
+    } catch(e){
+      if (!autosaveStale){ autosaveStale = true; try { localStorage.setItem(STORE + ':stale', String(Date.now())); } catch(e2){} }
+      const now = Date.now();
+      if (now - quotaWarnT > 5*60*1000){ quotaWarnT = now; toast('This patch is too big to autosave in the browser, so your recent changes aren’t kept if the page closes. Use Save to keep it.'); }
+    }
   }, 300);
 }
 function clearPatch(){
@@ -6981,7 +7030,7 @@ function clearPatch(){
   setMode('patch'); simple.group = simple.input = simple.mic = null; simple.slots = [null, null, null, null, null, null]; simple.bypass = [false, false, false, false, false, false];
   scope = null; scopeStack.length = 0; clearSel();
   perfExit(); perf.panels = {}; perf.locked = false;
-  for (const id of [...nodes.keys()]) removeNode(id);
+  removeNodes([...nodes.keys()]);
   edges = [];
   for (const d of decor) d.el.remove();
   decor = []; presets = []; activePreset = -1; midiMap = [];
@@ -6996,6 +7045,8 @@ function load(){
     if (d.name){ patchName = d.name; pnameEl.value = d.name; }
     const ok = applyPatch(d);
     if (ok === null || (!ok && d.nodes.length)) throw new Error('the saved patch couldn’t be rebuilt');
+    let stale = null; try { stale = localStorage.getItem(STORE + ':stale'); } catch(e2){}
+    if (stale){ autosaveStale = true; setTimeout(() => toast('This is an older copy of your patch: the last changes were too big to autosave. Open your saved file if you have one.'), 1200); }
     return ok;
   } catch(e){
     // The autosave couldn't be opened. Keep a copy before anything overwrites it, and start from a clean patch
@@ -7040,7 +7091,7 @@ function applyPatch(d){
     edges = (d.edges || []).filter(e => nodes.has(e.from.node) && nodes.has(e.to.node)
       && nodes.get(e.from.node).jacks['out:' + e.from.port] && nodes.get(e.to.node).jacks['in:' + e.to.port]);
     if (d.pan) pan = d.pan;
-    if (d.zoom) zoom = d.zoom;
+    if (d.zoom) zoom = Math.max(ZMIN, Math.min(ZMAX, +d.zoom || 1));
     // Older patches picked a Screen for the main view: patch it in directly.
     if (d.stageId && nodes.get(d.stageId) && nodes.get(d.stageId).type === 'screen' && !edges.some(e => e.to.node === 'main'))
       edges.push({from:{node: d.stageId, port:'thru'}, to:{node:'main', port:'in'}, kind:'video'});
@@ -7405,8 +7456,27 @@ function recallPreset(i){
   }
   activePreset = i; renderPresets(); save();
 }
+// Delete preset i. Preset morph modules remember presets by position, so the ones after it move up one,
+// and a morph pointing at the deleted preset goes back to "Choose a preset" (instead of quietly jumping to the next one).
+function deletePreset(i){
+  if (!presets[i]) return;
+  presets.splice(i, 1);
+  if (activePreset === i) activePreset = -1; else if (activePreset > i) activePreset--;
+  const fix = ps => { for (const k of ['a', 'b']){ const v = ps[k]; if (v === '' || v == null) continue; if (+v === i) ps[k] = ''; else if (+v > i) ps[k] = String(+v - 1); } };
+  for (const n of nodes.values()) if (n.type === 'morph'){ fix(n.params); n.lastAmt = null; }
+  // Morph settings stored inside the other presets too, so recalling one later doesn't bring back an old position.
+  for (const p of presets) for (const sn of Object.values(p.snap || {})) if (sn.type === 'morph' && sn.params) fix(sn.params);
+  renderPresets(); save();
+}
 function renderPresets(){
   for (const n of nodes.values()) if (n.type === 'morph') morphRefresh(n);
+  // Same presets as last time (e.g. after a click): just move the highlight, so the chip under the mouse stays put
+  // and its double-click (rename) still arrives.
+  const sig = presets.map(p => p.name), last = chipsEl._last;
+  if (last && last.list.length === presets.length && presets.every((p, i) => last.list[i] === p && last.sig[i] === sig[i])){
+    chipsEl.querySelectorAll('.chip').forEach((b, i) => b.classList.toggle('on', i === activePreset));
+  } else {
+  chipsEl._last = {list: presets.slice(), sig};
   chipsEl.replaceChildren(...presets.map((p, i) => {
     const b = h('button', {class:'chip' + (i === activePreset ? ' on' : ''), title:'Click to recall. Double-click to rename.'}, p.name);
     b.addEventListener('click', () => recallPreset(i));
@@ -7415,15 +7485,16 @@ function renderPresets(){
       const ed = h('input', {class:'chipedit', 'aria-label':'Preset name'}); ed.value = p.name;
       b.replaceWith(ed); ed.focus(); ed.select();
       let done = false;
-      const fin = ok => { if (done) return; done = true; if (ok && ed.value.trim()) p.name = ed.value.trim(); renderPresets(); save(); };
+      const fin = ok => { if (done) return; done = true; if (ok && ed.value.trim()) p.name = ed.value.trim(); chipsEl._last = null; renderPresets(); save(); };
       ed.addEventListener('keydown', ev => { if (ev.key === 'Enter') fin(true); if (ev.key === 'Escape') fin(false); });
       ed.addEventListener('blur', () => fin(true));
     });
     const x = h('button', {class:'chipx', 'aria-label':'Delete ' + p.name, title:'Delete preset', text:'×'});
-    x.addEventListener('click', () => { presets.splice(i, 1); if (activePreset === i) activePreset = -1; else if (activePreset > i) activePreset--; renderPresets(); save(); });
+    x.addEventListener('click', () => deletePreset(i));
     return h('span', {class:'chipwrap'}, b, x);
   }));
   if (!presets.length) chipsEl.append(h('span', {class:'chipempty', text:'None yet. Set things up, then press Capture.'}));
+  }
   document.getElementById('pupd').disabled = activePreset < 0;
   // The dropdown always shows which preset is active, by name.
   const sel = document.getElementById('psel');
@@ -7435,7 +7506,7 @@ function renderPresets(){
   const sel = document.getElementById('psel');
   sel.addEventListener('change', () => { const i = +sel.value; if (i >= 0) recallPreset(i); });
   document.getElementById('pren').addEventListener('click', async () => { const p = presets[activePreset]; if (!p) return; const nm = await askDialog('Rename the preset:', {input: p.name, ok: 'Rename'}); if (nm && nm.trim()){ p.name = nm.trim(); renderPresets(); save(); } });
-  document.getElementById('pdel').addEventListener('click', async () => { const p = presets[activePreset]; if (!p) return; if (!await askDialog('Delete the preset “' + p.name + '”?', {ok: 'Delete'})) return; presets.splice(activePreset, 1); activePreset = -1; renderPresets(); save(); });
+  document.getElementById('pdel').addEventListener('click', async () => { const p = presets[activePreset]; if (!p) return; if (!await askDialog('Delete the preset “' + p.name + '”?', {ok: 'Delete'})) return; deletePreset(activePreset); });
 }
 document.getElementById('pcap').addEventListener('click', () => {
   let i = presets.length + 1; while (presets.some(p => p.name === 'Preset ' + i)) i++;
@@ -7454,6 +7525,7 @@ function removeDecor(item){ item.el.remove(); decor = decor.filter(d => d !== it
 window.addEventListener('keydown', e => {
   if (e.key !== 'Delete' && e.key !== 'Backspace') return;
   if (learn.on && learn.target) return;
+  if (!patchEditable()) return; // boxes and comments are only deleted in Patch mode, where they can be seen
   if (e.target.closest && e.target.closest('input, select, textarea, [contenteditable="true"]')) return;
   const sel = decor.find(d => d.el.classList.contains('sel'));
   if (sel){ e.preventDefault(); removeDecor(sel); }
@@ -7503,7 +7575,6 @@ function addDecor(dt){
     const isRz = e.target === rz;
     // Capture on the element that was grabbed: a box itself ignores the pointer so the patch behind it stays usable.
     const cap = e.target;
-    cap.setPointerCapture(e.pointerId);
     const sx = e.clientX, sy = e.clientY, o = {x: dt.x, y: dt.y, w: dt.w, h: dt.h};
     const mv = ev => {
       const dx = (ev.clientX - sx)/zoom, dy = (ev.clientY - sy)/zoom;
@@ -7513,8 +7584,7 @@ function addDecor(dt){
       } else { dt.x = Math.round(o.x + dx); dt.y = Math.round(o.y + dy); }
       place();
     };
-    const up = () => { cap.removeEventListener('pointermove', mv); cap.removeEventListener('pointerup', up); cap.removeEventListener('pointercancel', up); save(); };
-    cap.addEventListener('pointermove', mv); cap.addEventListener('pointerup', up); cap.addEventListener('pointercancel', up);
+    pointerSession(cap, e, {move: mv, end: () => save()});
   });
   place(); paint();
   world.insertBefore(el, world.firstChild);
@@ -7534,7 +7604,7 @@ logoIn.addEventListener('change', () => {
     const ar = img.width/img.height, w = Math.min(240, c.cv.width);
     addDecor({kind:'logo', x: logoAt.x, y: logoAt.y, w, h: Math.round(w/ar), ar, src}); save();
   };
-  img.onerror = () => toast('That image couldn’t be opened.');
+  img.onerror = () => { URL.revokeObjectURL(url); toast('That image couldn’t be opened.'); };
   img.src = url;
 });
 function addItem(type, x, y){
