@@ -1547,6 +1547,8 @@ function clockPeriod(n, port, measured){
 function beatSeconds(n){
   const e = edgeInto(n.id, 'clock');
   if (e){ const src = nodes.get(e.from.node); if (src && src.periods) return src.periods.beat; return n.clkPeriod || null; }
+  // A running BPM module: your own one in the patch wins; otherwise the hidden tempo of Clips / Simple mode.
+  for (const m of nodes.values()) if (m.type === 'bpm' && m.periods && m.params.running && !m.params.sys) return m.periods.beat;
   for (const m of nodes.values()) if (m.type === 'bpm' && m.periods && m.params.running) return m.periods.beat;
   for (const m of nodes.values()) if ((m.type === 'bpm' || m.type === 'clock' || m.type === 'midiclock') && m.periods) return m.periods.beat;
   return null;
@@ -7296,7 +7298,7 @@ function midiDevices(){
 }
 function midiMsg(e, inp){
   const st = e.data[0], d1 = e.data[1] || 0, d2 = e.data[2] || 0;
-  if (st === 0xF8 || st === 0xFA || st === 0xFB || st === 0xFC){ clipsClock(st); for (const n of nodes.values()) if (n.type === 'midiclock') midiClockMsg(n, st, inp); return; }
+  if (st === 0xF8 || st === 0xFA || st === 0xFB || st === 0xFC){ clipsClock(st, e.timeStamp); for (const n of nodes.values()) if (n.type === 'midiclock') midiClockMsg(n, st, inp); return; }
   if (st >= 0xf0) return;
   const type = st & 0xf0, ch = (st & 15) + 1;
   for (const n of nodes.values()) if (n.type === 'midi') midiToNode(n, type, ch, d1, d2, inp);
@@ -7547,13 +7549,13 @@ function addItem(type, x, y){
 }
 
 /* ---------- patch files ---------- */
-let patchName = 'Untitled', fileHandle = null, pendingSaveAs = false;
+// fileName: the patch name the file was opened or saved under. Renaming the patch saves a new file.
+let patchName = 'Untitled', fileHandle = null, fileName = null;
 const pnameEl = document.getElementById('pname');
 const PICKERS = 'showSaveFilePicker' in window && (() => { try { return window.self === window.top; } catch(e){ return false; } })();
 pnameEl.value = patchName;
 pnameEl.addEventListener('input', () => { patchName = pnameEl.value.trim() || 'Untitled'; save(); });
-pnameEl.addEventListener('keydown', e => { if (e.key === 'Enter'){ pnameEl.blur(); if (pendingSaveAs){ pendingSaveAs = false; downloadPatch(); } } if (e.key === 'Escape'){ pendingSaveAs = false; pnameEl.blur(); } });
-pnameEl.addEventListener('blur', () => pnameEl.classList.remove('asking'));
+pnameEl.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === 'Escape') pnameEl.blur(); });
 const slug = s => (s || 'untitled').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'untitled';
 async function downloadPatch(){
   const filename = slug(patchName) + '.seeds.json';
@@ -7570,15 +7572,22 @@ async function downloadPatch(){
 }
 // The file this patch lives in is remembered across restarts, so Save keeps writing to it without asking.
 function setFile(hd){
-  fileHandle = hd || null;
-  try { idb('readwrite', st => { try { return hd ? st.put(hd, 'curFile') : st.delete('curFile'); } catch(e){ return null; } }).catch(() => {}); } catch(e){}
+  fileHandle = hd || null; fileName = hd ? patchName : null;
+  try { idb('readwrite', st => { try { return hd ? st.put({hd, name: patchName}, 'curFile') : st.delete('curFile'); } catch(e){ return null; } }).catch(() => {}); } catch(e){}
 }
 async function canWrite(hd){
   try { if ((await hd.queryPermission({mode: 'readwrite'})) === 'granted') return true; return (await hd.requestPermission({mode: 'readwrite'})) === 'granted'; }
   catch(e){ return false; }
 }
 async function writeTo(hd){ const w = await hd.createWritable(); await w.write(JSON.stringify(serialize(), null, 1)); await w.close(); }
+// One save at a time (holding Cmd+S, or clicking Save twice, can't start a second one).
+let saving = false;
 async function savePatch(as){
+  if (saving) return;
+  saving = true;
+  try { await savePatchNow(as); } finally { saving = false; }
+}
+async function savePatchNow(as){
   // The name box is the patch name.
   const typed = (pnameEl.value || '').trim(); if (typed) patchName = typed;
   if (as){
@@ -7586,12 +7595,14 @@ async function savePatch(as){
     if (nm == null || !nm.trim()) return;
     patchName = nm.trim(); pnameEl.value = patchName; setFile(null);
   }
-  if (fileHandle && fileHandle.name.replace(/(\.seeds)?\.json$/i, '') !== slug(patchName)) setFile(null); // renamed: save as a new file
+  if (fileHandle && fileName !== patchName) setFile(null); // renamed: save as a new file
   // Save writes straight back to the file this patch was opened from or last saved to, with no dialog.
   // Only Save as (or the very first save of a new patch with no save folder chosen) asks where.
-  if (!as && fileHandle && await canWrite(fileHandle)){
-    try { await writeTo(fileHandle); toast('Saved ' + fileHandle.name + '.'); save(); return; }
-    catch(e){ setFile(null); } // the file was moved or deleted: fall through and save it fresh
+  if (!as && fileHandle){
+    if (await canWrite(fileHandle)){
+      try { await writeTo(fileHandle); toast('Saved ' + fileHandle.name + '.'); save(); return; }
+      catch(e){ setFile(null); } // the file was moved or deleted: fall through and save it fresh
+    } else setFile(null); // not allowed to write there any more: ask where to save instead
   }
   if (await dirReady()){ try { await saveToFolder(patchName); } catch(e){ toast('Couldn’t save: ' + e.message); } return; }
   if (PICKERS){
@@ -7600,7 +7611,7 @@ async function savePatch(as){
         const o = {suggestedName: slug(patchName) + '.seeds.json', types:[{description:'...Seeds patch', accept:{'application/json':['.json']}}]};
         setFile(await window.showSaveFilePicker(o));
       }
-      const w = await fileHandle.createWritable(); await w.write(JSON.stringify(serialize(), null, 1)); await w.close();
+      await writeTo(fileHandle);
       toast('Saved ' + fileHandle.name + '.'); save();
     } catch(e){ if (e.name !== 'AbortError') toast('Couldn’t save: ' + e.message); }
     return;
@@ -7636,7 +7647,7 @@ document.getElementById('fsaveas').addEventListener('click', () => savePatch(tru
 window.addEventListener('keydown', e => {
   if (!(e.metaKey || e.ctrlKey)) return;
   const k = e.key.toLowerCase();
-  if (k === 's'){ e.preventDefault(); savePatch(e.shiftKey); }
+  if (k === 's'){ e.preventDefault(); if (!e.repeat) savePatch(e.shiftKey); }
   if (k === 'o'){ e.preventDefault(); openPatch(); }
   if (k === 'n' && !e.shiftKey){ e.preventDefault(); newPatch(); }
   if (k === 'k' && !e.shiftKey){ e.preventDefault(); keyBtn.click(); }
@@ -7649,7 +7660,9 @@ const perfEl = document.getElementById('perf'), perfSurf = document.getElementBy
 const perfLockBtn = document.getElementById('plock'), perfBadge = document.getElementById('pbadge'), perfArrBtn = document.getElementById('parrange');
 const perfHidBtn = document.getElementById('phidden'), perfMenu = document.getElementById('pmenu');
 const modePatch = document.getElementById('mpatch'), modePerf = document.getElementById('mperf');
-const perfMods = () => [...nodes.values()].filter(n => !n.fixed && !n.noSave && !n.params.sys && n.type !== 'group' && !(simple.group && isInside(n.id, simple.group)));
+// Modules that get a panel. During a Clips crossfade the outgoing clip's modules are left out (they're about to go).
+const perfMods = () => { const going = live.fadeState ? new Set(live.fadeState.oldIds) : null;
+  return [...nodes.values()].filter(n => !n.fixed && !n.noSave && !n.params.sys && n.type !== 'group' && !(simple.group && isInside(n.id, simple.group)) && !(going && going.has(n.id))); };
 function perfState(n){ return perf.panels[n.id] || (perf.panels[n.id] = {x: null, y: 0, w: null, min: false, hide: false, off: []}); }
 function perfTitle(n){ return n.params.label || DEFS[n.type].title; }
 // Name shown in Perform mode: a custom name if one was given, otherwise the module's own title.
@@ -7748,10 +7761,6 @@ function perfArrange(all){
     st.x = x; st.y = y; n._pp.style.left = x + 'px'; n._pp.style.top = y + 'px';
     x += w + 16; rowH = Math.max(rowH, hh);
   }
-  if (!all){
-    // Newly shown panels go below everything already placed.
-    let maxY = 0; for (const n of perfMods()) if (n._pp && perfState(n).x !== null) maxY = Math.max(maxY, perfState(n).y + n._pp.offsetHeight);
-  }
 }
 function perfMenuUpdate(){
   const hidden = perfMods().filter(n => perfState(n).hide);
@@ -7832,7 +7841,7 @@ function isInside(id, gid){ let n = nodes.get(id); while (n && n.parent){ if (n.
 const descendants = g => [...nodes.values()].filter(n => isInside(n.id, g.id));
 function portInfo(n, port, dir){
   if (port.startsWith('p:')){ const k = port.slice(2); return {kind:'mod', label: (n.ctl && n.ctl[k] && n.ctl[k].label) || k}; }
-  const p = (dir === 'in' ? DEFS[n.type].ins : DEFS[n.type].outs).find(q => q.name === port) || (n.type === 'group' ? null : null);
+  const p = (dir === 'in' ? DEFS[n.type].ins : DEFS[n.type].outs).find(q => q.name === port) || null;
   return p ? {kind: p.kind, label: p.label} : {kind:'video', label: port};
 }
 // Ports a group shows: anything cabled across its edge, plus ports remembered when it was made.
@@ -8200,7 +8209,7 @@ function setMode(m){
   if (m === 'simple') simpleEnter();
   if (m === 'live') liveEnter();
   if (m === 'sliders') slidersEnter(); else slidersExit();
-  if (typeof paintStrips === 'function') paintStrips();
+  paintStrips();
   for (const [b, k] of [[modePatch, 'patch'], [modePerf, 'perform'], [document.getElementById('mlive'), 'live'], [document.getElementById('msliders'), 'sliders'], [document.getElementById('msimple'), 'simple']]){ b.classList.toggle('on', m === k); b.setAttribute('aria-pressed', String(m === k)); }
   if (m === 'patch' && pendingFit){ pendingFit = false; requestAnimationFrame(() => fitAll()); }
 }
@@ -8208,7 +8217,7 @@ function setMode(m){
 /* ---------- Settings: Simple mode, tips, skins (saved for this app, not per patch) ---------- */
 const SETTINGS_KEY = STORE + ':settings';
 let settings = {simple: false, tips: true, skin: 'minimal', defaultSkin: 'minimal'};
-const firstSettings = !localStorage.getItem(STORE + ':settings');
+let firstSettings = false; try { firstSettings = !localStorage.getItem(STORE + ':settings'); } catch(e){}
 if (firstSettings && matchMedia('(pointer: coarse)').matches) settings.simple = true; // phones and tablets start simple
 try { Object.assign(settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch(e){}
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch(e){} };
@@ -8363,7 +8372,7 @@ const MODULE_HELP = {
   vecpat:'Crisp vector-style patterns: nested polygons, starbursts, checker tunnels, hexagon and triangle grids, zigzags and lattices, spinning and pulsing.',
   vosc:'An analog-style video oscillator: sine, triangle, saw, square or stepped-noise waves across the screen, in RGB or two colors. Patch video into FM to bend the waves.',
   wfold:'Folds bright parts back down (like an audio wave folder), turning gradients into rippling bands.',
-  lumakey:'Makes the dark (or bright) parts of a picture see-through, showing a background video or color.',
+  lumakey:'Makes part of a picture see-through by brightness, showing a background video or color. Threshold sets the brightness where the cut happens, Softness smooths the edge, and the switch chooses which side of the threshold (the darker or the brighter parts) is removed.',
   chromakey:'Green screen: one color becomes see-through, with tolerance, softness and spill removal.',
   vfilter:'Blur, sharpen, glow, invert, threshold, solarize, emboss, hue rotate or saturation.',
   displace:'Warps the picture by the brightness of a map video (or itself), for liquid and heat-haze looks.',
@@ -8530,12 +8539,17 @@ for (const t of MEM_TYPES){ const def = DEFS[t]; if (def && !def.ins.some(p => p
   def.ins.push({name:'store', kind:'gate', label:'Store shape'}, {name:'recall', kind:'mod', label:'Recall'}); } }
 
 /* ---------- Undo and redo ---------- */
-let histStack = [], redoStack = [], histLast = null, histBusy = false;
+let histStack = [], redoStack = [], histLast = null, histBusy = false, histBytes = 0;
+// Undo keeps up to 120 steps, and fewer when they're big (pictures in a patch): about 30 MB of text at most.
+const HIST_MAX = 120, HIST_BYTES = 15e6; // characters (2 bytes each)
 function histState(){ const d = serialize(); delete d.pan; delete d.zoom; return JSON.stringify(d); }
 function histPush(){
   if (histBusy || live.fadeState) return;
   const st = histState(); if (st === histLast) return;
-  if (histLast !== null){ histStack.push(histLast); if (histStack.length > 120) histStack.shift(); redoStack = []; }
+  if (histLast !== null){
+    histStack.push(histLast); histBytes += histLast.length; redoStack = [];
+    while (histStack.length > 1 && (histStack.length > HIST_MAX || histBytes > HIST_BYTES)) histBytes -= histStack.shift().length;
+  }
   histLast = st; updUndo();
 }
 function updUndo(){ document.getElementById('undobtn').disabled = !histStack.length; document.getElementById('redobtn').disabled = !redoStack.length; }
@@ -8544,7 +8558,7 @@ function reconcile(d){
   const wasPerf = perf.on; if (wasPerf) perfExit();
   if (simple.on) for (const id of [simple.input, ...simple.slots]) simpleReturnBody(nodes.get(id));
   const want = new Map((d.nodes || []).map(s => [s.id, s]));
-  for (const n of [...nodes.values()]) if (!n.fixed && nodes.has(n.id) && (!want.has(n.id) || want.get(n.id).type !== n.type)){ n.ungrouping = true; removeNode(n.id); }
+  for (const n of [...nodes.values()]) if (!n.fixed && !n.noSave && nodes.has(n.id) && (!want.has(n.id) || want.get(n.id).type !== n.type)){ n.ungrouping = true; removeNode(n.id); }
   for (const s of d.nodes || []){
     let n = nodes.get(s.id);
     if (!n){ n = addNode(s.type, s.x, s.y, JSON.parse(JSON.stringify(s.params)), s.id); if (!n) continue; }
@@ -8554,6 +8568,12 @@ function reconcile(d){
         if (JSON.stringify(n.params[k]) === JSON.stringify(v)) continue;
         const val = JSON.parse(JSON.stringify(v));
         if (n.ctl && n.ctl[k]) setParam(n, k, val); else n.params[k] = val;
+      }
+      // Settings the saved state didn't have (added since) go back to the module's default, or away.
+      const dp = DEFS[n.type].params || {};
+      for (const k of Object.keys(n.params)) if (!(k in (s.params || {}))){
+        if (k in dp){ const val = JSON.parse(JSON.stringify(dp[k])); if (JSON.stringify(n.params[k]) !== JSON.stringify(val)){ if (n.ctl && n.ctl[k]) setParam(n, k, val); else n.params[k] = val; } }
+        else delete n.params[k];
       }
       if (DEFS[n.type].refresh) DEFS[n.type].refresh(n);
       if (n.params.w) n.el.style.width = n.params.w + 'px';
@@ -8569,24 +8589,25 @@ function reconcile(d){
   presets = d.presets || []; activePreset = typeof d.activePreset === 'number' ? d.activePreset : -1; midiMap = d.midiMap || [];
   if (d.perform){ perf.panels = JSON.parse(JSON.stringify(d.perform.panels || {})); perf.locked = !!d.perform.locked; }
   setPatchBg(d.bg || null); keyMap = Array.isArray(d.keyMap) ? d.keyMap : []; setTimeout(markKeys, 0);
-  if (d.bank){ bank.count = d.bank.count || 8; bank.vals = (d.bank.vals || []).concat(Array(16).fill(0)).slice(0, 16); bank.maps = d.bank.maps || []; } else bank.maps = [];
-  if (document.body.classList.contains('sliders')) bankRender();
+  bankFrom(d);
+  if (document.body.classList.contains('sliders')) bankRender(); else bankMarks();
   if (d.simple) Object.assign(simple, JSON.parse(JSON.stringify({group: d.simple.group, input: d.simple.input, mic: d.simple.mic, micDev: d.simple.micDev || '', count: d.simple.count || 6,
     slots: d.simple.slots || simple.slots, bypass: d.simple.bypass || simple.bypass})));
   if (d.name){ patchName = d.name; pnameEl.value = patchName; }
   syncCableEls(); syncAudio(); refreshGroups(); applyScope(); renderPresets(); markMapped();
-  if (simple.on){ simpleWire(); simpleRender(); setSimpleCount(simpleCount()); }
+  // Simple mode needs its chain group and camera: an older state may not have them, so they're made again.
+  if (simple.on){ simpleEnsure(); simpleWire(); applyScope(); simpleRender(); setSimpleCount(simpleCount()); }
   if (wasPerf) perfEnter();
 }
 function undo(){
   if (!histStack.length) return;
-  redoStack.push(histLast); const prev = histStack.pop();
+  redoStack.push(histLast); const prev = histStack.pop(); histBytes -= prev.length;
   histBusy = true; try { reconcile(JSON.parse(prev)); } finally { histBusy = false; }
   histLast = histState(); updUndo(); save(); toast('Undone');
 }
 function redo(){
   if (!redoStack.length) return;
-  histStack.push(histLast); const nx = redoStack.pop();
+  histStack.push(histLast); histBytes += histLast.length; const nx = redoStack.pop();
   histBusy = true; try { reconcile(JSON.parse(nx)); } finally { histBusy = false; }
   histLast = histState(); updUndo(); save(); toast('Redone');
 }
@@ -8668,7 +8689,7 @@ const SIMPLE_EXAMPLES = [
   {id:'s-dream', name:'Dream echo', desc:'Soft color shift, a delayed echo and gentle ripples.', count: 3, slots: [['cadj', {hue:30, sat:1.3}], ['vdelay', {time:500, mix:0.5}], ['warp', {amp:0.015, freq:3}]]}
 ];
 function loadExample(ex){
-  const spec = ex.build();
+  const spec = JSON.parse(JSON.stringify(ex.build())); // a copy, so playing with the patch never changes a saved example
   if (settings.simple) setSimpleMode(false);
   clearPatch();
   applyPatch(Object.assign({v: 1}, spec, {nodes: spec.nodes, edges: spec.edges}));
@@ -8739,7 +8760,7 @@ document.getElementById('setquality').addEventListener('change', e => setQuality
     const row = document.getElementById('gfxrow'), cb = document.getElementById('setgfx'); row.hidden = false;
     nat.getGfxCompat().then(v => { cb.checked = !!v; });
     cb.addEventListener('change', async () => {
-      await nat.setGfxCompat(cb.checked);
+      try { await nat.setGfxCompat(cb.checked); } catch(e){ toast('Couldn’t change that setting: ' + ((e && e.message) || 'unknown error')); return; }
       if (await askDialog('Seeds needs to restart to change graphics settings. Restart now? (Save your patch and takes first.)', {ok: 'Restart now', cancel: 'Later'})) nat.relaunch();
     });
   }
@@ -8747,7 +8768,7 @@ document.getElementById('setquality').addEventListener('change', e => setQuality
     const row = document.getElementById('hwrow'), cb = document.getElementById('sethw'); row.hidden = false;
     nat.getHwEncode().then(v => { cb.checked = !!v; });
     cb.addEventListener('change', async () => {
-      await nat.setHwEncode(cb.checked);
+      try { await nat.setHwEncode(cb.checked); } catch(e){ toast('Couldn’t change that setting: ' + ((e && e.message) || 'unknown error')); return; }
       if (await askDialog('Seeds needs to restart to change how it records. Restart now? (Save your patch and takes first.)', {ok: 'Restart now', cancel: 'Later'})) nat.relaunch();
     });
   }
@@ -8809,16 +8830,30 @@ function askDialog(msg, opts){
   });
 }
 // A tiny key-value store for things that can't go in localStorage (the chosen save folder).
+// Each use opens the database, does one job, and closes it again.
 const idb = (mode, fn) => new Promise((res, rej) => {
-  const r = indexedDB.open('seeds', 1);
+  let r; try { r = indexedDB.open('seeds', 1); } catch(e){ rej(e); return; }
   r.onupgradeneeded = () => r.result.createObjectStore('kv');
-  r.onsuccess = () => { const tx = r.result.transaction('kv', mode), st = tx.objectStore('kv'), q = fn(st); tx.oncomplete = () => res(q && q.result); tx.onerror = () => rej(tx.error); };
+  r.onsuccess = () => {
+    const db = r.result, end = () => { try { db.close(); } catch(e){} };
+    try {
+      const tx = db.transaction('kv', mode), st = tx.objectStore('kv'), q = fn(st);
+      tx.oncomplete = () => { end(); res(q && q.result); };
+      tx.onerror = () => { end(); rej(tx.error); };
+      tx.onabort = () => { end(); rej(tx.error || new Error('storage was interrupted')); };
+    } catch(e){ end(); rej(e); }
+  };
   r.onerror = () => rej(r.error);
 });
 let saveDir = null;
 idb('readonly', st => st.get('saveDir')).then(d => { saveDir = d || null; paintSaveDir(); }).catch(() => {});
 // Reconnect to the file the open patch was last saved to (only if the names still match).
-idb('readonly', st => st.get('curFile')).then(hd => { if (hd && !fileHandle && hd.name.replace(/(\.seeds)?\.json$/i, '') === slug(patchName)) fileHandle = hd; }).catch(() => {});
+// Older copies stored just the file; newer ones store the file and the patch name it was saved under.
+idb('readonly', st => st.get('curFile')).then(v => {
+  const hd = v && v.hd ? v.hd : v, nm = v && v.hd ? v.name : null;
+  if (!hd || !hd.name || fileHandle) return;
+  if (nm != null ? nm === patchName : hd.name.replace(/(\.seeds)?\.json$/i, '') === slug(patchName)){ fileHandle = hd; fileName = patchName; }
+}).catch(() => {});
 function paintSaveDir(){ const el = document.getElementById('fdirname'); if (el) el.textContent = saveDir ? 'Saving to: ' + saveDir.name : 'Asks where to save each time'; }
 async function chooseSaveDir(){
   if (!window.showDirectoryPicker){ toast('This browser can’t pick a folder. Patches are saved to Downloads.'); return; }
@@ -8997,7 +9032,7 @@ document.getElementById('fexpmods').addEventListener('click', () => exportCustom
 /* ---------- Your own examples ---------- */
 document.getElementById('fsaveex').addEventListener('click', async () => {
   const nm = await askDialog('Name this example:', {input: patchName && patchName !== 'Untitled' ? patchName : 'My example', ok: 'Save'}); if (!nm || !nm.trim()) return;
-  const d = serialize(); delete d.pan; delete d.zoom;
+  const d = JSON.parse(JSON.stringify(serialize())); delete d.pan; delete d.zoom; // its own copy: later edits don't change the example
   const i = userExamples.findIndex(x => x.name === nm.trim()), ex = {name: nm.trim(), desc: 'Saved ' + new Date().toLocaleDateString(), patch: d};
   if (i >= 0) userExamples[i] = ex; else userExamples.push(ex);
   saveUserExamples(); renderExamples(); toast('Saved “' + ex.name + '” to Examples.');
@@ -9191,8 +9226,10 @@ window.addEventListener('keydown', e => {
 }, true);
 window.addEventListener('keyup', e => {
   const m = keyMap.find(k => k.key === e.key.toLowerCase()); if (!m || !m.pad) return;
-  const n = nodes.get(m.node); if (n && n.pressUp) n.pressUp();
+  const n = nodes.get(m.node); if (n && n.pressUp){ n.pressUp(); n.keyHeld = null; }
 });
+// Switching to another window while a key is held: the key-up never arrives here, so let go of held pads now.
+window.addEventListener('blur', () => { for (const n of nodes.values()) if (n.keyHeld){ n.keyHeld = null; if (n.pressUp) n.pressUp(); } });
 
 /* ---------- Fonts for Text and 3D text: built in, plus fonts you import ---------- */
 const FONTS = [
@@ -9227,13 +9264,15 @@ function fontOptions(){ return [...FONTS.map(f => [f[0], f[1]]), ...userFonts.ma
 function fontPicker(n){
   const sel = h('select', {'aria-label':'Font'});
   const fill = () => { const cur = n.params.font; sel.replaceChildren(...fontOptions().map(([v, l]) => h('option', {value: v, text: l}))); sel.value = cur; if (sel.value !== cur){ sel.append(h('option', {value: cur, text: cur.replace(/^u:/, '') + ' (missing)'})); sel.value = cur; } };
-  fill(); (window.fontPickers = window.fontPickers || []).push(fill);
+  // Font menus refresh when a font is imported. Menus of deleted modules are dropped from the list.
+  fill(); window.fontPickers = (window.fontPickers || []).filter(f => nodes.get(f.n.id) === f.n).concat([{n, fill}]);
   sel.addEventListener('change', () => { n.params.font = sel.value; n.dirty = true; save(); });
   n.ctl = n.ctl || {}; n.ctl.font = {set(v){ n.params.font = v; fill(); }};
   const file = h('input', {type:'file', accept:'.ttf,.otf,.woff,.woff2,font/*', hidden: true});
   file.addEventListener('change', async () => { const f = file.files[0]; file.value = ''; if (!f) return; const nm = await importFont(f); if (nm){ n.params.font = 'u:' + nm; fill(); save(); } });
   return [row('Font', sel), file, h('button', {class:'btn', text:'Import font…', onclick: () => file.click()})];
 }
+function fontRefresh(){ window.fontPickers = (window.fontPickers || []).filter(f => nodes.get(f.n.id) === f.n); window.fontPickers.forEach(f => f.fill()); }
 async function addFontFace(name, data){ const ff = new FontFace(name, data); await ff.load(); document.fonts.add(ff); }
 async function importFont(file){
   const name = file.name.replace(/\.(ttf|otf|woff2?)$/i, '').replace(/["\\]/g, '').trim() || 'Imported font';
@@ -9241,28 +9280,35 @@ async function importFont(file){
     const data = await file.arrayBuffer(); await addFontFace(name, data);
     userFonts = userFonts.filter(f => f.name !== name).concat([{name, data}]);
     try { await idb('readwrite', st => st.put(userFonts, 'fonts')); } catch(e){}
-    (window.fontPickers || []).forEach(f => f()); toast('Added the font “' + name + '”. It’s saved in this app for next time.');
+    fontRefresh(); toast('Added the font “' + name + '”. It’s saved in this app for next time.');
     return name;
   } catch(e){ toast('Couldn’t use that font file: ' + e.message); return null; }
 }
 idb('readonly', st => st.get('fonts')).then(async list => {
   if (!Array.isArray(list)) return;
   for (const f of list){ try { await addFontFace(f.name, f.data); userFonts.push(f); } catch(e){} }
-  (window.fontPickers || []).forEach(f => f());
+  fontRefresh();
 }).catch(() => {});
 
 /* ---------- Clips: launch whole patches like clips (click, MIDI note, or on the beat) ---------- */
 const LIVE_KEY = STORE + ':liveset';
 const live = {on: false, slots: [], count: 16, bpm: 120, quant: '0', extSync: false, layout: 'learned', learnSlot: -1, active: -1, pending: null, fadeState: null,
-  out: null, bpmId: null, t0: performance.now(), ticks: 0, mixFrom: 0, mixTo: 0, t0f: 0, dur: 0};
+  out: null, bpmId: null, t0: performance.now(), beat0: 0, ticks: 0, mixFrom: 0, mixTo: 0, t0f: 0, dur: 0};
+// A stored or imported set can have missing or broken slots: each becomes an empty slot, and there are always 32.
+function cleanSlots(list){
+  const out = (Array.isArray(list) ? list : []).slice(0, 32).map(s => (s && typeof s === 'object') ? Object.assign({name: '', patch: null, note: null, ch: null}, s, {patch: s.patch && Array.isArray(s.patch.nodes) ? s.patch : null}) : {name: '', patch: null, note: null, ch: null});
+  while (out.length < 32) out.push({name: '', patch: null, note: null, ch: null});
+  return out;
+}
 try { const v = JSON.parse(localStorage.getItem(LIVE_KEY) || 'null'); if (v){ live.slots = v.slots || []; live.bpm = v.bpm || 120; live.count = v.count || 16; live.quant = v.quant || '0'; live.layout = v.layout || 'learned'; } } catch(e){}
-while (live.slots.length < 32) live.slots.push({name: '', patch: null, note: null, ch: null});
-let liveSaveT = null;
+live.slots = cleanSlots(live.slots);
+let liveSaveT = null, liveQuotaWarned = false;
 function liveSave(){
   clearTimeout(liveSaveT);
   liveSaveT = setTimeout(() => {
     const data = JSON.stringify({slots: live.slots, bpm: live.bpm, count: live.count, quant: live.quant, layout: live.layout});
-    try { localStorage.setItem(LIVE_KEY, data); } catch(e){ toast('This set is too big to keep in the app. Use Export set… to save it as a file.'); }
+    // Too big for the browser's storage: say so once (not on every change), and keep working.
+    try { localStorage.setItem(LIVE_KEY, data); liveQuotaWarned = false; } catch(e){ if (!liveQuotaWarned){ liveQuotaWarned = true; toast('This set is too big to keep in the app. Use Export set… to save it as a file.'); } }
   }, 250);
 }
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
@@ -9284,7 +9330,10 @@ function remapPatch(src){
   return d;
 }
 // Beats since the Clips transport started (from MIDI clock ticks when synced).
-function clipPos(){ return live.extSync && live.ticks > 0 ? live.ticks/24 : (performance.now() - live.t0)/1000*live.bpm/60; }
+// Without MIDI clock: the beats counted up to the last tempo change (beat0), plus the time since then at the current tempo,
+// so changing the tempo never moves the beat grid (a queued clip still starts on the beat it was waiting for).
+function freePos(){ return live.beat0 + (performance.now() - live.t0)/1000*live.bpm/60; }
+function clipPos(){ return live.extSync && live.ticks > 0 ? live.ticks/24 : freePos(); }
 function clipTrigger(i){
   const sl = live.slots[i]; if (!sl || !sl.patch) return;
   clipsBpm();
@@ -9293,10 +9342,18 @@ function clipTrigger(i){
   clipLaunch(i);
 }
 // The playing clip's patch keeps every change you make, in any mode.
-function saveActiveClip(d){ if (live.active < 0 || !live.slots[live.active] || live.fadeState) return; live.slots[live.active].patch = d || serialize(); liveSave(); }
+// Slots keep their own copy, so later edits to the running patch never reach into another slot.
+const copyPatch = d => JSON.parse(JSON.stringify(d));
+function saveActiveClip(d){ if (live.active < 0 || !live.slots[live.active] || live.fadeState) return; live.slots[live.active].patch = copyPatch(d || serialize()); liveSave(); }
+// The patch-wide fader bank from a saved patch (none saved: the usual 8 faders, all at zero, nothing linked).
+function bankFrom(d){
+  if (d.bank){ bank.count = d.bank.count || 8; bank.vals = (d.bank.vals || []).concat(Array(16).fill(0)).slice(0, 16); bank.maps = copyPatch(d.bank.maps || []); }
+  else { bank.count = 8; bank.vals = Array(16).fill(0); bank.maps = []; }
+}
 function clipLaunch(i){
-  const sl = live.slots[i]; if (!sl || !sl.patch) return;
-  live.pending = null;
+  const sl = live.slots[i];
+  live.pending = null; // cleared first, so a queued launch of a slot that was emptied doesn't retry every frame
+  if (!sl || !sl.patch){ liveRender(); return; }
   if (live.fadeState) clipFinish();
   saveActiveClip();
   const d = remapPatch(sl.patch);
@@ -9309,17 +9366,23 @@ function clipLaunch(i){
     const nn = addNode(s.type, s.x, s.y, s.params, s.id); if (!nn) continue;
     nn.parent = s.parent || undefined; if (s.collapsed) setCollapsed(nn, true);
     // A camera that's already running keeps running: the new clip borrows its picture, so there's no black flash.
+    // Same camera: the new module asks for the device the old one is really using ('' = the default camera,
+    // which only counts as the same when the old module was also on the default).
     if (nn.type === 'camera'){
-      const o = oldIds.map(id => nodes.get(id)).find(m => m && m.type === 'camera' && m.stream && !m.sharedOut && (m.params.deviceId || '') === (nn.params.deviceId || ''));
-      if (o){ nn.stream = o.stream; nn.video.srcObject = o.stream; nn.video.play().catch(() => {}); o.sharedOut = true; if (nn.btn){ nn.btn.textContent = 'Stop camera'; nn.btn.classList.add('on'); } if (nn.status) nn.status.textContent = (o.status && o.status.textContent !== 'Off') ? o.status.textContent : 'On'; }
+      const want = nn.params.deviceId || '';
+      const same = m => { const have = m.params.deviceId || ''; if (!want) return !have; if (have === want) return true;
+        try { const t = m.stream.getVideoTracks()[0]; return !!t && t.getSettings().deviceId === want; } catch(e){ return false; } };
+      const o = oldIds.map(id => nodes.get(id)).find(m => m && m.type === 'camera' && m.stream && !m.sharedOut && same(m));
+      if (o){ nn.camH = o.camH; nn.stream = o.stream; nn.video.srcObject = o.stream; nn.video.play().catch(() => {}); o.sharedOut = true; if (nn.btn){ nn.btn.textContent = 'Stop camera'; nn.btn.classList.add('on'); } if (nn.status) nn.status.textContent = (o.status && o.status.textContent !== 'Off') ? o.status.textContent : 'On'; }
     }
   }
-  const ok = id => id === 'main' || id === 'rec' || nodes.has(id);
-  const newEdges = (d.edges || []).filter(e => ok(e.from.node) && ok(e.to.node));
+  // Only cables whose both ends exist (as when opening a patch file).
+  const newEdges = (d.edges || []).filter(e => e && e.from && e.to && nodes.has(e.from.node) && nodes.has(e.to.node)
+    && nodes.get(e.from.node).jacks['out:' + e.from.port] && nodes.get(e.to.node).jacks['in:' + e.to.port]);
   const newMain = (newEdges.find(e => e.to.node === 'main' && e.to.port === 'in') || {}).from;
   // The patch-wide settings switch to the new clip straight away.
   presets = d.presets || []; activePreset = typeof d.activePreset === 'number' ? d.activePreset : -1; midiMap = d.midiMap || []; keyMap = d.keyMap || [];
-  if (d.bank){ bank.count = d.bank.count || 8; bank.vals = (d.bank.vals || []).concat(Array(16).fill(0)).slice(0, 16); bank.maps = d.bank.maps || []; } else { bank.maps = []; }
+  bankFrom(d);
   perf.panels = (d.perform && d.perform.panels) || {}; perf.locked = !!(d.perform && d.perform.locked);
   setPatchBg(d.bg || null);
   for (const x of decor) x.el.remove(); decor = []; for (const dt of d.decor || []) addDecor(dt);
@@ -9355,9 +9418,12 @@ function liveTick(){
   if (live.pending && clipPos() >= live.pending.at - 0.01) clipLaunch(live.pending.i);
   if (live.on && live.pending && frameNo % 8 === 0){ const el = liveGrid.children[live.pending.i]; if (el) el.classList.toggle('blink'); }
 }
+// The hidden tempo module for Clips and Simple mode. It always lives in the main patch (never inside a group,
+// so deleting a group can't take it away).
 function clipsBpm(){
   let b = nodes.get(live.bpmId);
-  if (!b){ b = addNode('bpm', 0, 0, {bpm: live.bpm, sys: true}); b.noSave = true; b.params.sys = true; live.bpmId = b.id; applyScope(); }
+  if (!b){ const keep = scope; scope = null; try { b = addNode('bpm', 0, 0, {bpm: live.bpm, sys: true}); } finally { scope = keep; } b.noSave = true; b.params.sys = true; live.bpmId = b.id; applyScope(); }
+  b.parent = undefined;
   return b;
 }
 function liveEnter(){ if (live.on) return; live.on = true; document.body.classList.add('live'); clipsBpm(); liveRender(); }
@@ -9391,8 +9457,8 @@ function liveRender(){
     file.addEventListener('change', async () => { const f = file.files[0]; file.value = ''; if (!f) return; try { const d = JSON.parse(await f.text()); if (!Array.isArray(d.nodes)) throw new Error('not a ...Seeds patch'); s.patch = d; s.name = (d.name && d.name !== 'Untitled') ? d.name : f.name.replace(/(\.seeds)?\.json$/i, ''); liveSave(); liveRender(); } catch(err){ toast('Couldn’t load that patch: ' + err.message); } });
     const menu = h('div', {class:'lbtns'},
       h('button', {class:'btn', text:'Load patch…', onclick: e => { e.stopPropagation(); file.click(); }}),
-      h('button', {class:'btn', text:'Use current patch', title:'Put the patch that’s running now into this clip', onclick: e => { e.stopPropagation(); s.patch = serialize(); s.name = patchName && patchName !== 'Untitled' ? patchName : 'Clip ' + (i + 1); liveSave(); liveRender(); }}),
-      s.patch ? h('button', {class:'btn', text:'Clear', onclick: e => { e.stopPropagation(); if (live.active === i) live.active = -1; s.patch = null; liveSave(); liveRender(); }}) : null);
+      h('button', {class:'btn', text:'Use current patch', title:'Put the patch that’s running now into this clip', onclick: e => { e.stopPropagation(); s.patch = copyPatch(serialize()); s.name = patchName && patchName !== 'Untitled' ? patchName : 'Clip ' + (i + 1); liveSave(); liveRender(); }}),
+      s.patch ? h('button', {class:'btn', text:'Clear', onclick: e => { e.stopPropagation(); if (live.pending && live.pending.i === i) live.pending = null; if (live.active === i){ if (live.fadeState) clipFinish(); live.active = -1; } s.patch = null; liveSave(); liveRender(); }}) : null);
     const trans = h('select', {class:'ltrans', 'aria-label':'How this clip comes in'}, h('option', {value:'fade', text:'Crossfade'}), h('option', {value:'sync', text:'Fade in beats'}), h('option', {value:'cut', text:'Cut'}));
     trans.value = s.trans || 'fade';
     const fade = h('input', {type:'range', min: 0.1, max: 10, step: 0.1, value: s.fade ?? 1.5, 'aria-label':'Fade time'});
@@ -9419,13 +9485,15 @@ function liveRender(){
   lay.replaceChildren(h('option', {value:'learned', text:'Learned notes'}), ...Object.entries(LAYOUTS).map(([k, L]) => h('option', {value: k, text: L.name})), ...userLayouts.map(L => h('option', {value: 'u:' + L.name, text: L.name + ' (saved)'})));
   lay.value = live.layout;
 }
+// Tap tempo (Clips and Simple mode share it): taps within 2.5 s of each other set the tempo.
+let taps = [];
+function tapTempo(){ const now = performance.now(); taps = taps.filter(t => now - t < 2500); taps.push(now); if (taps.length >= 2) setClipsBpm((60000/((taps[taps.length-1] - taps[0])/(taps.length - 1))).toFixed(1)); }
 // Clips tempo: drives quantized launches, beat-length fades and every Sync BPM effect in the clips.
-function setClipsBpm(v){ live.bpm = Math.max(20, Math.min(2000, +v || 120)); const b = nodes.get(live.bpmId); if (b) setParam(b, 'bpm', live.bpm); document.getElementById('lbpm').value = (+live.bpm).toFixed(1); const sb = document.getElementById('sbpm'); if (sb) sb.value = (+live.bpm).toFixed(1); liveSave(); }
+function setClipsBpm(v){ live.beat0 = freePos(); live.t0 = performance.now(); live.bpm = Math.max(20, Math.min(2000, +v || 120)); const b = nodes.get(live.bpmId); if (b) setParam(b, 'bpm', live.bpm); document.getElementById('lbpm').value = (+live.bpm).toFixed(1); const sb = document.getElementById('sbpm'); if (sb) sb.value = (+live.bpm).toFixed(1); liveSave(); }
 {
   const inp = document.getElementById('lbpm'); inp.value = live.bpm;
   inp.addEventListener('change', () => setClipsBpm(inp.value));
-  let taps = [];
-  document.getElementById('ltap').addEventListener('click', () => { const now = performance.now(); taps = taps.filter(t => now - t < 2500); taps.push(now); if (taps.length >= 2) setClipsBpm((60000/((taps[taps.length-1] - taps[0])/(taps.length - 1))).toFixed(1)); });
+  document.getElementById('ltap').addEventListener('click', tapTempo);
   document.getElementById('lsync').addEventListener('click', () => { live.extSync = !live.extSync; if (live.extSync){ midiInit().catch(err => toast(err.message)); toast('Following MIDI clock. Start your drum machine or sequencer.'); } liveRender(); });
   const q = document.getElementById('lquant'); q.replaceChildren(...QUANTS.map(([v, l]) => h('option', {value: v, text: l}))); q.value = live.quant;
   q.addEventListener('change', () => { live.quant = q.value; liveSave(); });
@@ -9445,18 +9513,24 @@ document.getElementById('lexport').addEventListener('click', () => downloadJson(
 {
   const f = document.getElementById('limportf');
   document.getElementById('limport').addEventListener('click', () => f.click());
-  f.addEventListener('change', async () => { const file = f.files[0]; f.value = ''; if (!file) return; try { const d = JSON.parse(await file.text()); if (!Array.isArray(d.slots)) throw new Error('not a clips set'); live.slots = d.slots.slice(0, 32); while (live.slots.length < 32) live.slots.push({name:'', patch:null, note:null, ch:null}); live.bpm = d.bpm || live.bpm; live.count = d.count || Math.max(2, Math.min(32, d.slots.length)); live.quant = d.quant || live.quant; live.active = -1; liveSave(); liveRender(); toast('Loaded the clips set.'); } catch(e){ toast('Couldn’t load that set: ' + e.message); } });
+  f.addEventListener('change', async () => { const file = f.files[0]; f.value = ''; if (!file) return; try { const d = JSON.parse(await file.text()); if (!Array.isArray(d.slots)) throw new Error('not a clips set'); if (live.fadeState) clipFinish(); live.pending = null; live.slots = cleanSlots(d.slots); live.bpm = d.bpm || live.bpm; live.count = d.count || Math.max(2, Math.min(32, d.slots.length)); live.quant = d.quant || live.quant; live.active = -1; liveSave(); liveRender(); toast('Loaded the clips set.'); } catch(e){ toast('Couldn’t load that set: ' + e.message); } });
 }
 // MIDI clock: counts ticks for quantizing and works out the tempo when Sync is on.
+// t is when the message arrived (the MIDI event's own time stamp), so a busy frame doesn't make ticks look late.
 let clkTimes = [];
-function clipsClock(st){
-  if (st === 0xFA){ live.ticks = 0; clkTimes = []; if (live.extSync){ live.t0 = performance.now(); } return; }
-  if (st === 0xFC) return;
+function clipsClock(st, t){
+  const now = t || performance.now();
+  if (st === 0xFA){ live.ticks = 0; clkTimes = []; if (live.extSync){ live.t0 = now; live.beat0 = 0; } return; }
+  // Stop and Continue: the gap while stopped must not count as one very slow beat.
+  if (st === 0xFC || st === 0xFB){ clkTimes = []; return; }
   if (st !== 0xF8) return;
   live.ticks++;
-  const now = performance.now(); clkTimes.push(now); if (clkTimes.length > 48) clkTimes.shift();
-  if (live.extSync && clkTimes.length >= 24 && live.ticks % 12 === 0){
-    const iv = (clkTimes[clkTimes.length - 1] - clkTimes[0])/(clkTimes.length - 1), bpm = 60000/(iv*24);
+  clkTimes.push(now); if (clkTimes.length > 48) clkTimes.shift();
+  if (live.extSync && clkTimes.length >= 36 && live.ticks % 12 === 0){
+    // Tempo from the middle value of every one-beat span (24 ticks) in the window, so one late tick can't swing it.
+    const spans = []; for (let k = 24; k < clkTimes.length; k++) spans.push(clkTimes[k] - clkTimes[k - 24]);
+    spans.sort((a, b) => a - b);
+    const beat = spans[spans.length >> 1], bpm = 60000/beat;
     if (bpm > 19 && bpm < 2001 && Math.abs(bpm - live.bpm) > 0.05) setClipsBpm(bpm.toFixed(1));
   }
 }
@@ -9565,9 +9639,10 @@ function bankDrag(e, i, jack){
   };
   let hov = null;
   const mv = ev => { ln.setAttribute('x2', ev.clientX); ln.setAttribute('y2', ev.clientY); const r = rowAt(ev.clientX, ev.clientY); if (r !== hov){ if (hov) hov.classList.remove('banktarget'); hov = r; if (hov) hov.classList.add('banktarget'); } };
+  const stop = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', cancel); svgEl.remove(); if (hov) hov.classList.remove('banktarget'); };
+  const cancel = () => stop(); // the drag was interrupted (touch taken over by the system): just tidy up
   const up = ev => {
-    window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); svgEl.remove();
-    if (hov) hov.classList.remove('banktarget');
+    stop();
     const row = rowAt(ev.clientX, ev.clientY);
     if (!row){ toast('Drop the line onto a slider (or its purple jack) in a module.'); return; }
     const n = nodes.get(row._bk ? row._bk.node : row.dataset.node), key = row._bk ? row._bk.key : row.dataset.key;
@@ -9577,7 +9652,7 @@ function bankDrag(e, i, jack){
     toast('Fader ' + (i + 1) + ' → ' + DEFS[n.type].title + ': ' + nice + '. ' + (bankCtl(n, key) === 'menu' ? 'The fader steps through its choices; move it to the current one to pick it up.' : 'Move the fader past the control’s value to pick it up.'));
     bankMarks(); bankHints(); save();
   };
-  window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+  window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', cancel);
 }
 document.getElementById('bankminus').addEventListener('click', () => { bank.count = Math.max(1, bank.count - 1); bankRender(); save(); });
 document.getElementById('bankplus').addEventListener('click', () => { bank.count = Math.min(16, bank.count + 1); bankRender(); save(); });
@@ -9664,8 +9739,7 @@ function picChanged(){
 {
   const inp = document.getElementById('sbpm'); inp.value = live.bpm;
   inp.addEventListener('change', () => { clipsBpm(); setClipsBpm(inp.value); inp.value = live.bpm; });
-  let taps = [];
-  document.getElementById('stap').addEventListener('click', () => { clipsBpm(); const now = performance.now(); taps = taps.filter(t => now - t < 2500); taps.push(now); if (taps.length >= 2){ setClipsBpm((60000/((taps[taps.length-1] - taps[0])/(taps.length - 1))).toFixed(1)); inp.value = live.bpm; } });
+  document.getElementById('stap').addEventListener('click', () => { clipsBpm(); tapTempo(); inp.value = live.bpm; });
 }
 /* ---------- Desktop app updates (desktop/preload.js → window.seedsNative.updates) ----------
    Only in the desktop app, as in ...Thunder Plus: File ▾ → Check for updates…, and when a newer version is out an Update
@@ -9709,19 +9783,21 @@ document.getElementById('femm').addEventListener('click', () => {
   document.body.append(ov);
   requestAnimationFrame(() => requestAnimationFrame(() => ov.classList.add('show')));
   let closed = false;
-  const close = () => { if (closed) return; closed = true; ov.classList.remove('show'); setTimeout(() => ov.remove(), 500); };
+  const esc = e => { if (e.key === 'Escape') close(); };
+  const close = () => { if (closed) return; closed = true; window.removeEventListener('keydown', esc); ov.classList.remove('show'); setTimeout(() => ov.remove(), 500); };
   ov.addEventListener('click', close);
   // A wink after it appears, then it fades away by itself after 3 seconds.
   const wk = ov.querySelector('.wink');
   setTimeout(() => wk && wk.classList.add('on'), 1100); setTimeout(() => wk && wk.classList.remove('on'), 1550);
   setTimeout(close, 3000);
-  window.addEventListener('keydown', function k(e){ if (e.key === 'Escape'){ close(); window.removeEventListener('keydown', k); } });
+  window.addEventListener('keydown', esc);
 });
 // Native drag-and-drop of selected text or pictures is never wanted inside the app (files dragged in from outside still work).
 document.addEventListener('dragstart', e => { if (!(e.target.closest && e.target.closest('[draggable="true"]'))) e.preventDefault(); });
 document.addEventListener('pointerdown', e => { if (e.target.closest && e.target.closest('.bank, .node, .ppanel, .scard') && !e.target.closest('input[type=text], input[type=number], textarea, [contenteditable="true"]')) { const sel = window.getSelection && window.getSelection(); if (sel && sel.type === 'Range') sel.removeAllRanges(); } }, true);
 { const b = document.getElementById('lbarcoll'); const set = on => { document.body.classList.toggle('lbarmin', on); b.title = on ? 'Show all controls' : 'Show fewer controls'; try { localStorage.setItem(STORE + ':lbarmin', on ? '1' : ''); } catch(e){} };
-  set(!!localStorage.getItem(STORE + ':lbarmin')); b.addEventListener('click', () => set(!document.body.classList.contains('lbarmin'))); }
+  let was = false; try { was = !!localStorage.getItem(STORE + ':lbarmin'); } catch(e){}
+  set(was); b.addEventListener('click', () => set(!document.body.classList.contains('lbarmin'))); }
 /* ---------- Docked jacks: double-click to shrink to just the jack ---------- */
 { let mini = {}; try { mini = JSON.parse(localStorage.getItem(STORE + ':minidock') || '{}') || {}; } catch(e){}
   const apply = () => document.querySelectorAll('.dock .dockport').forEach(p => { const k = p.querySelector('.jack') && p.querySelector('.jack').dataset.port; p.classList.toggle('mini', !!mini[(p.closest('#docktop') ? 'main:' : 'rec:') + k]); });
@@ -9769,7 +9845,8 @@ document.addEventListener('pointerdown', e => { if (e.target.closest && e.target
     w(0, 'RIFF'); v.setUint32(4, 36 + n*2, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
     v.setUint32(24, sr, true); v.setUint32(28, sr*2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n*2, true);
     for (let i = 0; i < n; i++){ const env = Math.min(1, i/800, (n - i)/800); v.setInt16(44 + i*2, Math.sin(i/sr*2*Math.PI*440)*9000*env, true); }
-    const a = new Audio(URL.createObjectURL(new Blob([buf], {type:'audio/wav'})));
+    const url = URL.createObjectURL(new Blob([buf], {type:'audio/wav'})), a = new Audio(url);
+    const free = () => URL.revokeObjectURL(url); a.addEventListener('ended', free); a.addEventListener('error', free); setTimeout(free, 5000);
     if (settings.audioOut && a.setSinkId) a.setSinkId(settings.audioOut).catch(() => {});
     a.play().then(() => toast('Test tone 2: playing a plain sound file.')).catch(err => toast('Test tone 2 couldn’t play: ' + (err.message || err.name)));
   });

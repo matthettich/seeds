@@ -61,12 +61,17 @@ function setupUpdates({ name, page, repo }){
     if (dl.busy){ box({ type: 'info', buttons: ['OK'], title: name + ' update', message: 'Downloading ' + name + ' ' + version + '… ' + Math.round((state.dl || 0) * 100) + '%' }); return; }
     if (dl.file && dl.version === version && fs.existsSync(dl.file)){ openIt(); return; }
     dl.busy = true; state.dl = 0; send(); bar(0.01);
-    let part = null;
+    let part = null, rd = null, out = null;
+    // On any failure: stop the download (so the connection closes) and close the half-written file.
+    const stopAll = () => {
+      if (rd){ const x = rd; rd = null; try { const c = x.cancel && x.cancel(); if (c && c.catch) c.catch(() => {}); } catch (e) {} }
+      if (out){ try { out.destroy(); } catch (e) {} }
+    };
     try {
       const a = repo && await assetOf(version); if (!a) throw new Error('no file');
       const dir = app.getPath('downloads'), file = path.join(dir, a.name); part = file + '.part';
       const r = await net.fetch(a.url); if (!r.ok || !r.body) throw new Error('HTTP ' + r.status);
-      const total = +r.headers.get('content-length') || a.size || 0, out = fs.createWriteStream(part), rd = r.body.getReader();
+      const total = +r.headers.get('content-length') || a.size || 0; out = fs.createWriteStream(part); rd = r.body.getReader();
       const hash = crypto.createHash('sha256');   // hashed as it arrives, so there's no second pass over the file
       let got = 0, shown = 0, werr = null; out.on('error', e => { werr = e; });   // a disk error must not take the app down
       try {
@@ -77,7 +82,12 @@ function setupUpdates({ name, page, repo }){
           if (!out.write(Buffer.from(value))) await new Promise(res => { const go = () => { out.off('drain', go); out.off('error', go); res(); }; out.on('drain', go); out.on('error', go); });
           if (total){ const f = Math.min(.99, got / total); if (f - shown >= .01){ shown = f; state.dl = f; send(); bar(f); } }
         }
-      } finally { await new Promise(res => { if (werr) return res(); out.once('error', res); out.end(res); }); }
+        rd = null;   // read to the end: nothing left to cancel
+      } catch (e) { stopAll(); throw e; }
+      finally {
+        // Finished: write the rest and close. Failed: destroyed above, wait for it to let go of the file.
+        await new Promise(res => { if (out.destroyed || werr){ try { out.destroy(); } catch (e) {} if (out.closed) return res(); out.once('close', res); setTimeout(res, 2000); return; } out.once('error', res); out.end(res); });
+      }
       if (werr) throw werr;
       if (total && got < total) throw new Error('cut short');
       // The file must be the one GitHub lists. A mismatch means a corrupt or swapped download: it's deleted and never opened.
@@ -87,6 +97,8 @@ function setupUpdates({ name, page, repo }){
       dl.file = file; dl.version = version; state.dl = 1; state.file = a.name; send(); bar(-1);
       openIt();
     } catch (e) {
+      stopAll();
+      if (out && !out.closed) await new Promise(res => { out.once('close', res); setTimeout(res, 2000); });   // let go of the file before deleting it
       if (part) try { fs.rmSync(part, { force: true }); } catch (e2) {}
       state.dl = null; send(); bar(-1);
       box({ type: 'warning', buttons: ['Open download page', 'OK'], defaultId: 0, cancelId: 1, title: name + ' update',
