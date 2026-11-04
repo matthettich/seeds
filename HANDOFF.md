@@ -30,7 +30,16 @@ Start a new chat with: *"Clone matthettich/seeds and read HANDOFF.md, then …"*
   single-instance desktop app, updater stream/reader cleanup.
 - **Luma key:** the switch's label was backwards; the *label* changed to "Key out dark parts" (picture unchanged, so
   saved patches look the same).
-- **Not done yet:** move the Clips set and fonts from localStorage to IndexedDB; drive frames from a Worker/output window
+- **Clips set and your examples → IndexedDB (beta):** `bigStore()` (next to `idb()`) keeps them in IndexedDB (`seeds`/`kv`,
+  keys `videopatch:v1:liveset` / `:examples`), one write at a time, latest wins; loads after start (`liveLoaded` guards
+  saves until then). Because live and beta share the site, beta also writes the localStorage copy the live app reads,
+  but only when it's under 1.5 MB (`MIRROR_MAX`), with a `key:at` note (time + fingerprint). At start beta uses the newer
+  copy; a localStorage copy changed by the live app counts as newer (beta's old one kept as `key:prev` in IndexedDB).
+  The localStorage key is never deleted. No IndexedDB (private window) → localStorage as before. A set over 1.5 MB is
+  only in IndexedDB, so the live app keeps showing its older copy until this is released. Fonts were already in IndexedDB;
+  custom modules stay in localStorage (small: no logos/data inside). Tests: `clipsdb/run.js` (8 MB set, migration,
+  early Clips mode, no IndexedDB, newer copy wins, one write in flight, export/import, examples).
+- **Not done yet:** drive frames from a Worker/output window
   when the web tab is hidden (Electron is fine); bigger structure work (one mode state machine, recorder session object,
   shared audio-effect builder). Test scripts used: smoke test + targeted Playwright checks (headless, fake camera/mic).
 
@@ -39,7 +48,7 @@ Single file, no dependencies. Landmarks (line numbers approximate):
 
 | Symbol | ~Line | Role |
 |---|---|---|
-| `STORE = 'videopatch:v1'` | 1246 | localStorage key; also `:custom`, `:liveset`, `:examples`, `:outfmt`, `:mview`, `:minidock`, `:lbarmin`, `:rcoll`, `:cliplayouts`. IndexedDB db `seeds` / store `kv` (saveDir, fonts). |
+| `STORE = 'videopatch:v1'` | 1246 | localStorage key; also `:custom`, `:liveset`, `:examples`, `:outfmt`, `:mview`, `:minidock`, `:lbarmin`, `:rcoll`, `:cliplayouts`. IndexedDB db `seeds` / store `kv` (saveDir, curFile, fonts, and via `bigStore` the Clips set `:liveset` + `:examples`, mirrored to localStorage when small). |
 | `FAMILY` | 1345 | module → colour family (e.g. `particles:'tex'`). |
 | `ctlOut` / `ctlRaw` | 1364 | control value of an edge (with `modoff` Offset). |
 | `GLX`, `gpu(n, frag, inputs, uni, W, H, key)` | 1626 / 1726 | WebGL2 pipeline. Unused texture units are cleared before each pass (fixes feedback-loop black output). |

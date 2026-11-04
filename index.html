@@ -8939,7 +8939,10 @@ function pasteClip(){
 /* ---------- Examples ---------- */
 const UEX_KEY = STORE + ':examples';
 let userExamples = []; try { userExamples = JSON.parse(localStorage.getItem(UEX_KEY) || '[]') || []; } catch(e){ userExamples = []; }
-const saveUserExamples = () => { try { localStorage.setItem(UEX_KEY, JSON.stringify(userExamples)); } catch(e){ toast('Not enough room to keep that example in the app.'); } };
+// Kept in IndexedDB like the Clips set (an example is a whole patch, logos included). The list read here is only
+// what localStorage had, for the first moment; the IndexedDB copy replaces it once it's read (see uexStore).
+let uexLoaded = false, uexEarly = false;
+const saveUserExamples = () => { if (!uexLoaded){ uexEarly = true; return; } uexStore.save(JSON.stringify(userExamples)); };
 const EX_N = (id, type, x, y, params) => ({id, type, x, y, params: params || {}});
 const EX_E = (a, ap, b, bp, kind) => ({from: {node: a, port: ap}, to: {node: b, port: bp}, kind: kind || 'video'});
 const EXAMPLES = [
@@ -9128,6 +9131,73 @@ const idb = (mode, fn) => new Promise((res, rej) => {
     } catch(e){ end(); rej(e); }
   };
   r.onerror = () => rej(r.error);
+});
+/* ---------- Big saved things (the Clips set, your own examples) live in IndexedDB ----------
+   localStorage holds only ~5 MB for the whole site, shared with the autosave and backups. The Clips set and your
+   examples (whole patches, logos included) can outgrow that, so they're kept in IndexedDB, which has room to spare.
+   The live app (main) and beta are the same website: they share localStorage AND IndexedDB, but the live app only
+   reads localStorage. So beta also keeps a copy in localStorage when it's small (MIRROR_MAX, so the autosave always
+   has room), with a note (key + ':at') of when beta saved it and a fingerprint of it. At start beta uses whichever copy
+   is newer. A localStorage copy that doesn't match its fingerprint was changed by the live app since, so it counts as
+   newest; the IndexedDB copy it replaces is kept as key + ':prev' in IndexedDB, just in case.
+   The localStorage copy is never deleted (the live app still needs it). If IndexedDB can't be used (private window,
+   blocked), everything stays in localStorage exactly as before. */
+const MIRROR_MAX = 1500000; // characters
+const fprint = s => { let x = 2166136261; for (let i = 0; i < s.length; i++) x = Math.imul(x ^ s.charCodeAt(i), 16777619); return (x >>> 0).toString(36) + '.' + s.length; };
+function bigStore(key, warnMsg){
+  const S = {loaded: false, idbOk: !!window.indexedDB, busy: false, next: null, warned: false};
+  const warn = () => { if (!S.warned){ S.warned = true; toast(warnMsg); } };
+  // The localStorage copy and when beta saved it (Infinity when the live app, or an older version, wrote it).
+  const lsRead = () => { try { const s = localStorage.getItem(key); if (s == null) return null; let m = null; try { m = JSON.parse(localStorage.getItem(key + ':at') || 'null'); } catch(e){} return {s, savedAt: m && m.fp === fprint(s) ? m.savedAt : Infinity}; } catch(e){ return null; } };
+  // Copy first, note second: if the copy doesn't fit, the old copy keeps its old note, so it never looks newer than it is.
+  const lsWrite = (s, savedAt, max) => { if (s.length > max) return false; try { localStorage.setItem(key, s); } catch(e){ return false; } try { localStorage.setItem(key + ':at', JSON.stringify({savedAt, fp: fprint(s)})); } catch(e){} return true; };
+  const lsNote = (s, savedAt) => { try { localStorage.setItem(key + ':at', JSON.stringify({savedAt, fp: fprint(s)})); } catch(e){} };
+  const put = rec => idb('readwrite', st => st.put(rec, key));
+  async function load(){
+    const ls = lsRead(); let rec;
+    try { rec = await idb('readonly', st => st.get(key)); }
+    catch(e){ S.idbOk = false; S.loaded = true; return ls && ls.s; }
+    if (!rec || typeof rec.s !== 'string'){
+      // Nothing in IndexedDB yet (first start with this version): copy the localStorage one over and read it back.
+      if (ls){ const savedAt = Date.now(); try { await put({s: ls.s, savedAt}); const back = await idb('readonly', st => st.get(key)); if (!back || back.s !== ls.s) throw new Error('copy check failed'); lsNote(ls.s, savedAt); } catch(e){ S.idbOk = false; } }
+      S.loaded = true; return ls && ls.s;
+    }
+    if (ls && ls.s !== rec.s && ls.savedAt > rec.savedAt){
+      // The localStorage copy is newer (changed in the live app, or saved while IndexedDB was unavailable).
+      const savedAt = Date.now();
+      try { await idb('readwrite', st => { st.put(rec, key + ':prev'); return st.put({s: ls.s, savedAt}, key); }); lsNote(ls.s, savedAt); } catch(e){}
+      S.loaded = true; return ls.s;
+    }
+    S.loaded = true; return rec.s;
+  }
+  // One write at a time; changes made meanwhile are collected and only the latest is written next.
+  // The small localStorage copy is written straight away (so it's there even if the page closes mid-write);
+  // it carries the same time as the IndexedDB copy, so at the next start the two count as equal.
+  async function pump(){
+    S.busy = true;
+    while (S.next){
+      const {s, savedAt, mirrored} = S.next; S.next = null;
+      let ok = true; try { await put({s, savedAt}); } catch(e){ ok = false; }
+      // IndexedDB refused (disk full?): keep it in localStorage if it fits there, otherwise say so once.
+      if (ok || mirrored || lsWrite(s, savedAt, Infinity)) S.warned = false; else warn();
+    }
+    S.busy = false;
+  }
+  function save(s){
+    if (!S.loaded) return; // never overwrite the stored copy before it has been read
+    const savedAt = Date.now();
+    if (!S.idbOk){ if (lsWrite(s, savedAt, Infinity)) S.warned = false; else warn(); return; }
+    S.next = {s, savedAt, mirrored: lsWrite(s, savedAt, MIRROR_MAX)}; if (!S.busy) pump();
+  }
+  return {load, save, state: S};
+}
+// Your own examples: if you saved one in the moment before the stored list arrived, it's added to that list.
+const uexStore = bigStore(UEX_KEY, 'Not enough room to keep your examples in the app.');
+uexStore.load().then(s => {
+  let v = null; try { v = JSON.parse(s || 'null'); } catch(e){}
+  if (Array.isArray(v)){ const early = uexEarly ? userExamples.filter(x => x && x.name) : []; userExamples = v.filter(x => x && x.name && x.patch).filter(x => !early.some(y => y.name === x.name)).concat(early); }
+  uexLoaded = true; if (uexEarly) saveUserExamples();
+  if (window.renderExamples) renderExamples();
 });
 let saveDir = null;
 idb('readonly', st => st.get('saveDir')).then(d => { saveDir = d || null; paintSaveDir(); }).catch(() => {});
@@ -9584,17 +9654,37 @@ function cleanSlots(list){
   while (out.length < 32) out.push({name: '', patch: null, note: null, ch: null});
   return out;
 }
-try { const v = JSON.parse(localStorage.getItem(LIVE_KEY) || 'null'); if (v){ live.slots = v.slots || []; live.bpm = v.bpm || 120; live.count = v.count || 16; live.quant = v.quant || '0'; live.layout = v.layout || 'learned'; } } catch(e){}
 live.slots = cleanSlots(live.slots);
-let liveSaveT = null, liveQuotaWarned = false;
+// The set is kept in IndexedDB (see bigStore) and arrives a moment after start: the app runs straight away and the
+// Clips grid fills in when it's here. Until then (liveLoaded false) nothing is saved, so an early change can't
+// replace the stored set with an empty one. Changes made before it arrived are kept only if nothing was stored.
+const liveStore = bigStore(LIVE_KEY, 'This set is too big to keep in the app. Use Export set… to save it as a file.');
+let liveLoaded = false, liveEarly = false, liveSaveT = null;
+liveStore.load().then(s => {
+  let v = null; try { v = JSON.parse(s || 'null'); } catch(e){}
+  if (!v || typeof v !== 'object') v = null;
+  try {
+    if (v){
+      if (live.fadeState) clipFinish();
+      live.slots = cleanSlots(v.slots); live.bpm = v.bpm || 120; live.count = v.count || 16; live.quant = v.quant || '0'; live.layout = v.layout || 'learned';
+      live.active = -1; live.pending = null;
+      const b = nodes.get(live.bpmId); if (b) setParam(b, 'bpm', live.bpm);
+      for (const id of ['lbpm', 'sbpm']){ const el = document.getElementById(id); if (el) el.value = live.bpm; }
+      document.getElementById('lquant').value = live.quant;
+    }
+  } finally {
+    liveLoaded = true;
+    if (!v && liveEarly) liveSave();
+    if (live.on) liveRender();
+  }
+});
+const liveWrite = () => { liveSaveT = null; liveStore.save(JSON.stringify({slots: live.slots, bpm: live.bpm, count: live.count, quant: live.quant, layout: live.layout})); };
 function liveSave(){
-  clearTimeout(liveSaveT);
-  liveSaveT = setTimeout(() => {
-    const data = JSON.stringify({slots: live.slots, bpm: live.bpm, count: live.count, quant: live.quant, layout: live.layout});
-    // Too big for the browser's storage: say so once (not on every change), and keep working.
-    try { localStorage.setItem(LIVE_KEY, data); liveQuotaWarned = false; } catch(e){ if (!liveQuotaWarned){ liveQuotaWarned = true; toast('This set is too big to keep in the app. Use Export set… to save it as a file.'); } }
-  }, 250);
+  if (!liveLoaded){ liveEarly = true; return; }
+  clearTimeout(liveSaveT); liveSaveT = setTimeout(liveWrite, 250);
 }
+// Closing or reloading the page: write a change that was still waiting.
+window.addEventListener('pagehide', () => { if (liveSaveT){ clearTimeout(liveSaveT); liveWrite(); } });
 const NOTE_NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
 const noteName = n => NOTE_NAMES[n % 12] + (Math.floor(n/12) - 1);
 const liveEl = document.getElementById('live'), liveGrid = document.getElementById('livegrid');
