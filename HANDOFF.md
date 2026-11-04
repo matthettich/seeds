@@ -15,12 +15,40 @@ Start a new chat with: *"Clone matthettich/seeds and read HANDOFF.md, then …"*
 - User tests on: Windows laptop (Intel Core Ultra 9, RTX 4070 Laptop GPU, audio interface on ASIO) and MacBook Pro M4. Mac ≈120 fps, Windows was ≈33–50 fps.
 - User is not a developer: give spelled-out build steps (PowerShell vs Command Prompt, `cd` paths, file sizes to check), and always say which files changed (just the HTML, or `main.js`/`preload.js` too).
 
+## Nov 3 review (senior code review + fixes)
+- **Live (`main`) hotfixes:** frame loop can't freeze (next frame booked first; each module's render caught on its own);
+  Tint GPU leak (`n._gt` was both GPU pictures and a timestamp; timestamp is now `n._genT`); deleted audio modules unplugged
+  and Presentation panels removed in `removeNode`; Delete/copy/paste only in Patch mode (`patchEditable()`); a broken patch
+  file or autosave never wipes/overwrites (autosave copy goes to Settings → Backups); mic start has a request token like
+  the camera; Record can't double-start (`recActive`, `recBusy`); Video mixer keeps cables into hidden inputs.
+- **Beta:** everything else from the review — GPU upload textures owned per module (always `texImage2D`: `texSubImage2D`
+  takes Chrome off its fast video path and blocked the main thread), shader failures cached, Restart audio keeps mic /
+  video player / reverb / distortion, `syncAudio` only rewires when audio connections change, audio modules have
+  `destroy`, GIF/Image/Stutter/Looper/Reverb memory and CPU fixes, cables not redrawn when unchanged, preset delete fixes
+  morph indexes, clip slots/examples store copies, MIDI clock median tempo + Stop/Continue, quantize keeps beat position
+  across tempo changes, undo history capped by size, `removeNodes()` for batch deletes, `pointerSession()` drag helper,
+  single-instance desktop app, updater stream/reader cleanup.
+- **Luma key:** the switch's label was backwards; the *label* changed to "Key out dark parts" (picture unchanged, so
+  saved patches look the same).
+- **Clips set and your examples → IndexedDB (beta):** `bigStore()` (next to `idb()`) keeps them in IndexedDB (`seeds`/`kv`,
+  keys `videopatch:v1:liveset` / `:examples`), one write at a time, latest wins; loads after start (`liveLoaded` guards
+  saves until then). Because live and beta share the site, beta also writes the localStorage copy the live app reads,
+  but only when it's under 1.5 MB (`MIRROR_MAX`), with a `key:at` note (time + fingerprint). At start beta uses the newer
+  copy; a localStorage copy changed by the live app counts as newer (beta's old one kept as `key:prev` in IndexedDB).
+  The localStorage key is never deleted. No IndexedDB (private window) → localStorage as before. A set over 1.5 MB is
+  only in IndexedDB, so the live app keeps showing its older copy until this is released. Fonts were already in IndexedDB;
+  custom modules stay in localStorage (small: no logos/data inside). Tests: `clipsdb/run.js` (8 MB set, migration,
+  early Clips mode, no IndexedDB, newer copy wins, one write in flight, export/import, examples).
+- **Not done yet:** drive frames from a Worker/output window
+  when the web tab is hidden (Electron is fine); bigger structure work (one mode state machine, recorder session object,
+  shared audio-effect builder). Test scripts used: smoke test + targeted Playwright checks (headless, fake camera/mic).
+
 ## The app file (`index.html`, ~9.7k lines, ~886 KB)
 Single file, no dependencies. Landmarks (line numbers approximate):
 
 | Symbol | ~Line | Role |
 |---|---|---|
-| `STORE = 'videopatch:v1'` | 1246 | localStorage key; also `:custom`, `:liveset`, `:examples`, `:outfmt`, `:mview`, `:minidock`, `:lbarmin`, `:rcoll`, `:cliplayouts`. IndexedDB db `seeds` / store `kv` (saveDir, fonts). |
+| `STORE = 'videopatch:v1'` | 1246 | localStorage key; also `:custom`, `:liveset`, `:examples`, `:outfmt`, `:mview`, `:minidock`, `:lbarmin`, `:rcoll`, `:cliplayouts`. IndexedDB db `seeds` / store `kv` (saveDir, curFile, fonts, and via `bigStore` the Clips set `:liveset` + `:examples`, mirrored to localStorage when small). |
 | `FAMILY` | 1345 | module → colour family (e.g. `particles:'tex'`). |
 | `ctlOut` / `ctlRaw` | 1364 | control value of an edge (with `modoff` Offset). |
 | `GLX`, `gpu(n, frag, inputs, uni, W, H, key)` | 1626 / 1726 | WebGL2 pipeline. Unused texture units are cleared before each pass (fixes feedback-loop black output). |

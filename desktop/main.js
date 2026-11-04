@@ -125,7 +125,16 @@ function buildMenu(){
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-app.whenReady().then(() => {
+// Only one copy of the app runs: opening it again brings the open window to the front instead.
+const firstCopy = app.requestSingleInstanceLock();
+if (!firstCopy) app.quit();
+app.on('second-instance', () => {
+  if (!mainWin) return;
+  if (mainWin.isMinimized()) mainWin.restore();
+  mainWin.show(); mainWin.focus();
+});
+
+if (firstCopy) app.whenReady().then(() => {
   settings = loadSettings();
   // The app's Settings menu can turn hardware recording on or off; it applies after a restart.
   ipcMain.handle('seeds:getHw', () => !!settings.hwEncode);

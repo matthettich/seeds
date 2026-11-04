@@ -1,13 +1,19 @@
 // Small bridge the web app uses to know it's running as the desktop app.
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 const { pathToFileURL } = require('url');
+let savedFn = null;   // the page's "a recording was saved" listener
 
 contextBridge.exposeInMainWorld('seedsNative', {
   isApp: true,
   platform: process.platform,
   pathForFile: f => { try { return webUtils.getPathForFile(f) || ''; } catch { return ''; } },
   fileUrl: p => pathToFileURL(p).href,
-  onSaved: cb => ipcRenderer.on('seeds:saved', (e, p) => cb(p)),
+  // One listener at a time: calling it again replaces the last one. It returns a function that stops listening.
+  onSaved: cb => {
+    if (savedFn) ipcRenderer.removeListener('seeds:saved', savedFn);
+    const f = savedFn = (e, p) => cb(p); ipcRenderer.on('seeds:saved', f);
+    return () => { ipcRenderer.removeListener('seeds:saved', f); if (savedFn === f) savedFn = null; };
+  },
   getHwEncode: () => ipcRenderer.invoke('seeds:getHw'),
   setHwEncode: on => ipcRenderer.invoke('seeds:setHw', on),
   relaunch: () => ipcRenderer.invoke('seeds:relaunch'),
