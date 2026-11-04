@@ -3077,6 +3077,20 @@ function asciiAtlas(){
   c.__ver = 1; _ascii = c; return c;
 }
 
+// Unplugs every sound part a module made (single parts, lists like EQ bands, or groups like the mixer's inputs), so a deleted module goes fully quiet and can be freed.
+function audioTeardown(n, keys){
+  const off = v => { if (!v) return; if (v instanceof AudioNode){ try { v.disconnect(); } catch(e){} } else if (Array.isArray(v)) v.forEach(off); else if (v.constructor === Object) Object.values(v).forEach(off); };
+  for (const k of keys){ off(n[k]); n[k] = undefined; }
+}
+// Moves a sound setting smoothly, but only when its value actually changed (not every frame).
+function setAP(prm, v, tc){ if (!prm || prm.__v === v) return; prm.__v = v; prm.setTargetAtTime(v, actx.currentTime, tc); }
+// Image module: lets go of every loaded picture's memory.
+function imgFree(n){ for (const im of n.imgs || []) try { im.bmp.close(); } catch(e){} n.imgs = []; n.prevBmp = null; n.drawn = null; }
+// GIF player: lets go of decoded frames and the fallback picture.
+function gifFree(frames){ for (const f of frames || []) try { f.bmp.close(); } catch(e){} }
+function gifImgOff(n){ if (n.imgEl){ n.imgEl.remove(); n.imgEl = null; } if (n.imgUrl){ URL.revokeObjectURL(n.imgUrl); n.imgUrl = null; } }
+// Stops a media element and lets go of its file.
+function mediaOff(el, url){ if (!el) return; try { el.pause(); el.removeAttribute('src'); el.load(); } catch(e){} if (url && url.startsWith('blob:')) URL.revokeObjectURL(url); }
 const DEFS = {
   camera: {
     title:'Camera', kind:'video', fam:'src', w:250, ins:[], outs:[{name:'out', kind:'video', label:'Video'}],
@@ -3097,7 +3111,6 @@ const DEFS = {
     title:'Kaleidoscope', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{segments:8, rotate:0, spin:12, zoom:1.4, panX:0.2, panY:0, mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [
         slider(n, 'segments', 'Segments', 4, 24, 2, v => v),
         slider(n, 'rotate', 'Turn', 0, 360, 1, v => v + '°'),
@@ -3120,7 +3133,6 @@ const DEFS = {
     title:'Mirror', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{mode:'lr', mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [choice(n, 'mode', 'Mode', [['lr','Left onto right'],['rl','Right onto left'],['tb','Top onto bottom'],['bt','Bottom onto top'],['quad','Four-way'],['flip','Flip horizontal']])];
     },
     pull(n){
@@ -3182,7 +3194,6 @@ const DEFS = {
     title:'Black and white', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{mix:1, brightness:1, contrast:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       const kids = [];
       if (FILTER_OK || GLX) kids.push(
         slider(n, 'brightness', 'Brightness', 0, 2, 0.01, v => Math.round(v*100) + '%'),
@@ -3251,7 +3262,7 @@ const DEFS = {
     title:'Feedback', kind:'video', w:260, ins:[{name:'in', kind:'video', label:'In'},{name:'clear', kind:'gate', label:'Clear'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{mode:'screen', input:1, feedback:0.9, zoom:1.015, rotate:0.5, shiftX:0, shiftY:0, hue:2, blur:0, gain:1, mix:1},
     build(n){
-      n.bufs = [mkCanvas(2, 2), mkCanvas(2, 2)]; n.cur = 0;
+      n.cur = 0;
       const pct = v => Math.round(v*100) + '%';
       const looks = h('select', {'aria-label':'Feedback look'}, ...[['','Choose a look…'],['camera','Camera at screen'],['tunnel','Spinning tunnel'],['smear','Smear'],['trails','Echo trails'],['bloom','Glowing bloom']].map(([v, l]) => h('option', {value: v, text: l})));
       looks.addEventListener('change', () => { const L = FB_LOOKS[looks.value]; if (L){ for (const [k, v] of Object.entries(L)) setParam(n, k, v); save(); toast('Feedback look: ' + looks.selectedOptions[0].text + '. Adjust anything from here.'); } looks.value = ''; });
@@ -3289,7 +3300,7 @@ const DEFS = {
         GLX.pass(FS.fb, out, [prev, src], {fb: Math.pow(P(n, 'feedback'), k), z: Math.pow(P(n, 'zoom'), k), rot: P(n, 'rotate')*k*Math.PI/180,
           sh: [P(n, 'shiftX')*W*k, P(n, 'shiftY')*H*k], hue: P(n, 'hue')*k*Math.PI/180, blur: P(n, 'blur'), gain: P(n, 'gain'), inl: P(n, 'input'),
           mode: ['screen','lighter','lighten','difference','source-over','nest'].indexOf(n.params.mode)});
-      } catch(e){ console.error(e); return src; }
+      } catch(e){ if (!n.fbErr){ n.fbErr = true; console.error(e); } return src; } // reported once, not every frame
       return out;
     }
   },
@@ -3322,7 +3333,8 @@ const DEFS = {
       const keys = 'abcdefghij'.split('').slice(0, N), srcs = keys.map(k => inputRaw(n, k)), ok = srcs.map(x => !!(x && dims(x)[0]));
       const first = ok.indexOf(true); if (first < 0) return null;
       const [W, H] = dims(srcs[first]);
-      const mode = (k, i) => i <= first ? 0 : Math.max(0, BLENDS.findIndex(b => b[0] === (n.params['mode' + k.toUpperCase()] || 'source-over')));
+      // 'XOR' has no picture of its own on opaque video (it drew black), so it plays as Exclusion, its closest look. Saved patches keep the name.
+      const mode = (k, i) => { if (i <= first) return 0; const nm = n.params['mode' + k.toUpperCase()] || 'source-over'; return Math.max(0, BLENDS.findIndex(b => b[0] === (nm === 'xor' ? 'exclusion' : nm))); };
       // Four layers per pass; later passes put the result so far underneath the next three layers.
       let acc = null, i = 0, pass = 0;
       while (i < N){
@@ -3388,7 +3400,7 @@ const DEFS = {
       const GATE_FR = () => 18/n.scv.clientHeight, BAR_FR = () => (n.scv.clientHeight - 24)/n.scv.clientHeight;
       n.scv.addEventListener('pointerdown', e => {
         e.stopPropagation(); e.preventDefault(); n.scv.setPointerCapture(e.pointerId);
-        const r = n.scv.getBoundingClientRect(), N = +n.params.steps;
+        const r = n.scv.getBoundingClientRect(), N = n.N || +n.params.steps;
         const col = ev => Math.max(0, Math.min(N - 1, Math.floor((ev.clientX - r.left)/r.width*N)));
         if ((e.clientY - r.top)/r.height > 1 - GATE_FR()){ const i = col(e); n.params.on[i] = !n.params.on[i]; save(); return; }
         const setv = ev => {
@@ -3415,10 +3427,10 @@ const DEFS = {
     },
     pull(n){
       const now = performance.now(), dt = n.t ? Math.min(.1, (now - n.t)/1000) : 0; n.t = now;
-      const N = +n.params.steps;
+      const N = +n.params.steps; n.N = N; // the step count after any cable on Steps, so the grid shows the same steps
       if (n.idx >= N) n.idx = 0;
       if (rising(n, 'reset')) seqReset(n);
-      if (rising(n, 'rand')) for (let i = 0; i < 16; i++) n.params.vals[i] = +(Math.random()*2 - 1).toFixed(3);
+      if (rising(n, 'rand')){ for (let i = 0; i < 16; i++) n.params.vals[i] = +(Math.random()*2 - 1).toFixed(3); save(); }
       let adv = false;
       if (edgeInto(n.id, 'clock')){
         if (rising(n, 'clock')){ adv = true; if (n.lastClk) n.stepDur = Math.min(4000, now - n.lastClk); n.lastClk = now; }
@@ -3451,7 +3463,7 @@ const DEFS = {
       if (!W || !H) return;
       fitCanvas(cv, W, H);
       const x = cv.getContext('2d'); x.clearRect(0, 0, W, H);
-      const N = +n.params.steps, gh = 18*dpr, bh = H - gh - 6*dpr, cw = W/N, mid = bh/2;
+      const N = n.N || +n.params.steps, gh = 18*dpr, bh = H - gh - 6*dpr, cw = W/N, mid = bh/2;
       x.fillStyle = T.muted; x.globalAlpha = .3; x.fillRect(0, mid, W, dpr); x.globalAlpha = 1;
       for (let i = 0; i < N; i++){
         const v = n.params.vals[i], top = mid - v*(mid - 3*dpr), cur = i === n.idx;
@@ -3603,14 +3615,16 @@ const DEFS = {
       const now = performance.now(), dt = n.t ? Math.min(.1, (now - n.t)/1000) : 0; n.t = now;
       const bn = n.params.bsync && n.type === 'clock' ? bpmNode() : null;
       const bpm = Math.max(1, bn ? +bn.params.bpm : P(n, 'bpm')), bpb = +n.params.bpb, g = P(n, 'gateLen');
-      if (bn && typeof bn.beats === 'number'){ n.beats = bn.beats; n.params.running = !!bn.params.running; }
+      if (bn){ pullNode(bn.id); }
+      const follow = !!(bn && typeof bn.beats === 'number');
+      if (follow){ n.beats = bn.beats; n.params.running = !!bn.params.running; }
       n.periods = {beat: 60/bpm, eighth: 30/bpm, sixteenth: 15/bpm, bar: 60*bpb/bpm};
       if (rising(n, 'reset')){ n.beats = 0; n.startPulse = true; }
       if (rising(n, 'run')){ n.params.running = !n.params.running; if (n.params.running){ n.beats = 0; n.startPulse = true; } clockUI(n); }
       if (rising(n, 'tap')) n.tap();
       const start = n.startPulse; n.startPulse = false;
       if (!n.params.running) return {beat:0, eighth:0, sixteenth:0, bar:0, start: start ? 1 : 0};
-      n.beats += dt*bpm/60;
+      if (!follow) n.beats += dt*bpm/60;
       const b = n.beats, on = f => (f % 1) < g ? 1 : 0;
       return {beat: on(b), eighth: on(b*2), sixteenth: on(b*4), bar: ((b/bpb) % 1) < g/bpb ? 1 : 0, start: start ? 1 : 0};
     },
@@ -3651,7 +3665,7 @@ const DEFS = {
       const now = performance.now(), dt = n.t ? Math.min(.1, (now - n.t)/1000) : 0; n.t = now;
       let adv = false;
       if (rising(n, 'reset')){ n.k = 0; adv = true; }
-      if (rising(n, 'reseed')){ n.params.seed = Math.floor(Math.random()*10000); if (n.ctl.seed) n.ctl.seed.set(n.params.seed); n.k = 0; }
+      if (rising(n, 'reseed')){ n.params.seed = Math.floor(Math.random()*10000); if (n.ctl.seed) n.ctl.seed.set(n.params.seed); n.k = 0; save(); }
       if (edgeInto(n.id, 'next')){ if (rising(n, 'next')) adv = true; }
       else { n.ph += dt*Math.max(0.01, rateOf(n)); if (n.ph >= 1){ n.ph -= Math.floor(n.ph); adv = true; } }
       if (adv){
@@ -3674,7 +3688,6 @@ const DEFS = {
     title:'Rotate', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{angle:0, spin:0, scale:1, fill:'none', mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [
         slider(n, 'angle', 'Angle', -180, 180, 0.5, v => v.toFixed(1) + '°'),
         slider(n, 'spin', 'Spin', -360, 360, 1, v => v + '°/s'),
@@ -3696,7 +3709,6 @@ const DEFS = {
     title:'Zoom', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{amount:1.5, cx:0, cy:0, mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [
         slider(n, 'amount', 'Zoom', 0.25, 8, 0.01, v => v.toFixed(2) + '×'),
         slider(n, 'cx', 'Center X', -1, 1, 0.01, v => v.toFixed(2)),
@@ -3712,7 +3724,6 @@ const DEFS = {
     title:'Crop', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{left:0.1, right:0.1, top:0.1, bottom:0.1, out:'mask', mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       const pct = v => Math.round(v*100) + '%';
       return [
         slider(n, 'left', 'Left', 0, 0.45, 0.005, pct), slider(n, 'right', 'Right', 0, 0.45, 0.005, pct),
@@ -3747,11 +3758,14 @@ const DEFS = {
       // Long delays keep a smaller, slower copy of the past so memory stays reasonable.
       const span = edgeInto(n.id, 'p:time') ? Math.max(3000, n.params.time*2) : d;
       const tier = span <= 3200 ? [960, 32, 100] : span <= 8200 ? [640, 40, 220] : [420, 66, 330];
-      if (n.fb.maxW !== tier[0]){ n.fb = new FrameBuf(tier[0]); }
+      // When the delay crosses into another size, the old store is kept and read from until the new one holds enough past, so the picture never jumps.
+      if (n.fb.maxW !== tier[0]){ n.fbOld = n.fb.buf.length ? n.fb : null; n.fb = new FrameBuf(tier[0]); }
       n.fb.gap = tier[1];
       n.fb.push(src, now);
       n.fb.trim(now, Math.min(10000, span) + 120, tier[2]);
-      return n.fb.at(now - d).cv;
+      const want = now - d;
+      if (n.fbOld && n.fb.buf.length && n.fb.buf[0].t <= want) n.fbOld = null;
+      return (n.fbOld && (!n.fb.buf.length || n.fb.buf[0].t > want) ? n.fbOld : n.fb).at(want).cv;
     }
   },
   looper: {
@@ -3764,7 +3778,7 @@ const DEFS = {
       n.out = mkCanvas(2, 2);
       n.recBtn = h('button', {class:'btn', text:'Record', onclick: () => looperRec(n)});
       n.playBtn = h('button', {class:'btn', text:'Play', onclick: () => looperToggle(n)});
-      const clr = h('button', {class:'btn', text:'Clear', onclick: () => { n.state = 'idle'; n.pool.push(...n.frames); n.frames = []; }});
+      const clr = h('button', {class:'btn', text:'Clear', onclick: () => { n.state = 'idle'; n.frames = []; n.pool = []; }});
       n.bar = h('div', {class:'prog'}, h('span'));
       n.st = h('div', {class:'status'});
       const rows = {};
@@ -3788,7 +3802,9 @@ const DEFS = {
       if (clockRise){ if (n.lastClk) n.clkPeriod = (now - n.lastClk)/1000; n.lastClk = now; }
       if (rising(n, 'rec')) looperRec(n);
       if (rising(n, 'play')) looperToggle(n);
-      if (rising(n, 'clear')){ n.state = 'idle'; n.pool.push(...n.frames); n.frames = []; }
+      if (rising(n, 'clear')){ n.state = 'idle'; n.frames = []; n.pool = []; }
+      // Spare frames are only reused while recording; at any other time they are let go so memory comes back.
+      if (n.state !== 'rec' && n.pool.length) n.pool = [];
       if (n.state === 'armed' && clockRise) looperStart(n, now);
       if (n.state === 'rec'){
         if (src && dims(src)[0]){
@@ -3840,7 +3856,6 @@ const DEFS = {
     outs:[{name:'out', kind:'video', label:'Program'},{name:'cue', kind:'video', label:'Inactive'}],
     params:{fade:0, time:1, curve:'smooth'},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       n.swBtn = h('button', {class:'btn', text:'Switch to B', onclick: () => xfadeSwitch(n)});
       const goA = h('button', {class:'btn', text:'Cut to A', onclick: () => { n.anim = null; setParam(n, 'fade', 0); save(); }});
       const goB = h('button', {class:'btn', text:'Cut to B', onclick: () => { n.anim = null; setParam(n, 'fade', 1); save(); }});
@@ -3916,8 +3931,9 @@ const DEFS = {
       n.autoBtn = h('button', {class:'btn' + (n.params.autoplay ? ' on' : ''), text:'Play on open', title:'Start playing as soon as the patch opens', onclick: () => { n.params.autoplay = !n.params.autoplay; n.autoBtn.classList.toggle('on', n.params.autoplay); save(); }});
       n.scrub = h('input', {type:'range', min:0, max:1000, step:1, value:0, 'aria-label':'Playback position'});
       n.scrub.addEventListener('input', () => { if (n.video.duration) n.video.currentTime = n.scrub.value/1000*n.video.duration; });
-      n.scrub.addEventListener('pointerdown', () => n.scrubbing = true);
-      n.scrub.addEventListener('pointerup', () => n.scrubbing = false);
+      // Held while dragging; let go anywhere (even off the slider) ends it.
+      n.scrub.addEventListener('pointerdown', e => { n.scrubbing = true; try { n.scrub.setPointerCapture(e.pointerId); } catch(err){} });
+      for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture', 'change', 'blur']) n.scrub.addEventListener(ev, () => n.scrubbing = false);
       n.tm = h('span', {class:'val'});
       n.st = h('div', {class:'status', text: n.params.file ? 'Load “' + n.params.file + '” again to continue.' : 'Load a video file, or drop one here.'});
       if (NATIVE && n.params.path) setTimeout(() => playerLoadPath(n));
@@ -3948,7 +3964,7 @@ const DEFS = {
       const pp = v.paused ? 'Play' : 'Pause';
       if (pp !== n.ppBtn.textContent) n.ppBtn.textContent = pp;
     },
-    destroy(n){ n.video.pause(); if (n.url) URL.revokeObjectURL(n.url); n.video.remove(); },
+    destroy(n){ audioTeardown(n, ['msrc']); mediaOff(n.video, n.url); n.url = null; n.video.remove(); },
     audioOut(n){ return n.aout; }
   },
   midi: {
@@ -3985,7 +4001,6 @@ const DEFS = {
     title:'Color adjust', kind:'video', w:260, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{hue:0, sat:1, bri:1, con:1, gam:1, inv:0, tint:'#ff7a3d', tamt:0, mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       const pct = v => Math.round(v*100) + '%';
       return [slider(n, 'hue', 'Hue', -180, 180, 1, v => (v > 0 ? '+' : '') + Math.round(v) + '°'),
         slider(n, 'sat', 'Saturation', 0, 3, 0.01, pct), slider(n, 'bri', 'Brightness', 0, 3, 0.01, pct),
@@ -4004,7 +4019,6 @@ const DEFS = {
     ins:[{name:'fg', kind:'video', label:'Foreground'},{name:'bg', kind:'video', label:'Background'}], outs:[{name:'out', kind:'video', label:'Out'}],
     params:{mode:'luma', th:0.5, soft:0.08, inv:'keep', kc:'#00ff00'},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       const rows = {};
       const show = () => { rows.kc.hidden = n.params.mode !== 'chroma'; };
       rows.kc = colorPick(n, 'kc', 'Key color');
@@ -4029,7 +4043,6 @@ const DEFS = {
     title:'Posterize', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{levels:4, sat:1.2, mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [slider(n, 'levels', 'Levels', 2, 16, 1, v => String(Math.round(v))), slider(n, 'sat', 'Saturation', 0, 3, 0.01, v => Math.round(v*100) + '%')];
     },
     pull(n){ const s = inputRaw(n, 'in'); if (!s) return null; const [W, H] = dims(s); if (!W) return null;
@@ -4039,7 +4052,6 @@ const DEFS = {
     title:'Gradient map', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{c0:'#120a3a', c1:'#e0457b', c2:'#ffe29a', con:1, mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [colorPick(n, 'c0', 'Shadows'), colorPick(n, 'c1', 'Midtones'), colorPick(n, 'c2', 'Highlights'),
         slider(n, 'con', 'Contrast', 0.2, 4, 0.01, v => Math.round(v*100) + '%')];
     },
@@ -4050,7 +4062,6 @@ const DEFS = {
     title:'Edge detect', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{mode:'glow', k:3, th:0.1, ec:'#7df9ff', mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [choice(n, 'mode', 'Style', [['glow','Glowing lines on black'],['ink','Dark lines over the picture'],['neon','Colored lines over the picture']]),
         slider(n, 'k', 'Strength', 0.5, 10, 0.05, v => v.toFixed(2) + '×'),
         slider(n, 'th', 'Threshold', 0, 0.8, 0.005, v => Math.round(v*100) + '%'),
@@ -4063,21 +4074,19 @@ const DEFS = {
     title:'Wave warp', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{amp:0.03, freq:4, speed:2, dir:'h', mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [choice(n, 'dir', 'Direction', [['h','Sideways ripples'],['v','Up and down ripples'],['both','Both']]),
         slider(n, 'amp', 'Amount', 0, 0.2, 0.001, v => (v*100).toFixed(1) + '%'),
         slider(n, 'freq', 'Waves', 0.2, 40, 0.1, v => v.toFixed(1)),
         slider(n, 'speed', 'Speed', -10, 10, 0.05, v => v.toFixed(2))];
     },
     pull(n){ const s = inputRaw(n, 'in'); if (!s) return null; const [W, H] = dims(s); if (!W) return null;
-      const [, dt] = tdt(n); n.ph = ((n.ph || 0) + dt*P(n,'speed')*6.2831) % 6283.1;
+      const [, dt] = tdt(n); n.ph = ((n.ph || 0) + dt*P(n,'speed')*6.2831) % (Math.PI*200); // 100 full turns, so both ripple directions (×1 and ×1.13) line up and never jump
       return gpu(n, FS.warp, [s], {amp: P(n,'amp'), freq: P(n,'freq'), ph: n.ph, dir: {h:0, v:1, both:2}[n.params.dir]}, W, H); }
   },
   crt: {
     title:'CRT / VHS', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{scan:0.5, bleed:3, noise:0.15, wob:0.3, vig:0.5, curv:0.15, mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       const pct = v => Math.round(v*100) + '%';
       return [slider(n, 'scan', 'Scanlines', 0, 1, 0.01, pct), slider(n, 'bleed', 'Color bleed', 0, 12, 0.1, v => v.toFixed(1) + ' px'),
         slider(n, 'noise', 'Noise', 0, 1, 0.01, pct), slider(n, 'wob', 'Tracking', 0, 1, 0.01, pct),
@@ -4090,7 +4099,6 @@ const DEFS = {
     title:'Pixelate', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{size:16, mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d'); n.sm = mkCanvas(2, 2);
       return [slider(n, 'size', 'Block size', 1, 96, 1, v => Math.round(v) + ' px')];
     },
     pull(n){
@@ -4103,7 +4111,7 @@ const DEFS = {
     title:'Tile', kind:'video', w:250, ins:[{name:'in', kind:'video', label:'In'}], outs:[{name:'out', kind:'video', label:'Out'}],
     mix:true, params:{cols:3, rows:3, mirror:'mirror', sx:0, sy:0, mix:1},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d'); n.ox = 0; n.oy = 0;
+      n.ox = 0; n.oy = 0;
       return [slider(n, 'cols', 'Across', 1, 8, 1, v => String(Math.round(v))), slider(n, 'rows', 'Down', 1, 8, 1, v => String(Math.round(v))),
         choice(n, 'mirror', 'Tiles', [['repeat','Repeat'],['mirror','Mirror alternate tiles']]),
         slider(n, 'sx', 'Scroll X', -2, 2, 0.01, v => v.toFixed(2) + '/s'), slider(n, 'sy', 'Scroll Y', -2, 2, 0.01, v => v.toFixed(2) + '/s')];
@@ -4128,7 +4136,9 @@ const DEFS = {
     pull(n){
       const s = inputOf(n, 'in'); if (!s || !dims(s)[0]) return null;
       const sss = syncSec(n), now = performance.now(), depth = sss ? Math.min(6000, sss*1000) : P(n, 'depth')*1000, B = Math.max(2, Math.round(P(n, 'bands'))); syncInfo(n, depth);
-      n.fb.push(s, now); n.fb.trim(now, (edgeInto(n.id, 'p:depth') ? 3000 : depth) + 100, 120);
+      // The store covers the whole time span (6 s with a cable on it); longer spans keep frames less often, so it stays at 120 frames.
+      const keep = (edgeInto(n.id, 'p:depth') ? 6000 : depth) + 100; n.fb.gap = Math.max(32, Math.ceil(keep/118));
+      n.fb.push(s, now); n.fb.trim(now, keep, 120);
       const W = n.fb.w, H = n.fb.h, d = n.params.dir, vert = d === 'down' || d === 'up';
       fitCanvas(n.cv, W, H); const x = n.ctx;
       for (let i = 0; i < B; i++){
@@ -4163,7 +4173,10 @@ const DEFS = {
     pull(n){
       const s = inputOf(n, 'in'); if (!s || !dims(s)[0]) return null;
       const now = performance.now(), m = n.params.mode;
-      n.fb.push(s, now); n.fb.trim(now, 1200, 60);
+      // The store covers the longest slice that can be asked for (2 s when synced), keeping frames less often past 1.3 s.
+      const ssl = m === 'repeat' ? syncSec(n) : null, len = ssl ? Math.min(2000, ssl*1000) : P(n, 'len');
+      const keep = Math.max(1200, (ssl ? len : edgeInto(n.id, 'p:len') ? 1000 : len) + 150); n.fb.gap = keep > 1300 ? 50 : 32;
+      n.fb.push(s, now); n.fb.trim(now, keep, 60);
       const W = n.fb.w, H = n.fb.h;
       const holdHi = !!gateHigh(n, 'hold'), holdRise = rising(n, 'hold'), trig = rising(n, 'trig') || n.fire; n.fire = false;
       if (m === 'hold' || holdHi){
@@ -4172,9 +4185,12 @@ const DEFS = {
       }
       if (m === 'repeat'){
         if (trig){
-          const ssl = syncSec(n); const len = ssl ? Math.min(2000, ssl*1000) : P(n, 'len'); syncInfo(n, len); n.seg = n.fb.buf.filter(f => f.t >= now - len).map(f => { const c = mkCanvas(f.cv.width, f.cv.height); c.ctx.drawImage(f.cv, 0, 0); c.t = f.t; return c; });
+          // The slice is copied into this module's own reusable frames (made once, grown only when needed), not new ones each trigger.
+          syncInfo(n, len); const pick = n.fb.buf.filter(f => f.t >= now - len).slice(-60), pool = n.segPool || (n.segPool = []);
+          n.seg = pick.map((f, i) => { const c = pool[i] || (pool[i] = mkCanvas(f.cv.width, f.cv.height)); fitCanvas(c.cv, f.cv.width, f.cv.height); c.ctx.drawImage(f.cv, 0, 0); c.t = f.t; return c; });
           if (!n.seg.length) n.seg = null; else { n.segT0 = n.seg[0].t; n.segLen = Math.max(30, len); n.segStart = now; n.segReps = Math.round(P(n, 'reps')); }
         }
+        if (!n.seg && n.segPool && now - (n.segStart || 0) > 5000) n.segPool = null; // no trigger for a while: let the spare frames go
         if (n.seg){
           const el = now - n.segStart, k = Math.floor(el/n.segLen);
           if (k >= n.segReps) n.seg = null;
@@ -4194,7 +4210,6 @@ const DEFS = {
     title:'Pattern generator', kind:'video', fam:'src', w:260, ins:[], outs:[{name:'out', kind:'video', label:'Video'}],
     params:{shape:'bars', freq:6, ang:0, speed:1, sharp:0, ca:'#0b0b2a', cb:'#ff9f1c'},
     build(n){
-      n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       return [choice(n, 'shape', 'Pattern', [['bars','Bars'],['rings','Rings'],['grid','Checkerboard'],['moire','Moiré'],['plasma','Plasma'],['ramp','Ramp']]),
         slider(n, 'freq', 'Frequency', 0.5, 60, 0.1, v => v.toFixed(1)),
         slider(n, 'ang', 'Angle', 0, 360, 0.5, v => Math.round(v) + '°'),
@@ -4203,7 +4218,9 @@ const DEFS = {
         colorPick(n, 'ca', 'Color A'), colorPick(n, 'cb', 'Color B')];
     },
     pull(n){
-      const [, dt] = tdt(n); n.ph = ((n.ph || 0) + dt*P(n, 'speed')*2) % 10000;
+      // The phase wraps where every pattern lines up exactly, so the picture never jumps: whole turns for the wave patterns, whole steps for the ramp.
+      const [, dt] = tdt(n), wrap = n.params.shape === 'ramp' ? 10060 : Math.PI*3200; n.ph = (n.ph || 0) + dt*P(n, 'speed')*2;
+      if (n.ph >= wrap) n.ph -= wrap; else if (n.ph <= -wrap) n.ph += wrap;
       const [W, H] = genSize(n);
       return gpu(n, FS.osc, [], {shape: ['bars','rings','grid','moire','plasma','ramp'].indexOf(n.params.shape), freq: P(n,'freq'), ang: P(n,'ang')*Math.PI/180, ph: n.ph, sharp: P(n,'sharp'), ca: colorRgb(n, 'ca'), cb: colorRgb(n, 'cb')}, W, H);
     }
@@ -4287,6 +4304,7 @@ const DEFS = {
     },
     initAudio(n){ n.ain = stereoGain(); n.an = actx.createAnalyser(); n.an.fftSize = 1024; n.ain.connect(n.an); n.buf = new Float32Array(1024); },
     audioIn(n){ return n.ain; },
+    destroy(n){ audioTeardown(n, ['an']); },
     pull(n){
       const [, dt] = tdt(n); let target = 0;
       if (n.an && edgeInto(n.id, 'in')){ n.an.getFloatTimeDomainData(n.buf); let s = 0; for (let i = 0; i < n.buf.length; i++) s += n.buf[i]*n.buf[i]; target = Math.min(1, Math.sqrt(s/n.buf.length)*3*P(n, 'gain')); }
@@ -4309,6 +4327,7 @@ const DEFS = {
     },
     initAudio(n){ n.ain = stereoGain(); n.an = actx.createAnalyser(); n.an.fftSize = 2048; n.an.smoothingTimeConstant = 0; n.ain.connect(n.an); n.fbuf = new Float32Array(1024); },
     audioIn(n){ return n.ain; },
+    destroy(n){ audioTeardown(n, ['an']); },
     pull(n){
       const [, dt] = tdt(n);
       if (n.an && edgeInto(n.id, 'in')){
@@ -4336,6 +4355,7 @@ const DEFS = {
     },
     initAudio(n){ n.ain = stereoGain(); n.an = actx.createAnalyser(); n.an.fftSize = 1024; n.an.smoothingTimeConstant = 0; n.ain.connect(n.an); n.fbuf = new Float32Array(512); n.tbuf = new Float32Array(1024); },
     audioIn(n){ return n.ain; },
+    destroy(n){ audioTeardown(n, ['an']); },
     pull(n){
       const [now, dt] = tdt(n); let e = 0;
       if (n.an && edgeInto(n.id, 'in')){
@@ -4353,6 +4373,7 @@ const DEFS = {
     render(n){
       pullNode(n.id);
       n.light.firstChild.className = performance.now() - n.last < 120 ? 'on hot' : '';
+      if (n.ivs.length && performance.now() - n.last > 3000){ n.ivs = []; n.bpm.textContent = 'Listening…'; } // beats stopped: forget the old tempo
       if (n.ivs.length >= 3 && (++n.rf || (n.rf = 1)) % 15 === 0){ const s = n.ivs.slice().sort((a, b) => a - b), med = s[s.length >> 1]; n.bpm.textContent = 'About ' + Math.round(60000/med) + ' BPM'; }
     }
   },
@@ -4376,7 +4397,8 @@ const DEFS = {
     pull(n){
       if (n.times.length >= 6){ const iv = (n.times[n.times.length - 1] - n.times[0])/(n.times.length - 1); if (iv > 0) n.bpmV = 60000/(iv*24); }
       const bpm = n.bpmV || 120, bpb = +n.params.bpb;
-      n.periods = {beat: 60/bpm, eighth: 30/bpm, sixteenth: 15/bpm, bar: 60*bpb/bpm};
+      // Only offer a tempo to synced modules once MIDI clock has actually arrived.
+      n.periods = n.bpmV ? {beat: 60/bpm, eighth: 30/bpm, sixteenth: 15/bpm, bar: 60*bpb/bpm} : null;
       const st = n.startPulse; n.startPulse = false;
       const live = (n.running || n.params.follow === 'free') && performance.now() - (n.times[n.times.length - 1] || 0) < 500;
       const t = Math.max(0, n.tick);
@@ -4456,7 +4478,8 @@ const DEFS = {
     },
     pull(n){
       const a = readIn(n, 'a', 0)*P(n, 'sa'), b = readIn(n, 'b', 0)*P(n, 'sb');
-      let v = {add: a + b, mul: a*b, min: Math.min(a, b), max: Math.max(a, b), diff: Math.abs(a - b)}[n.params.op] + P(n, 'off');
+      const r = {add: a + b, mul: a*b, min: Math.min(a, b), max: Math.max(a, b), diff: Math.abs(a - b)}[n.params.op];
+      let v = (r === undefined ? a : r) + P(n, 'off'); // an unknown operation passes A through
       v = Math.max(-1, Math.min(1, v)); n.hist[n.hi] = v; n.hi = (n.hi + 1) % n.hist.length;
       return {out: v, inv: -v};
     },
@@ -4558,7 +4581,7 @@ const DEFS = {
         colorPick(n, 'dark', 'Shadow'), colorPick(n, 'bg', 'Background')];
     },
     pull(n){
-      if (rising(n, 'new')) n.params.seed = Math.floor(Math.random()*99999);
+      if (rising(n, 'new')){ n.params.seed = Math.floor(Math.random()*99999); save(); }
       const [, dt] = tdt(n); n.time += dt*P(n, 'speed');
       if (n.sseed !== n.params.seed){ n.sseed = n.params.seed; const R = seededRng(n.params.seed*5 + 2);
         n.sh = Array.from({length: 5}, () => ({x: (R() - 0.5)*0.9, y: (R() - 0.5)*0.6, r: 0.18 + R()*0.18, rot: R()*6.28,
@@ -4624,7 +4647,7 @@ const DEFS = {
         colorPick(n, 'line', 'Lines'), colorPick(n, 'fa', 'Fill A'), colorPick(n, 'fb', 'Fill B'), colorPick(n, 'bg', 'Background')];
     },
     pull(n){
-      if (rising(n, 'new')) n.params.seed = Math.floor(Math.random()*99999);
+      if (rising(n, 'new')){ n.params.seed = Math.floor(Math.random()*99999); save(); }
       const [, dt] = tdt(n); n.rot += dt*P(n, 'spin');
       const [W, H] = genSize(n); fitCanvas(n.cv, W, H);
       const x = n.ctx; x.setTransform(1,0,0,1,0,0); x.globalAlpha = 1; x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H);
@@ -4688,7 +4711,7 @@ const DEFS = {
         colorPick(n, 'line', 'Lines'), colorPick(n, 'bg', 'Background')];
     },
     pull(n){
-      if (rising(n, 'new')) n.params.seed = Math.floor(Math.random()*99999);
+      if (rising(n, 'new')){ n.params.seed = Math.floor(Math.random()*99999); save(); }
       const [, dt] = tdt(n); n.time += dt*P(n, 'speed');
       const [W, H] = genSize(n); fitCanvas(n.cv, W, H);
       const x = n.ctx; x.setTransform(1,0,0,1,0,0); x.globalAlpha = 1; x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H);
@@ -4776,7 +4799,6 @@ const DEFS = {
         slider(n, 'taper', 'Inner petals', 0.05, 1.5, 0.01, pct),
         slider(n, 'center', 'Center', 0, 3, 0.01, pct),
         h('div', {class:'seghdr'}, h('span', {text:'Halo and motion'}), h('span')),
-        slider(n, 'contours', 'Petal lines', 0, 20, 1, v => String(Math.round(v))),
         slider(n, 'halo', 'Halo lines', 0, 60, 1, v => String(Math.round(v))),
         slider(n, 'hspace', 'Halo spacing', 0.004, 0.05, 0.001, v => (v*100).toFixed(1)),
         slider(n, 'hwob', 'Halo ripple', 0, 1, 0.01, pct),
@@ -4788,7 +4810,7 @@ const DEFS = {
         h('div', {class:'btns'}, h('button', {class:'btn', text:'New bloom', onclick: () => { setParam(n, 'seed', Math.floor(Math.random()*99999)); save(); }}))];
     },
     pull(n){
-      if (rising(n, 'new')) n.params.seed = Math.floor(Math.random()*99999);
+      if (rising(n, 'new')){ n.params.seed = Math.floor(Math.random()*99999); save(); }
       const [, dt] = tdt(n); n.time += dt*P(n, 'breathe'); n.rot += dt*P(n, 'spin');
       const cx = Math.round(P(n, 'complexity')), key = cx + ':' + n.params.seed;
       const k2 = key + n.params.layout + ':' + Math.round(n.params.rings) + ':' + Math.round(n.params.per);
@@ -4898,7 +4920,7 @@ const DEFS = {
         h('div', {class:'btns'}, h('button', {class:'btn', text:'New shape', onclick: () => { setParam(n, 'seed', Math.floor(Math.random()*99999)); save(); }}))];
     },
     pull(n){
-      if (rising(n, 'new')) n.params.seed = Math.floor(Math.random()*99999);
+      if (rising(n, 'new')){ n.params.seed = Math.floor(Math.random()*99999); save(); }
       const [, dt] = tdt(n); n.time += dt*P(n, 'speed');
       if (n.tseed !== n.params.seed){ n.tseed = n.params.seed; const R = seededRng(n.params.seed*7 + 1);
         n.hm = Array.from({length: 8}, (_, i) => ({k: 2 + i + Math.floor(R()*2), a: 0.5/(i + 1)*(0.5 + R()), ph: R()*Math.PI*2, s: (R() - 0.5)*0.8, dj: (R() - 0.5)*0.35}));
@@ -4964,7 +4986,7 @@ const DEFS = {
         h('div', {class:'btns'}, h('button', {class:'btn', text:'New layout', onclick: () => { setParam(n, 'seed', Math.floor(Math.random()*99999)); save(); }}))];
     },
     pull(n){
-      if (rising(n, 'new')) n.params.seed = Math.floor(Math.random()*99999);
+      if (rising(n, 'new')){ n.params.seed = Math.floor(Math.random()*99999); save(); }
       const [, dt] = tdt(n); n.time += dt*P(n, 'speed'); n.rot += dt*P(n, 'spin');
       const [W, H] = genSize(n); fitCanvas(n.cv, W, H);
       const x = n.ctx; x.setTransform(1,0,0,1,0,0); x.globalAlpha = 1; x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H);
@@ -5017,7 +5039,7 @@ const DEFS = {
         colorPick(n, 'line', 'Lines'), colorPick(n, 'bg', 'Background'), n.info];
     },
     pull(n){
-      if (rising(n, 'new')) n.params.seed = Math.floor(Math.random()*99999);
+      if (rising(n, 'new')){ n.params.seed = Math.floor(Math.random()*99999); save(); }
       const [, dt] = tdt(n); n.time += dt*P(n, 'speed'); n.rot += dt*P(n, 'spin');
       const [W, H] = genSize(n); fitCanvas(n.cv, W, H);
       const x = n.ctx; x.setTransform(1,0,0,1,0,0); x.globalAlpha = 1; x.fillStyle = colorCss(n, 'bg'); x.fillRect(0, 0, W, H);
@@ -5157,13 +5179,13 @@ const DEFS = {
     render(n){
       pullNode(n.id);
       n.audio.loop = n.params.loop === 'on'; n.audio.playbackRate = P(n, 'speed');
-      if (n.vol) n.vol.gain.setTargetAtTime(P(n, 'vol'), actx.currentTime, 0.03);
+      if (n.vol) setAP(n.vol.gain, P(n, 'vol'), 0.03);
       const d = n.audio.duration || 0, t = n.audio.currentTime || 0;
       if (d && document.activeElement !== n.pos) n.pos.value = Math.round(t/d*1000);
       const txt = fmtTime(t) + (d ? ' / ' + fmtTime(d) : ''); if (txt !== n.time.textContent) n.time.textContent = txt;
       const lab = n.audio.paused ? 'Play' : 'Pause'; if (lab !== n.playBtn.textContent){ n.playBtn.textContent = lab; n.playBtn.classList.toggle('on', !n.audio.paused); }
     },
-    destroy(n){ n.audio.pause(); if (n.url) URL.revokeObjectURL(n.url); }
+    destroy(n){ audioTeardown(n, ['msrc', 'vol']); mediaOff(n.audio, n.url); n.url = null; }
   },
   speakers: {
     title:'Speakers', kind:'audio', fam:'aud', w:230, ins:[{name:'in', kind:'audio', label:'In'}], outs:[],
@@ -5181,8 +5203,8 @@ const DEFS = {
     },
     initAudio(n){ n.ain = stereoGain(); n.g = actx.createGain(); n.ain.connect(n.g); n.g.connect(actx.destination); },
     audioIn(n){ return n.ain; },
-    render(n){ if (n.g) n.g.gain.setTargetAtTime(n.params.mute ? 0 : P(n, 'vol'), actx.currentTime, 0.03); n.muteBtn.classList.toggle('on', !!n.params.mute); },
-    destroy(n){ try { n.g.disconnect(); } catch(e){} }
+    render(n){ if (n.g) setAP(n.g.gain, n.params.mute ? 0 : P(n, 'vol'), 0.03); n.muteBtn.classList.toggle('on', !!n.params.mute); },
+    destroy(n){ audioTeardown(n, ['g']); }
   },
   ameter: {
     title:'Meter', kind:'audio', fam:'aud', w:260, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5190,7 +5212,8 @@ const DEFS = {
     build(n){ n.mcv = h('canvas', {class:'meter', 'aria-hidden':'true'}); n.pk = h('div', {class:'pk'}); return [h('div', {class:'meterwrap'}, n.mcv, n.pk), h('div', {class:'status', text:'Shows how loud the sound is. The audio passes straight through.'})]; },
     initAudio(n){ n.ain = stereoGain(); n.aout = stereoGain(); n.ain.connect(n.aout); n.meter = makeMeter(n.ain); },
     audioIn(n){ return n.ain; },
-    render(n){ drawMeter(n.mcv, n.meter || null, n.pk); }
+    render(n){ drawMeter(n.mcv, n.meter || null, n.pk); },
+    destroy(n){ if (n.meter) audioTeardown(n.meter, ['an']); n.meter = undefined; }
   },
   again: {
     title:'Gain', kind:'audio', fam:'aud', w:230, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5198,7 +5221,7 @@ const DEFS = {
     build(n){ return [slider(n, 'db', 'Gain', -60, 18, 0.1, v => (v > 0 ? '+' : '') + v.toFixed(1) + ' dB')]; },
     initAudio(n){ n.ain = stereoGain(); n.aout = stereoGain(); n.ain.connect(n.aout); },
     audioIn(n){ return n.ain; },
-    render(n){ if (n.aout) n.aout.gain.setTargetAtTime(P(n, 'db') <= -59.9 ? 0 : Math.pow(10, P(n, 'db')/20), actx.currentTime, 0.02); }
+    render(n){ if (n.aout) setAP(n.aout.gain, P(n, 'db') <= -59.9 ? 0 : Math.pow(10, P(n, 'db')/20), 0.02); }
   },
   apan: {
     title:'Pan', kind:'audio', fam:'aud', w:230, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5206,7 +5229,8 @@ const DEFS = {
     build(n){ return [slider(n, 'pan', 'Pan', -1, 1, 0.01, v => Math.abs(v) < 0.01 ? 'Center' : (v < 0 ? 'L ' : 'R ') + Math.round(Math.abs(v)*100))]; },
     initAudio(n){ n.ain = stereoGain(); n.p = actx.createStereoPanner(); n.aout = stereoGain(); n.ain.connect(n.p); n.p.connect(n.aout); },
     audioIn(n){ return n.ain; },
-    render(n){ if (n.p) n.p.pan.setTargetAtTime(P(n, 'pan'), actx.currentTime, 0.02); }
+    render(n){ if (n.p) setAP(n.p.pan, P(n, 'pan'), 0.02); },
+    destroy(n){ audioTeardown(n, ['p']); }
   },
   afilter: {
     title:'Filter', kind:'audio', fam:'aud', w:250, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5217,7 +5241,8 @@ const DEFS = {
     },
     initAudio(n){ n.ain = stereoGain(); n.f = actx.createBiquadFilter(); n.aout = stereoGain(); n.ain.connect(n.f); n.f.connect(n.aout); },
     audioIn(n){ return n.ain; },
-    render(n){ if (!n.f) return; if (n.f.type !== n.params.type) n.f.type = n.params.type; n.f.frequency.setTargetAtTime(freqOf(P(n, 'freq')), actx.currentTime, 0.02); n.f.Q.setTargetAtTime(P(n, 'q'), actx.currentTime, 0.02); }
+    render(n){ if (!n.f) return; if (n.f.type !== n.params.type) n.f.type = n.params.type; setAP(n.f.frequency, freqOf(P(n, 'freq')), 0.02); setAP(n.f.Q, P(n, 'q'), 0.02); },
+    destroy(n){ audioTeardown(n, ['f']); }
   },
   aeq: {
     title:'EQ', kind:'audio', fam:'aud', w:250, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5229,7 +5254,8 @@ const DEFS = {
       n.ain.connect(n.b[0]); n.b[0].connect(n.b[1]); n.b[1].connect(n.b[2]); n.b[2].connect(n.aout);
     },
     audioIn(n){ return n.ain; },
-    render(n){ if (n.b) ['low','mid','high'].forEach((k, i) => n.b[i].gain.setTargetAtTime(P(n, k), actx.currentTime, 0.02)); }
+    render(n){ if (n.b) ['low','mid','high'].forEach((k, i) => setAP(n.b[i].gain, P(n, k), 0.02)); },
+    destroy(n){ audioTeardown(n, ['b']); }
   },
   acomp: {
     title:'Compressor', kind:'audio', fam:'aud', w:260, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5243,12 +5269,13 @@ const DEFS = {
     initAudio(n){ n.ain = stereoGain(); n.c = actx.createDynamicsCompressor(); n.aout = stereoGain(); n.ain.connect(n.c); n.c.connect(n.aout); },
     audioIn(n){ return n.ain; },
     render(n){
-      if (!n.c) return; const t = actx.currentTime;
-      n.c.threshold.setTargetAtTime(P(n, 'thr'), t, 0.02); n.c.ratio.setTargetAtTime(P(n, 'ratio'), t, 0.02);
-      n.c.attack.setTargetAtTime(P(n, 'att'), t, 0.02); n.c.release.setTargetAtTime(P(n, 'rel'), t, 0.02);
-      n.aout.gain.setTargetAtTime(Math.pow(10, P(n, 'makeup')/20), t, 0.02);
+      if (!n.c) return;
+      setAP(n.c.threshold, P(n, 'thr'), 0.02); setAP(n.c.ratio, P(n, 'ratio'), 0.02);
+      setAP(n.c.attack, P(n, 'att'), 0.02); setAP(n.c.release, P(n, 'rel'), 0.02);
+      setAP(n.aout.gain, Math.pow(10, P(n, 'makeup')/20), 0.02);
       const r = 'Reduction: ' + n.c.reduction.toFixed(1) + ' dB'; if (frameNo % 6 === 0 && r !== n.red.textContent) n.red.textContent = r;
-    }
+    },
+    destroy(n){ audioTeardown(n, ['c']); }
   },
   adist: {
     title:'Distortion', kind:'audio', fam:'aud', w:250, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5261,10 +5288,12 @@ const DEFS = {
     },
     audioIn(n){ return n.ain; },
     render(n){
-      if (!n.ws) return; const t = actx.currentTime, d = Math.round(P(n, 'drive')*100);
-      if (d !== n.lastD){ n.lastD = d; const k = d*2 + 1, c = new Float32Array(1024); for (let i = 0; i < 1024; i++){ const x = i/511.5 - 1; c[i] = (1 + k)*x/(1 + k*Math.abs(x)); } n.ws.curve = c; }
-      n.tf.frequency.setTargetAtTime(freqOf(P(n, 'tone')), t, 0.02); const m = P(n, 'mix'); n.wet.gain.setTargetAtTime(m*0.7, t, 0.02); n.dry.gain.setTargetAtTime(1 - m, t, 0.02);
-    }
+      if (!n.ws) return; const d = Math.round(P(n, 'drive')*100);
+      // The curve is also rebuilt after the audio engine restarts (a fresh shaper has no curve).
+      if (d !== n.lastD || !n.ws.curve){ n.lastD = d; const k = d*2 + 1, c = new Float32Array(1024); for (let i = 0; i < 1024; i++){ const x = i/511.5 - 1; c[i] = (1 + k)*x/(1 + k*Math.abs(x)); } n.ws.curve = c; }
+      setAP(n.tf.frequency, freqOf(P(n, 'tone')), 0.02); const m = P(n, 'mix'); setAP(n.wet.gain, m*0.7, 0.02); setAP(n.dry.gain, 1 - m, 0.02);
+    },
+    destroy(n){ audioTeardown(n, ['ws', 'tf', 'wet', 'dry']); }
   },
   adelay: {
     title:'Audio delay', kind:'audio', fam:'aud', w:260, ins:[{name:'in', kind:'audio', label:'In'},{name:'clock', kind:'gate', label:'Clock'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5281,10 +5310,12 @@ const DEFS = {
     audioIn(n, port){ return port === 'clock' ? null : n.ain; },
     pull(n){ if (rising(n, 'clock')){ const now = performance.now(); if (n.lastClk) n.clkPeriod = (now - n.lastClk)/1000; n.lastClk = now; } return null; },
     render(n){
-      pullNode(n.id); if (!n.d) return; const t = actx.currentTime, ss = syncSec(n), ms = ss ? Math.min(10000, ss*1000) : P(n, 'time'); syncInfo(n, ms);
-      n.d.delayTime.setTargetAtTime(ms/1000, t, 0.05); n.fbg.gain.setTargetAtTime(P(n, 'fb'), t, 0.02);
-      const m = P(n, 'mix'); n.wet.gain.setTargetAtTime(m, t, 0.02); n.dry.gain.setTargetAtTime(1 - m*0.5, t, 0.02);
-    }
+      pullNode(n.id); if (!n.d) return; const ss = syncSec(n), ms = ss ? Math.min(10000, ss*1000) : P(n, 'time'); syncInfo(n, ms);
+      setAP(n.d.delayTime, ms/1000, 0.05); setAP(n.fbg.gain, P(n, 'fb'), 0.02);
+      const m = P(n, 'mix'); setAP(n.wet.gain, m, 0.02); setAP(n.dry.gain, 1 - m*0.5, 0.02);
+    },
+    // The echo loop feeds itself, so it is cut apart here; otherwise it would keep running after the module is gone.
+    destroy(n){ audioTeardown(n, ['d', 'fbg', 'wet', 'dry']); }
   },
   areverb: {
     title:'Reverb', kind:'audio', fam:'aud', w:250, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5293,11 +5324,23 @@ const DEFS = {
     initAudio(n){ n.ain = stereoGain(); n.aout = stereoGain(); n.cv = actx.createConvolver(); n.wet = actx.createGain(); n.dry = actx.createGain(); n.ain.connect(n.cv); n.cv.connect(n.wet); n.wet.connect(n.aout); n.ain.connect(n.dry); n.dry.connect(n.aout); },
     audioIn(n){ return n.ain; },
     render(n){
-      if (!n.cv) return; const key = n.params.size + ':' + n.params.decay;
-      if (key !== n.irKey){ n.irKey = key; const sr = actx.sampleRate, len = Math.round(sr*n.params.size), b = actx.createBuffer(2, len, sr);
-        for (let c = 0; c < 2; c++){ const d = b.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random()*2 - 1)*Math.pow(1 - i/len, n.params.decay); } n.cv.buffer = b; }
-      const t = actx.currentTime, m = P(n, 'mix'); n.wet.gain.setTargetAtTime(m, t, 0.02); n.dry.gain.setTargetAtTime(1 - m*0.6, t, 0.02);
-    }
+      if (!n.cv) return;
+      const sz = Math.max(0.1, Math.round(n.params.size*10)/10), dc = Math.round(n.params.decay*10)/10, key = sz + ':' + dc, now = performance.now();
+      // The echo tail is rebuilt only once Size/Decay settle (150 ms), or at most twice a second while they keep moving (e.g. a preset morph).
+      // A new engine (after an audio restart) gets its tail straight away.
+      const fresh = n.irFor !== n.cv || n.irKey === undefined;
+      if (!fresh && key !== n.irKey){ if (key !== n.irWant){ n.irWant = key; n.irT = now; if (!n.irT0) n.irT0 = now; } }
+      if (fresh || (key !== n.irKey && (now - n.irT > 150 || now - n.irT0 > 500))){
+        n.irKey = key; n.irFor = n.cv; n.irWant = null; n.irT0 = 0;
+        const sr = actx.sampleRate, len = Math.round(sr*sz), b = actx.createBuffer(2, len, sr), env = new Float32Array(len), STEP = 64;
+        // The fade-out curve is worked out every 64 samples and filled in between (much cheaper than per sample).
+        for (let i = 0; i < len; i += STEP){ const a = Math.pow(1 - i/len, dc), e = Math.min(len, i + STEP), z = Math.pow(1 - e/len, dc); for (let j = i; j < e; j++) env[j] = a + (z - a)*(j - i)/STEP; }
+        for (let c = 0; c < 2; c++){ const d = b.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random()*2 - 1)*env[i]; }
+        n.cv.buffer = b;
+      }
+      const m = P(n, 'mix'); setAP(n.wet.gain, m, 0.02); setAP(n.dry.gain, 1 - m*0.6, 0.02);
+    },
+    destroy(n){ audioTeardown(n, ['cv', 'wet', 'dry']); }
   },
   amix: {
     title:'Audio mixer', kind:'audio', fam:'aud', w:250, ins:'abcd'.split('').map(k => ({name: k, kind:'audio', label: k.toUpperCase()})), outs:[{name:'out', kind:'audio', label:'Out'}],
@@ -5305,7 +5348,8 @@ const DEFS = {
     build(n){ const pct = v => Math.round(v*100) + '%'; return [...'abcd'.split('').map(k => slider(n, k, 'Level ' + k.toUpperCase(), 0, 1.5, 0.01, pct)), slider(n, 'master', 'Master', 0, 1.5, 0.01, pct)]; },
     initAudio(n){ n.aout = stereoGain(); n.g = {}; for (const k of 'abcd'){ n.g[k] = stereoGain(); n.g[k].connect(n.aout); } },
     audioIn(n, port){ return n.g && n.g[port]; },
-    render(n){ if (!n.g) return; const t = actx.currentTime; for (const k of 'abcd') n.g[k].gain.setTargetAtTime(P(n, k), t, 0.02); n.aout.gain.setTargetAtTime(P(n, 'master'), t, 0.02); }
+    render(n){ if (!n.g) return; for (const k of 'abcd') setAP(n.g[k].gain, P(n, k), 0.02); setAP(n.aout.gain, P(n, 'master'), 0.02); },
+    destroy(n){ audioTeardown(n, ['g']); }
   },
   atrig: {
     title:'Audio trigger', kind:'gate', fam:'aud', w:250, ins:[{name:'in', kind:'audio', label:'In'}], outs:[{name:'trig', kind:'gate', label:'Trigger'},{name:'gate', kind:'gate', label:'Gate'},{name:'level', kind:'mod', label:'Level'}],
@@ -5314,6 +5358,7 @@ const DEFS = {
       h('div', {class:'status', text:'Fires when the sound gets louder than the threshold, for example on each drum hit.'})]; },
     initAudio(n){ n.ain = stereoGain(); n.an = actx.createAnalyser(); n.an.fftSize = 1024; n.ain.connect(n.an); n.buf = new Float32Array(1024); },
     audioIn(n){ return n.ain; },
+    destroy(n){ audioTeardown(n, ['an']); },
     pull(n){
       let db = -90; if (n.an){ n.an.getFloatTimeDomainData(n.buf); let p = 0; for (let i = 0; i < 1024; i += 2){ const a = Math.abs(n.buf[i]); if (a > p) p = a; } db = p > 0 ? 20*Math.log10(p) : -90; }
       const now = performance.now(), over = db > P(n, 'thr');
@@ -5361,12 +5406,12 @@ const DEFS = {
       n.imgs = []; n.idx = 0; n.cv = document.createElement('canvas'); n.ctx = n.cv.getContext('2d');
       const file = h('input', {type:'file', accept:'image/*', multiple: true, hidden: true});
       n.addFiles = async files => {
-        for (const f of files){ if (!f.type.startsWith('image/')) continue; try { const bmp = await createImageBitmap(f); n.imgs.push({bmp, name: f.name}); } catch(e){ toast('Couldn’t open ' + f.name); } }
+        for (const f of files){ if (!f.type.startsWith('image/')) continue; try { const bmp = await createImageBitmap(f); if (n.dead){ bmp.close(); continue; } n.imgs.push({bmp, name: f.name}); } catch(e){ toast('Couldn’t open ' + f.name); } }
         n.idx = Math.min(n.idx, Math.max(0, n.imgs.length - 1)); n.changed = performance.now(); imgInfo(n);
       };
       file.addEventListener('change', () => { n.addFiles([...file.files]); file.value = ''; });
       n.info = h('div', {class:'status', text:'No images. Load some, or drop them here.'});
-      return [h('div', {class:'btns'}, h('button', {class:'btn', text:'Load…', onclick: () => file.click()}), h('button', {class:'btn', text:'Next', onclick: () => imgStep(n, 1)}), h('button', {class:'btn', text:'Clear', onclick: () => { n.imgs = []; n.idx = 0; imgInfo(n); }})), file, n.info,
+      return [h('div', {class:'btns'}, h('button', {class:'btn', text:'Load…', onclick: () => file.click()}), h('button', {class:'btn', text:'Next', onclick: () => imgStep(n, 1)}), h('button', {class:'btn', text:'Clear', onclick: () => { imgFree(n); n.idx = 0; imgInfo(n); }})), file, n.info,
         slider(n, 'hold', 'Auto-advance', 0, 30, 0.1, v => v ? v.toFixed(1) + ' s' : 'Off'), slider(n, 'fade', 'Crossfade', 0, 3, 0.05, v => v.toFixed(2) + ' s'),
         h('div', {class:'status', text:'Images aren’t saved inside the patch file; load them again after opening a patch.'})];
     },
@@ -5380,11 +5425,16 @@ const DEFS = {
       const now = performance.now(), hold = P(n, 'hold');
       if (hold > 0 && now - (n.changed || 0) > hold*1000) imgStep(n, 1);
       const cur = n.imgs[n.idx].bmp, W = cur.width, H = cur.height, f = Math.max(0.0001, P(n, 'fade')*1000), k = Math.min(1, (now - (n.changed || 0))/f);
+      const fading = k < 1 && n.prevBmp;
+      // A still picture is drawn (and sent to the graphics card) once, not every frame; only crossfades redraw.
+      if (!fading && n.drawn === cur) return n.cv;
       fitCanvas(n.cv, W, H); const x = n.ctx; x.globalAlpha = 1;
-      if (k < 1 && n.prevBmp){ drawCover(x, n.prevBmp, W, H); x.globalAlpha = k; drawCover(x, cur, W, H); x.globalAlpha = 1; }
-      else x.drawImage(cur, 0, 0);
+      if (fading){ drawCover(x, n.prevBmp, W, H); x.globalAlpha = k; drawCover(x, cur, W, H); x.globalAlpha = 1; n.drawn = null; }
+      else { x.drawImage(cur, 0, 0); n.drawn = cur; }
+      n.cv.__ver = (n.cv.__ver || 0) + 1;
       return n.cv;
-    }
+    },
+    destroy(n){ n.dead = true; imgFree(n); }
   },
   gif: {
     title:'GIF player', kind:'video', fam:'src', w:260, ins:[{name:'restart', kind:'gate', label:'Restart'},{name:'step', kind:'gate', label:'Next frame'}],
@@ -5394,19 +5444,42 @@ const DEFS = {
       n.frames = []; n.fi = 0; n.acc = 0; n.dir = 1;
       const file = h('input', {type:'file', accept:'image/gif,image/webp,image/png,image/apng', hidden: true});
       n.loadFile = async f => {
-        n.info.textContent = 'Loading ' + f.name + '…'; n.frames = []; n.fi = 0;
+        // Each load gets a number; if another file is loaded meanwhile, this one stops and throws its frames away.
+        const tok = n.loadTok = (n.loadTok || 0) + 1, stale = () => tok !== n.loadTok || n.dead;
+        n.info.textContent = 'Loading ' + f.name + '…';
+        const got = []; let note = '';
         try {
           if ('ImageDecoder' in window){
-            const dec = new ImageDecoder({data: await f.arrayBuffer(), type: f.type || 'image/gif'}); await dec.tracks.ready;
-            const count = dec.tracks.selectedTrack.frameCount || 1;
-            for (let i = 0; i < count; i++){ const r = await dec.decode({frameIndex: i}); n.frames.push({bmp: await createImageBitmap(r.image), dur: Math.max(20, (r.image.duration || 100000)/1000)}); r.image.close(); }
-            dec.close();
+            const data = await f.arrayBuffer(); if (stale()) return;
+            const dec = new ImageDecoder({data, type: f.type || 'image/gif'});
+            try {
+              await dec.tracks.ready;
+              const count = dec.tracks.selectedTrack.frameCount || 1;
+              // Frames are kept to about 600 MB (or 1000 frames) so a huge GIF can't run the computer out of memory.
+              let bytes = 0;
+              for (let i = 0; i < count; i++){
+                if (stale()) break;
+                const r = await dec.decode({frameIndex: i});
+                if (stale()){ r.image.close(); break; }
+                let bmp; try { bmp = await createImageBitmap(r.image); } finally { r.image.close(); }
+                got.push({bmp, dur: Math.max(20, (r.image.duration || 100000)/1000)});
+                bytes += bmp.width*bmp.height*4;
+                if (i < count - 1 && (got.length >= 1000 || bytes > 600e6)){ note = ' (first ' + got.length + ' of ' + count + ', the rest is too big to hold)'; break; }
+              }
+            } finally { try { dec.close(); } catch(e){} }
+            if (stale()){ gifFree(got); return; }
+            // Swap in the new frames, then free the old ones.
+            const old = n.frames; n.frames = got; n.fi = 0; n.acc = 0; n.dir = 1; gifFree(old); gifImgOff(n);
           } else {
             // Older browsers: show the animation the browser plays itself.
-            n.imgEl = new Image(); n.imgEl.src = URL.createObjectURL(f); await n.imgEl.decode(); n.imgEl.style.cssText = 'position:fixed; left:-9999px; width:1px; height:1px'; document.body.append(n.imgEl);
+            const url = URL.createObjectURL(f), img = new Image(); img.src = url;
+            try { await img.decode(); } catch(e){ URL.revokeObjectURL(url); throw e; }
+            if (stale()){ URL.revokeObjectURL(url); return; }
+            gifImgOff(n); const old = n.frames; n.frames = []; gifFree(old);
+            img.style.cssText = 'position:fixed; left:-9999px; width:1px; height:1px'; document.body.append(img); n.imgEl = img; n.imgUrl = url;
           }
-          n.info.textContent = f.name + (n.frames.length ? ', ' + n.frames.length + ' frames' : '');
-        } catch(e){ n.info.textContent = 'Couldn’t play ' + f.name + ': ' + e.message; }
+          n.info.textContent = f.name + (n.frames.length ? ', ' + n.frames.length + ' frames' : '') + note;
+        } catch(e){ gifFree(got); if (!stale()) n.info.textContent = 'Couldn’t play ' + f.name + ': ' + e.message; }
       };
       file.addEventListener('change', () => { if (file.files[0]) n.loadFile(file.files[0]); file.value = ''; });
       n.info = h('div', {class:'status', text:'No GIF. Load one, or drop it here.'});
@@ -5433,8 +5506,9 @@ const DEFS = {
           else n.fi = (n.fi + 1) % N;
         }
       }
-      return n.frames[n.fi].bmp;
-    }
+      return n.frames[Math.min(n.fi, N - 1)].bmp;
+    },
+    destroy(n){ n.dead = true; n.loadTok = (n.loadTok || 0) + 1; gifFree(n.frames); n.frames = []; gifImgOff(n); }
   },
   amoeba: {
     title:'Amoeba', kind:'video', w:270, ins:[{name:'new', kind:'gate', label:'New shape'},{name:'pulse', kind:'gate', label:'Pulse'}], outs:[{name:'out', kind:'video', label:'Video'}],
