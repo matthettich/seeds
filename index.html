@@ -8291,7 +8291,7 @@ ws.addEventListener('contextmenu', e => {
   }
   if (sel.length) items.push(['Copy (Cmd+C)', () => copySel()], ['Duplicate (Cmd+D)', () => { if (copySel(true)) pasteClip(); }]);
   if (clip) items.push(['Paste (Cmd+V)', () => pasteClip()]);
-  if (sel.length) items.push(['Delete ' + (sel.length === 1 ? 'module' : sel.length + ' modules'), () => { for (const m of sel) removeNode(m.id); clearSel(); }]);
+  if (sel.length) items.push(['Delete ' + (sel.length === 1 ? 'module' : sel.length + ' modules'), () => { removeNodes(sel.map(m => m.id)); clearSel(); }]);
   items.push(['Select all', () => { for (const m of nodes.values()) if (!m.fixed && visibleNode(m)) setSel(m, true); }]);
   if (!n) items.push(['Patch background color…', () => pickPatchBg()]);
   if (!n && patchBg) items.push(['Reset background color', () => { setPatchBg(null); save(); }]);
@@ -8301,7 +8301,7 @@ ws.addEventListener('contextmenu', e => {
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !ctx.hidden) hideMenu();
   if ((e.key === 'Delete' || e.key === 'Backspace') && selected.size && patchEditable() && !(e.target.closest && e.target.closest('input, select, textarea, [contenteditable="true"]')) && !(learn.on && learn.target)){
-    e.preventDefault(); for (const m of selNodes()) removeNode(m.id); clearSel();
+    e.preventDefault(); removeNodes(selNodes().map(m => m.id)); clearSel();
   }
 });
 
