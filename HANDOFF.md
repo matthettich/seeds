@@ -16,6 +16,7 @@ Start a new chat with: *"Clone matthettich/seeds and read HANDOFF.md, then …"*
 - User is not a developer: give spelled-out build steps (PowerShell vs Command Prompt, `cd` paths, file sizes to check), and always say which files changed (just the HTML, or `main.js`/`preload.js` too).
 
 ## Nov 3 review (senior code review + fixes)
+- **Released Nov 3 (owner: "build a desktop release with everything as well as push to main"):** `beta` merged into `main` (live web app) and desktop **v1.1.0** published as the latest release (installed copies update to it). Beta desktop v1.1.0-beta.1 was the pre-release before it. Test punchlist: https://claude.ai/artifact/4S9NAf8QNqdQwFtH6RKwVj
 - **Live (`main`) hotfixes:** frame loop can't freeze (next frame booked first; each module's render caught on its own);
   Tint GPU leak (`n._gt` was both GPU pictures and a timestamp; timestamp is now `n._genT`); deleted audio modules unplugged
   and Presentation panels removed in `removeNode`; Delete/copy/paste only in Patch mode (`patchEditable()`); a broken patch
