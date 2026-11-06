@@ -6422,6 +6422,8 @@ function startRec(n, retry){
   // The picture size (Size under the main view); recSrc has already brought the picture to it.
   let [w, hh] = src ? dims(src) : picDims();
   if (!w) [w, hh] = picDims();
+  // After the encoder gave up at a big size (4K on a small laptop), the take records smaller: the picture is unchanged.
+  if (retry && retry.maxH && hh > retry.maxH){ w = Math.round(w*retry.maxH/hh); hh = retry.maxH; }
   n.rc.width = w - (w % 2); n.rc.height = hh - (hh % 2);
   drawFit(n.rctx, src, n.rc.width, n.rc.height, '#000');
   let vs;
@@ -6444,7 +6446,7 @@ function startRec(n, retry){
   // H.264 needs a "level" big enough for the picture size and frame rate. The old fixed level only covered 720p at 30 fps,
   // which Windows' encoder rejects for anything bigger ("video encoding failed"). Pick the right one for this recording.
   if (mime && /avc1/i.test(mime) && !(retry && retry.exact)){
-    const px = n.rc.width*n.rc.height, fps = +rs.fps || 30, mbps = px/256*fps;
+    const px = n.rc.width*n.rc.height, mbps = px/256*recFps; // the frame rate this take really records at
     const lv = [[0x1F, 921600, 108000], [0x28, 2097152, 245760], [0x2A, 2228224, 522240], [0x32, 5652480, 589824], [0x33, 9437184, 983040], [0x34, 9437184, 2073600]]
       .find(([, maxPx, maxMbps]) => px <= maxPx && mbps <= maxMbps) || [0x34];
     const want = mime.replace(/avc1\.[0-9a-f]{6}/i, 'avc1.4D40' + lv[0].toString(16).toUpperCase().padStart(2, '0'));
@@ -6483,19 +6485,32 @@ function startRec(n, retry){
     // If the encoder fails, try once more with WebM, which works everywhere.
     const webm = ['video/webm;codecs=vp8,opus', ...FORMATS.map(f => f[0])].find(m => m && /webm/i.test(m) && MediaRecorder.isTypeSupported(m)); // VP8 is the lightest to encode
     const tried = (retry && retry.tried) || [mime];
+    // Too big for this computer's encoder (4K at 85% CPU on a MacBook Neo): keep H.264 and step the size down first.
+    // Swapping codecs at 4K doesn't help, and WebM (VP8) is encoded on the CPU, so it is the heaviest choice of all.
+    const H = n.rc.height, smaller = [1440, 1080].find(h => h < H - 8);
+    if (/mp4/i.test(mime || '') && smaller && H > 1080){
+      n.discard = true;
+      const base = (retry && retry.base) || mime;
+      n.retryWith = {mime: base, base, maxH: smaller, tried: [base]};
+      toast('This computer couldn’t record ' + sizeName(H) + ', so this take records at ' + sizeName(smaller) + '. The picture is unchanged.');
+      try { n.rec.stop(); } catch(e){}
+      return;
+    }
     if (/mp4/i.test(mime || '')){
       const lv = (/avc1\.4D40([0-9A-F]{2})/i.exec(mime || '') || [, '1F'])[1];
       const nextMp4 = ['video/mp4;codecs=avc1.4D40' + lv + ',opus', 'video/mp4;codecs=avc1.4D40' + lv, 'video/mp4;codecs=avc1.42E0' + lv + ',mp4a.40.2', 'video/mp4;codecs=avc3.4D40' + lv + ',mp4a.40.2']
         .find(m => !tried.includes(m) && MediaRecorder.isTypeSupported(m));
       if (nextMp4){
-        n.discard = true; n.retryWith = {mime: nextMp4, exact: true, tried: tried.concat([nextMp4])};
+        n.discard = true; n.retryWith = {mime: nextMp4, exact: true, tried: tried.concat([nextMp4]), maxH: retry && retry.maxH, base: retry && retry.base};
         toast('Trying another MP4 setting…'); try { n.rec.stop(); } catch(e){}
         return;
       }
     }
     if (webm && webm !== mime && !(retry && retry.webm)){
-      n.discard = true; n.retryWith = {mime: webm, webm: true, tried};
-      const diag = 'MP4 failed: “' + msg + '” (tried ' + tried.map(m => m.replace('video/mp4;codecs=', '')).join(' / ') + ') at ' + n.rc.width + '×' + n.rc.height + ', ' + recFps + ' fps. Recording in WebM instead.';
+      // WebM is encoded on the CPU: never above 1080p.
+      const wH = Math.min(n.rc.height, 1080);
+      n.discard = true; n.retryWith = {mime: webm, webm: true, tried, maxH: wH};
+      const diag = 'MP4 failed: “' + msg + '” (tried ' + tried.map(m => m.replace('video/mp4;codecs=', '')).join(' / ') + ') at ' + n.rc.width + '×' + n.rc.height + ', ' + recFps + ' fps. Recording in WebM' + (wH < n.rc.height ? ' at ' + sizeName(wH) : '') + ' instead.';
       toast(diag);
       setTimeout(() => { n.status.textContent = diag; n.status.title = diag; }, 400);
       try { n.rec.stop(); } catch(e){}
@@ -6507,6 +6522,7 @@ function startRec(n, retry){
   n.t0 = performance.now(); n.paused = false; n.pausedMs = 0; n.recBusy = true;
   setRecUI(n, true);
 }
+function sizeName(h){ return h >= 2100 ? '4K' : h + 'p'; }
 function stopRec(n){
   if (n.recRetryT){ clearTimeout(n.recRetryT); n.recRetryT = null; n.recBusy = false; setRecUI(n, false); return; } // stopped while switching formats
   if (n.rec && n.rec.state !== 'inactive') n.rec.stop(); // recBusy clears when the file is finished (onstop)
