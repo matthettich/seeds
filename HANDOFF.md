@@ -15,6 +15,13 @@ Start a new chat with: *"Clone matthettich/seeds and read HANDOFF.md, then …"*
 - User tests on: Windows laptop (Intel Core Ultra 9, RTX 4070 Laptop GPU, audio interface on ASIO) and MacBook Pro M4. Mac ≈120 fps, Windows was ≈33–50 fps.
 - User is not a developer: give spelled-out build steps (PowerShell vs Command Prompt, `cd` paths, file sizes to check), and always say which files changed (just the HTML, or `main.js`/`preload.js` too).
 
+## Nov 5 hotfix — desktop v1.1.1
+- 4K recording on a MacBook Neo (A18, 8 GB) failed with "MP4 failed" and fell back to WebM (VP8 is CPU-encoded, so worse at 4K).
+  Now an encoder failure above 1080p retries H.264 one size down (4K → 1440p → 1080p; `retry.maxH`, picture unchanged),
+  WebM never records above 1080p, and the H.264 level uses the real recording fps (`recFps`). On `main`, fast-forwarded
+  into `beta`; desktop v1.1.1 released (Run workflow with a version — pushing tags from Claude sessions is blocked).
+- Not done: writing takes to disk as they record in the desktop app (takes are held in memory until Stop).
+
 ## Nov 3 review (senior code review + fixes)
 - **Released Nov 3 (owner: "build a desktop release with everything as well as push to main"):** `beta` merged into `main` (live web app) and desktop **v1.1.0** published as the latest release (installed copies update to it). Beta desktop v1.1.0-beta.1 was the pre-release before it. Test punchlist: https://claude.ai/artifact/4S9NAf8QNqdQwFtH6RKwVj
 - **Live (`main`) hotfixes:** frame loop can't freeze (next frame booked first; each module's render caught on its own);
