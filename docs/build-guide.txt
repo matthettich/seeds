@@ -1,26 +1,23 @@
 ...Seeds build guide (Windows and Mac)
-October 4, 2026
+November 7, 2026
+
+GitHub builds the desktop app for you: Actions → Desktop app → Run workflow (see HANDOFF.md).
+Use this guide only to build it on your own computer.
 
 
 Which files to use
-Use only the three files below, downloaded from the latest message in the chat with Claude. If a
-file's size doesn't match, it's an older copy: delete it and download again.
+Build from the whole seeds project, not from single files. The desktop build copies the app
+(index.html, manifest.webmanifest and icons\ from the top of the project) into desktop\app\
+every time it runs, and deletes whatever was in desktop\app\ first, so:
 
- File          Size           What it's for
+ - the project's folders must stay together (desktop\ next to index.html and icons\), and
+ - to change the app, edit or replace index.html at the top of the project, never
+   desktop\app\index.html.
 
- seeds-        1,968,928      The full desktop project (app, main.js, preload.js, icons, build settings).
- app.zip       bytes          Use it for a first build or whenever Claude says main.js changed.
-
- seeds.html    886,211        The app on its own. Use it for quick updates: it becomes app/index.html
-               bytes          in your build folder.
-
- index.html    886,211        The same app, named for the web version on GitHub.
-               bytes
-
-Before downloading, delete old copies from Downloads. Otherwise the browser saves the new
-one as seeds (1).html or seeds-app (1).zip, and the steps below pick up the old file.
-To check a file's size: on Windows, right-click it, choose Properties, and read "Size" (not "Size on
-disk"). On a Mac, select it and press Cmd + I.
+Get the project from github.com/matthettich/seeds: click Code → Download ZIP. It downloads as
+seeds-main.zip (seeds-beta.zip if you switched to the beta branch first). Before downloading,
+delete old copies from Downloads; otherwise the browser saves the new one as
+seeds-main (1).zip and the steps below pick up the old file.
 To check the app inside your build folder is the newest, run the check command in the update
 steps. It searches for the words Smooth external display, which only the newest version has.
 
@@ -31,7 +28,7 @@ waiting.
 
    1. Install Node.js: go to nodejs.org, download the LTS installer (.msi), run it, and click Next
       through every screen with the default settings.
-   2. Download seeds-app.zip from the chat into Downloads (delete any older copy first).
+   2. Download seeds-main.zip from GitHub into Downloads (delete any older copy first).
    3. Open Command Prompt: click Start, type cmd, click Command Prompt. The line must start
       with C:\Users\YourName> (if it starts with PS, that's PowerShell: close it and open
       Command Prompt instead).
@@ -43,13 +40,13 @@ waiting.
 
    5. Unpack the zip into a fresh build folder. Paste each line on its own and press Enter. The
       rmdir lines may say "cannot find the file": that's fine.
- cd "%USERPROFILE%\Downloads"
+ cd "%USERPROFILE%\Downloads"
  rmdir /s /q seeds-src
  rmdir /s /q "%USERPROFILE%\seeds-build"
  mkdir seeds-src
- tar -xf seeds-app.zip -C seeds-src
- xcopy /E /I /Y seeds-src\seeds-app "%USERPROFILE%\seeds-build"
- cd "%USERPROFILE%\seeds-build"
+ tar -xf seeds-main.zip -C seeds-src
+ xcopy /E /I /Y seeds-src\seeds-main "%USERPROFILE%\seeds-build"
+ cd "%USERPROFILE%\seeds-build\desktop"
 
 
    6. Install Electron and the builder (a few minutes; wait for "added … packages"):
@@ -77,31 +74,24 @@ waiting.
 
 
 Windows: updating
-Use the first route when Claude sends only seeds.html, and the second when Claude says to use
-the zip (main.js or preload.js changed). Both run in Command Prompt.
-Only seeds.html changed. Delete the old seeds.html from Downloads, download the new
-one, then:
-
- copy /Y "%USERPROFILE%\Downloads\seeds.html" "%USERPROFILE%\seeds-build\app\index.html"
- cd "%USERPROFILE%\seeds-build"
-
-
-The zip changed. Delete the old seeds-app.zip and seeds-src from Downloads, download the
-new zip, then:
- cd "%USERPROFILE%\Downloads"
+Delete the old seeds-main.zip and seeds-src from Downloads, download the new zip, then copy
+the whole project over your build folder. This replaces every changed file (the app, main.js,
+preload.js, updater.js, package.json and the build settings) and keeps the installed
+node_modules, so there's no reinstall:
+ cd "%USERPROFILE%\Downloads"
  mkdir seeds-src
- tar -xf seeds-app.zip -C seeds-src
- copy /Y seeds-src\seeds-app\main.js "%USERPROFILE%\seeds-build\"
- copy /Y seeds-src\seeds-app\preload.js "%USERPROFILE%\seeds-build\"
- copy /Y seeds-src\seeds-app\app\index.html "%USERPROFILE%\seeds-build\app\"
- cd "%USERPROFILE%\seeds-build"
+ tar -xf seeds-main.zip -C seeds-src
+ xcopy /E /I /Y seeds-src\seeds-main "%USERPROFILE%\seeds-build"
+ cd "%USERPROFILE%\seeds-build\desktop"
 
 
 If seeds-src stays empty after tar, unpack it with this instead:
-powershell -command "Expand-Archive -Force seeds-app.zip seeds-src"
-Then, either way: check the app is the newest (this should print a line), test it, and build.
+powershell -command "Expand-Archive -Force seeds-main.zip seeds-src"
+If package.json changed (Claude will say), run npm install once more. Then check the app is the
+newest (this should print a line), run the updater tests, test it, and build.
 
- findstr /c:"Smooth external display" app\index.html
+ findstr /c:"Smooth external display" ..\index.html
+ node --test ..\tests\updater.test.js
  npm start
  npm version patch --no-git-tag-version
  npm run dist:win
@@ -118,7 +108,7 @@ waiting.
 
    1. Install Node.js: go to nodejs.org, download the LTS installer (.pkg), and click Continue →
       Agree → Install. Enter your Mac password if asked.
-   2. Download seeds-app.zip from the chat into Downloads (move any older copy to the Trash
+   2. Download seeds-main.zip from GitHub into Downloads (move any older copy to the Trash
       first).
    3. Open Terminal: press Cmd + Space, type Terminal, press Return.
    4. Check Node is installed. It should print a version such as v24.11.0:
@@ -133,13 +123,13 @@ waiting.
  rm -rf ~/seeds-build ~/Downloads/seeds-src
  mkdir ~/seeds-build
  cd ~/Downloads
- unzip -o seeds-app.zip -d seeds-src
- cp -R seeds-src/seeds-app/. ~/seeds-build/
- cd ~/seeds-build
+ unzip -o seeds-main.zip -d seeds-src
+ cp -R seeds-src/seeds-main/. ~/seeds-build/
+ cd ~/seeds-build/desktop
 
 
    6. Install Electron and the builder (a few minutes; wait for "added … packages"):
- npm install
+ npm install
 
 
    7. Test without building. Quit with Cmd + Q when done:
@@ -165,32 +155,26 @@ For an older Intel Mac, use npm run dist:mac-intel instead of npm run dist:mac.
 
 
 Mac: updating
-Use the first route when Claude sends only seeds.html, and the second when Claude says to use
-the zip. Both run in Terminal.
-Only seeds.html changed. Move the old seeds.html in Downloads to the Trash, download the
-new one, then:
-
- cp ~/Downloads/seeds.html ~/seeds-build/app/index.html
- cd ~/seeds-build
-
-
-The zip changed. Move the old seeds-app.zip and seeds-src in Downloads to the Trash,
-download the new zip, then:
+Move the old seeds-main.zip and seeds-src in Downloads to the Trash, download the new zip,
+then copy the whole project over your build folder (every changed file is replaced; the installed
+node_modules stay):
 
  cd ~/Downloads
- unzip -o seeds-app.zip -d seeds-src
- cp -R seeds-src/seeds-app/. ~/seeds-build/
- cd ~/seeds-build
+ unzip -o seeds-main.zip -d seeds-src
+ cp -R seeds-src/seeds-main/. ~/seeds-build/
+ cd ~/seeds-build/desktop
 
 
-Then, either way: check the app is the newest (this should print 1), test it, and build.
+If package.json changed (Claude will say), run npm install once more. Then check the app is the
+newest (this should print 1), run the updater tests, test it, and build.
 
- grep -c "Smooth external display" app/index.html
+ grep -c "Smooth external display" ../index.html
+ node --test ../tests/updater.test.js
  npm start
  npm version patch --no-git-tag-version
  npm run dist:mac
  open dist
-Run npm start on its own first and quit ...Seeds (Cmd + Q) before building. Then replace Seeds
+Run npm start on its own first and quit ...Seeds (Cmd + Q) before building. Then replace Seeds
 in Applications with the newest .dmg, as in step 9 of the first-time setup.
 
 
@@ -219,11 +203,11 @@ message below.
  with PS
 
  ENOENT … package.json               npm ran outside the build folder. Run
-                                     cd "%USERPROFILE%\seeds-build" (Mac: cd ~/seeds-build )
-                                     first.
+                                     cd "%USERPROFILE%\seeds-build\desktop" (Mac:
+                                     cd ~/seeds-build/desktop ) first.
 
  The system cannot find the path     A folder is missing. Check seeds-src with dir seeds-src (it should list
- specified                           seeds-app); if it's empty, unpack again.
+ specified                           seeds-main); if it's empty, unpack again.
 
  Electron is missing, or electron-   Run npm install in the build folder, then try again.
  builder not found

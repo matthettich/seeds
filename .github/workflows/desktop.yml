@@ -3,7 +3,7 @@
 #   Try a build:     Actions → Desktop app → Run workflow. The installers are downloads on the run's page
 #                    (only you can see them; they expire after 90 days).
 #   Release it:      Run workflow with a version typed in (e.g. 1.1.1), or push a tag:  git tag v1.1.1  then  git push origin v1.1.1
-#                    The installers go on a GitHub Release, and installed copies update themselves from it.
+#                    The installers go on a GitHub Release; installed Windows copies update themselves from it, Macs offer it.
 #                    Testers' link (always the newest): https://github.com/matthettich/seeds/releases/latest
 #
 #   Beta build:      Run workflow from the `beta` branch with a version like 1.1.0-beta.1 (any version with a "-" is a
@@ -105,5 +105,5 @@ jobs:
           if gh release view "$TAG" --repo "$RELEASE_REPO" >/dev/null 2>&1; then
             say gh release upload "$TAG" out/* --repo "$RELEASE_REPO" --clobber
           else
-            say gh release create "$TAG" out/* --repo "$RELEASE_REPO" --title "$TAG" $PRE --target "$GITHUB_SHA" --notes "Desktop build $TAG. Windows: Seeds-Setup .exe. Mac: the .dmg (arm64 for Apple silicon, x64 for Intel). Installed copies update themselves."
+            say gh release create "$TAG" out/* --repo "$RELEASE_REPO" --title "$TAG" $PRE --target "$GITHUB_SHA" --notes "Desktop build $TAG. Windows: Seeds-Setup .exe. Mac: the .dmg (arm64 for Apple silicon, x64 for Intel). Installed Windows copies update themselves; Macs offer the download."
           fi
