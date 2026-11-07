@@ -6549,7 +6549,10 @@ function addTake(n, blob, dur, ext, info){
   const nm = h('button', {class:'nm', title: still ? 'Show this still' : 'Play this take', text: label});
   nm.addEventListener('click', () => showPreview(t.url));
   const el = h('div', {class:'take' + (still ? ' still' : ''), 'data-url': t.url}, nm, live, saveBtn, del);
-  del.addEventListener('click', () => {
+  del.addEventListener('click', async () => {
+    // An unsaved take only lives in memory: ask before it's gone for good (saved ones are already on disk).
+    if (!t.saved && !await askDialog((still ? 'Still ' : 'Take ') + t.no + ' hasn’t been saved. Delete it anyway?', {ok: 'Delete', cancel: 'Keep it'})) return;
+    if (!n.takes.includes(t)) return;   // cleared while the question was open
     if (pvUrl === t.url) hidePreview();
     URL.revokeObjectURL(t.url); el.remove(); n.takes = n.takes.filter(x => x !== t); refreshStageSrc(); takesSize(n);
   });
