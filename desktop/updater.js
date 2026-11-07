@@ -24,6 +24,7 @@ function newer(a, b){
 
 function setupUpdates({ name, page, repo }){
   const state = { version: app.getVersion(), avail: null, ready: false, notifyOnly: true, dl: null, file: null };   // dl: 0–1 while downloading, 1 done
+  let auBusy = false;   // electron-updater's own background download (Windows installer) is running
   const win = () => BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null;
   const box = o => { const w = win(); return w ? dialog.showMessageBox(w, o) : dialog.showMessageBox(o); };
   const send = () => { for (const w of BrowserWindow.getAllWindows()) try { w.webContents.send('seeds:upd', { ...state }); } catch (e) {} };
@@ -114,7 +115,9 @@ function setupUpdates({ name, page, repo }){
     told.add(version);
     box({ type: 'info', buttons: ['Download', 'Later'], defaultId: 0, cancelId: 1, title: name + ' update',
       message: name + ' ' + version + ' is out.', detail: 'You have ' + app.getVersion() + '. Download the new version and install it over this one.' })
-      .then(r => { if (r.response === 0) download(version); });
+      // An installer build only gets here through the GitHub fallback (electron-updater failed), so there's no download
+      // running and the direct download would fetch the portable .exe: send it to the download page instead.
+      .then(r => { if (r.response === 0){ if (state.notifyOnly) download(version); else shell.openExternal(page); } });
   };
 
   // The fallback: GitHub's newest release, when electron-updater can't check.
@@ -136,6 +139,7 @@ function setupUpdates({ name, page, repo }){
   // The page's Update button: restart into a downloaded update, or (Mac, portable) download it and open it.
   const act = async () => {
     if (state.ready && au){ setImmediate(() => au.quitAndInstall()); return true; }
+    if (state.avail && !state.notifyOnly && !auBusy){ shell.openExternal(page); return true; }   // announced by the GitHub fallback: nothing is downloading
     if (state.avail && !state.notifyOnly){ box({ type: 'info', buttons: ['OK'], title: name + ' update', message: 'Downloading ' + name + ' ' + state.avail + '…', detail: 'You’ll be asked to restart when it’s ready.' }); return true; }
     if (state.avail){ download(state.avail); return true; }
     shell.openExternal(page); return true;
@@ -155,12 +159,12 @@ function setupUpdates({ name, page, repo }){
 
   au.on('update-available', info => {
     const byHand = manual; manual = false;
-    if (!notifyOnly){ state.avail = info.version; send(); if (byHand) box({ type: 'info', buttons: ['OK'], title: name + ' update', message: 'Downloading ' + name + ' ' + info.version + '…', detail: 'You’ll be asked to restart when it’s ready.' }); return; }
+    if (!notifyOnly){ auBusy = true; state.avail = info.version; send(); if (byHand) box({ type: 'info', buttons: ['OK'], title: name + ' update', message: 'Downloading ' + name + ' ' + info.version + '…', detail: 'You’ll be asked to restart when it’s ready.' }); return; }
     announce(info.version, byHand);
   });
   au.on('download-progress', p => { if (!notifyOnly && p && p.percent != null){ state.dl = Math.min(.99, p.percent / 100); send(); } });
   au.on('update-downloaded', info => {
-    state.avail = info.version; state.ready = true; state.dl = null; send();
+    auBusy = false; state.avail = info.version; state.ready = true; state.dl = null; send();
     if (told.has('dl' + info.version)) return;
     told.add('dl' + info.version);
     box({ type: 'info', buttons: ['Restart now', 'Later'], defaultId: 0, cancelId: 1, title: name + ' update',
@@ -172,7 +176,7 @@ function setupUpdates({ name, page, repo }){
   });
   au.on('error', () => {
     // electron-updater couldn't check (offline, or a Mac build it can't handle): ask GitHub directly.
-    const byHand = manual; manual = false;
+    const byHand = manual; manual = false; auBusy = false;
     if (!notifyOnly && !state.ready && state.dl != null){ state.dl = null; send(); }   // a background download that stopped
     ghCheck(byHand).then(ok => { if (!ok && byHand) failBox(); });
   });

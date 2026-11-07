@@ -6,7 +6,8 @@
 #                    The installers go on a GitHub Release, and installed copies update themselves from it.
 #                    Testers' link (always the newest): https://github.com/matthettich/seeds/releases/latest
 #
-#   Beta build:      Run workflow from the `beta` branch with a version like 1.1.0-beta.1 and tick "pre-release".
+#   Beta build:      Run workflow from the `beta` branch with a version like 1.1.0-beta.1 (any version with a "-" is a
+#                    pre-release automatically, typed in or pushed as a tag; or tick "pre-release" for any version).
 #                    A pre-release is never "latest", so installed copies don't update to it; testers download it by hand.
 #
 # Releases go on this repo's Releases page (the app's updater reads them from here), using the built-in token.
@@ -26,8 +27,9 @@ on:
   push:
     tags: ['v*.*.*']
 
+# Read-only by default; only the release job can write (see release.permissions).
 permissions:
-  contents: write
+  contents: read
 
 env:
   # A release: a pushed vX.Y.Z tag, or Run workflow with a version typed in.
@@ -47,6 +49,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with: { persist-credentials: false }   # npm install runs third-party scripts; keep the token out of .git/config
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - name: Version from the release
@@ -85,13 +88,16 @@ jobs:
     if: (github.event_name == 'workflow_dispatch' && inputs.version != '') || startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # to create/upload the release
     steps:
       - uses: actions/download-artifact@v4
         with: { path: out, merge-multiple: true }
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-          PRE: ${{ (github.event_name == 'workflow_dispatch' && inputs.prerelease) && '--prerelease' || '' }}
+          # Pre-release when ticked on Run workflow, or for any version with a suffix (v1.1.0-beta.1, from Run workflow or a pushed tag).
+          PRE: ${{ ((github.event_name == 'workflow_dispatch' && inputs.prerelease) || contains(github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name, '-')) && '--prerelease' || '' }}
         run: |
           ls -la out
           # GitHub's answer goes on the run's summary page too, so a refused token says why.
