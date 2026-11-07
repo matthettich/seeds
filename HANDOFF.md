@@ -4,11 +4,11 @@ Start a new chat with: *"Clone matthettich/seeds and read HANDOFF.md, then …"*
 
 ## Where things go (Nov 3)
 - **One public repo, `matthettich/seeds`.** The app is the root `index.html` (with `sw.js`, `manifest.webmanifest`, `icons/`); GitHub Pages serves `main` as the live app at https://matthettich.github.io/seeds/.
-- **Beta:** everyday work goes on the `beta` branch. Every push to it runs `.github/workflows/beta-web.yml`, which copies it into `beta/` on `main` (`tools/make-channel.sh`: own SW cache `seedsbeta-v*`, "(beta)" in the title). URL: https://matthettich.github.io/seeds/beta/. Beta shares saved patches and settings with the live app (same site), so a patch saved in beta may not open in live until the merge.
+- **Beta:** everyday work goes on the `beta` branch. Every push to it runs `.github/workflows/beta-web.yml`, which copies it into `beta/` on `main` (`tools/make-channel.sh`: own SW cache `seedsbeta-v*`, "(beta)" in the title). URL: https://matthettich.github.io/seeds/beta/. Beta shares saved patches and settings with the live app (same site) in a browser and on Android, so a patch saved in beta may not open in live until the merge. On iPhone/iPad each Home Screen app has its own storage, so an installed beta and an installed live app don't share; move patches with Save / Load.
 - **Release to live:** merge `beta` into `main`. Never edit `beta/` by hand.
 - **Hotfixes (owner, Nov 3):** the users are few and use Seeds live on stage, so a critical bug with a small, clear fix goes straight onto `main` (live), then `main` is merged into `beta`. Everything else goes through beta first.
-- **Desktop:** `desktop/` (`copy-app.js` copies the root app into `desktop/app/` before every run and build; that folder isn't committed). Releases are on this repo's Releases page with the built-in token (no `RELEASE_TOKEN` any more). A beta desktop build: Run workflow from `beta` with a version like `1.1.0-beta.1` and tick pre-release; installed copies never update to a pre-release.
-- **Tests:** `node --test tests/updater.test.js` (the updater's SHA-256 download check, ported from ...Thunder Plus); runs before every desktop build.
+- **Desktop:** `desktop/` (`copy-app.js` copies the root app into `desktop/app/` before every run and build; that folder isn't committed). Releases are on this repo's Releases page with the built-in token (no `RELEASE_TOKEN` any more). A beta desktop build: Run workflow from `beta` with a version like `1.1.0-beta.1`; any version with a `-` is published as a pre-release automatically (typed in or pushed as a tag), and the pre-release box forces it for any version. Installed copies never update to a pre-release.
+- **Tests:** `node --test tests/updater.test.js` (the updater's SHA-256 download check, ported from ...Thunder Plus, and the installer-build fallback). The desktop workflow runs them before every GitHub build; local `npm run dist:mac` / `dist:win` builds don't, so run the command yourself first.
 
 ## Who / what
 - Built for Emmanuelle, who prefers simple software → Simple mode must stay uncluttered and touch-friendly (Galaxy Fold6 was a target).
@@ -90,11 +90,11 @@ All but Simple share one patch. Control mode: patches can't be edited when locke
 - Electron ^33.2.1, electron-builder ^25.1.8, appId `app.seeds.video`. Icon: "Shard burst" (salmon/teal).
 
 ## Releases and auto-update (Oct 13)
-- `desktop/updater.js` (electron-updater, pinned 6.6.2; checks each Mac/portable download against GitHub's SHA-256) + `publish` in package.json → GitHub provider, repo `matthettich/seeds` (public). Same logic as ...Thunder Plus (Oct 19):
+- `desktop/updater.js` (electron-updater, pinned 6.6.2; checks each Mac/portable download against GitHub's SHA-256 when the release lists one; older releases with no digest skip the check) + `publish` in package.json → GitHub provider, repo `matthettich/seeds` (public). Same logic as ...Thunder Plus (Oct 19):
   Windows installer downloads in the background, then Restart now / Later. Mac (unsigned): "x.y.z is out" → Download fetches the release's `.dmg` for this Mac's chip (`-arm64` / `-x64`) into Downloads with progress, opens it, offers Quit. If electron-updater can't check, it asks GitHub's API (`releases/latest`) instead.
   The page hears about it through `preload.js` → `window.seedsNative.updates` {state, check, act, on} (IPC `seeds:upd*`): an **Update** button in the top bar (Update / Update n% / Install / Restart to update) and File ▾ → Check for updates… (shows the version). The website has no `seedsNative`, so neither shows there.
-- `.github/workflows/desktop.yml`: manual run = artifacts; tag `vX.Y.Z` = version set from the tag, builds, then one job runs
-  `gh release create` on `matthettich/seeds` with every file (incl. `latest.yml`, `latest-mac.yml`, `.blockmap`, Mac `.zip`). Uses the built-in token.
+- `.github/workflows/desktop.yml`: manual run with no version = test build, artifacts only; manual run with a version, or a pushed tag `vX.Y.Z` = version set from it, builds, then one job runs
+  `gh release create` on `matthettich/seeds` with every file (incl. `latest.yml`, `latest-mac.yml`, `.blockmap`, Mac `.zip`). Uses the built-in token; only the release job can write (the build job's token is read-only and isn't kept by checkout). Versions with a `-` become pre-releases.
 - Electron stays on 33 on purpose (GPU switches tuned for it); bump deliberately and test HDMI output on Windows.
 
 ## Web

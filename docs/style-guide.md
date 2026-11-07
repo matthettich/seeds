@@ -12,9 +12,9 @@ Five principles carry across every screen:
 - **Color means signal type.** Orange is video, teal is audio, purple is modulation, pink is triggers/gates, red is recording. This never changes between skins, only the shades do.
 - **Color also means family.** Each module category has its own pastel panel tint, so a patch reads like a map at a glance.
 - **Calm surfaces, loud signals.** Panels are quiet and low-contrast; only live state (recording, armed, queued, selected) gets saturated color.
-- **Nothing is lost silently.** Hidden things are "hidden, not deleted", unsaved takes ask before clearing, closing the app asks first, and every edit can be undone.
+- **Nothing is lost silently.** Hidden things are "hidden, not deleted", unsaved takes ask before clearing or deleting, closing the app asks first, and patch edits can be undone.
 
-The app is one self-contained HTML file (`seeds/desktop/app/index.html`) wrapped in Electron for Mac and Windows, and published as a web app. Fonts are IBM Plex Sans Condensed (Pastel skins) and Futura/Jost (Minimal and Neon skins).
+The app is one self-contained HTML file (`index.html` at the top of the `matthettich/seeds` repo; the desktop build copies it into `desktop/app/`, so never edit that copy) wrapped in Electron for Mac and Windows, and published as a web app. Fonts are IBM Plex Sans Condensed (Pastel skins) and Futura/Jost (Minimal and Neon skins).
 
 ## Color palette
 
@@ -181,7 +181,7 @@ Either side can collapse into a 38 px vertical strip with rotated text ("Patch",
 
 | Control | Look |
 | --- | --- |
-| Slider row | Label (muted) · native range slider tinted orange (teal in audio modules) · right-aligned value; click the value to type one. Modulated values turn purple and bold, with a 3 px purple tick under the slider showing the live position |
+| Slider row | Label (muted) · native range slider tinted orange (teal in audio modules) · right-aligned value; double-click the value to type one. Modulated values turn purple and bold, with a 3 px purple tick under the slider showing the live position |
 | Toolbar button `.tb` | `--panel-2` fill, 1 px edge, 6 px corners, 6×11 px padding; border darkens on hover; **on** = filled `--ink` with panel-colored text |
 | Segmented switch | Joined buttons in an 8 px rounded box; the selected segment fills `--ink` (mode switch, view toggles) |
 | Dropdown | Full-width, `--panel-2`, 5 px corners, 13 px text |
@@ -341,7 +341,7 @@ Shortcuts never fire while typing in a field.
 - Hover reveals secondary buttons (× on notes, ☆ on modules, Hide pills); on touch screens they're always visible.
 - Recording shows a red dot on the Recorder title and the module, a red timer, and the Rec. on/off pill fills red. Pause turns the button amber.
 - Toasts confirm quiet actions ("Hidden in Presentation.", "Saved all takes.").
-- Destructive actions ask with a named-button dialog ("Clear" / "Keep them"). Closing the desktop app with unsaved work asks "Keep ...Seeds open" / "Close without saving".
+- Destructive actions ask with a named-button dialog ("Clear" / "Keep them"). Deleting an unsaved take asks too ("Delete" / "Keep it"); a saved take is already on disk, so it goes without asking. Closing the desktop app with unsaved work asks "Keep ...Seeds open" / "Close without saving".
 - Backups are saved automatically and restoring can be undone.
 - Layout choices (drawer width, collapsed panels, open categories, skin) are remembered between sessions.
 
@@ -358,7 +358,7 @@ On coarse pointers: buttons are at least 42 px tall, Simple-mode headers 44 px, 
 Paste this at the start of a new chat when building another app, then add what's specific to that app.
 
 ```markdown
-Style this app like ...Seeds (repo matthettich/seeds-working, seeds/desktop/app/index.html; full guide in docs/style-guide.md).
+Style this app like ...Seeds (repo matthettich/seeds, index.html at the top of the repo; full guide in docs/style-guide.md).
 
 Feel: a tidy modular synth on a workbench. Calm, soft surfaces; only live signals and states get strong color. Friendly plain-English labels; tooltips explain what happens.
 

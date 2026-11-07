@@ -10,11 +10,19 @@
 #   - renames the service worker's cache to <cache-prefix>… and makes it clear only its own old caches, so the live
 #     app's cache and this copy's never delete each other;
 #   - adds "(label)" to the page title so it's clear which copy is open.
-# Saved patches and settings are shared with the live app (same site, same browser storage).
+# Saved patches and settings are shared with the live app (same site, same browser storage; not between separately
+# installed iPhone/iPad Home Screen apps, which each keep their own).
+#
+# Needs GNU sed (the `0,/re/` address and `sed -i` with no suffix): fine on GitHub's Ubuntu runners, where it normally
+# runs; on a Mac install it with `brew install gnu-sed` and put its gnubin folder first on PATH.
 set -euo pipefail
 REF=${1:?ref}; DIR=${2:?dir}; PREFIX=${3:?cache prefix}; LABEL=${4:-$DIR}
 ROOT=$(git rev-parse --show-toplevel); cd "$ROOT"
 case "$DIR" in beta|stable) ;; *) echo "only beta/ or stable/ (got '$DIR')"; exit 1 ;; esac
+# LABEL and PREFIX go into sed replacements: keep them to plain characters so they can't break the commands.
+[[ $LABEL =~ ^[A-Za-z0-9._\ -]+$ ]] || { echo "label may only use letters, digits, space, . _ - (got '$LABEL')"; exit 1; }
+[[ $PREFIX =~ ^[A-Za-z0-9._-]+$ ]] || { echo "cache prefix may only use letters, digits, . _ - (got '$PREFIX')"; exit 1; }
+sed --version >/dev/null 2>&1 || { echo "needs GNU sed (on a Mac: brew install gnu-sed)"; exit 1; }
 
 rm -rf "$DIR"; mkdir -p "$DIR"
 git archive "$REF" index.html sw.js manifest.webmanifest icons | tar -x -C "$DIR"

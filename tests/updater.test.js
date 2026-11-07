@@ -33,3 +33,32 @@ test('updater: a tampered or corrupt download is NEVER opened, is deleted, and t
 test('updater: the digest compares case-insensitively', async () => { assert.equal((await run('sha256:' + goodSha.toUpperCase(), payload)).opened.length, 1); });
 test('updater: an older release with no digest still downloads and opens (unchanged behaviour)', async () => { assert.equal((await run(undefined, payload)).opened.length, 1); });
 test('updater: a malformed or non-sha256 digest is ignored, neither trusted nor a crash', async () => { assert.equal((await run('md5:abc', crypto.randomBytes(300000))).opened.length, 1); });
+
+// A Windows installer build whose electron-updater check fails falls back to GitHub's newest release. Nothing is
+// downloading then, so the Update button opens the download page; it must not fetch the portable .exe or claim a download.
+test('updater: an installer build announced by the GitHub fallback opens the download page, never the portable download', async () => {
+  const EventEmitter = require('events'), au = new EventEmitter(), ev = { external: [], fetched: [], boxes: [] };
+  au.checkForUpdates = async () => { setImmediate(() => au.emit('error', new Error('no latest.yml'))); };
+  const E = { app: { getPath: () => os.tmpdir(), getVersion: () => '1.0.0', isPackaged: true, quit() {} },
+    dialog: { showMessageBox: (...a) => { ev.boxes.push(a[a.length - 1]); return Promise.resolve({ response: 1 }); } },
+    shell: { openPath() {}, showItemInFolder() {}, openExternal: p => ev.external.push(p) }, BrowserWindow: { getFocusedWindow: () => null, getAllWindows: () => [] },
+    net: { fetch: async url => { ev.fetched.push(url); return { ok: true, json: async () => ({ tag_name: 'v9.9.9', assets: [] }) }; } } };
+  const orig = Module._load; Module._load = function (r, ...a) { if (r === 'electron') return E; if (r === 'electron-updater') return { autoUpdater: au }; return orig.call(this, r, ...a); };
+  const plat = Object.getOwnPropertyDescriptor(process, 'platform'); Object.defineProperty(process, 'platform', { value: 'win32' });
+  const portable = process.env.PORTABLE_EXECUTABLE_DIR; delete process.env.PORTABLE_EXECUTABLE_DIR;
+  const realSetTimeout = global.setTimeout, realSetInterval = global.setInterval; global.setTimeout = () => 0; global.setInterval = () => 0;   // no background checks
+  try {
+    delete require.cache[require.resolve(UPD)]; const { setupUpdates } = require(UPD);
+    const u = setupUpdates({ name: 'T', page: 'p', repo: 'o/r' });
+    global.setTimeout = realSetTimeout; global.setInterval = realSetInterval;
+    await u.check(); await new Promise(r => setTimeout(r, 50));
+    assert.equal(u.state().avail, '9.9.9', 'the fallback announced the release');
+    await u.act(); await new Promise(r => setTimeout(r, 50));
+    assert.deepEqual(ev.external, ['p'], 'the download page opened');
+    assert.ok(!ev.fetched.some(x => /releases\/tags/.test(x)), 'no direct (portable) download was started');
+    assert.ok(!ev.boxes.some(b => /^Downloading/.test(b.message || '')), 'no "Downloading…" box');
+  } finally {
+    global.setTimeout = realSetTimeout; global.setInterval = realSetInterval; Module._load = orig;
+    Object.defineProperty(process, 'platform', plat); if (portable !== undefined) process.env.PORTABLE_EXECUTABLE_DIR = portable;
+  }
+});
