@@ -1900,11 +1900,11 @@ function colorRgb(n, key){
 }
 const colorCss = (n, key) => { const c = colorRgb(n, key), a = typeof n.params[key + 'A'] === 'number' ? Math.max(0, Math.min(1, P(n, key + 'A'))) : 1;
   return (a < 1 ? 'rgba(' : 'rgb(') + c.map(v => Math.round(v*255)).join(',') + (a < 1 ? ',' + a.toFixed(3) : '') + ')'; };
-function textField(n, key, label, multi){
+function textField(n, key, label, multi, onchange){
   const inp = h(multi ? 'textarea' : 'input', {class:'tfield', 'aria-label': label, rows: multi ? 2 : null, spellcheck:'false'}); inp.value = n.params[key];
-  inp.addEventListener('input', () => { n.params[key] = inp.value; save(); });
+  inp.addEventListener('input', () => { n.params[key] = inp.value; onchange && onchange(); save(); });
   inp.addEventListener('keydown', e => e.stopPropagation());
-  n.ctl = n.ctl || {}; n.ctl[key] = {set(v){ inp.value = v; }};
+  n.ctl = n.ctl || {}; n.ctl[key] = {set(v){ inp.value = v; onchange && onchange(); }};
   return row(label, inp);
 }
 function tdt(n){ const now = performance.now(), dt = n.t ? Math.min(.1, (now - n.t)/1000) : 0; n.t = now; return [now, dt]; }
@@ -1971,6 +1971,7 @@ function morphApply(n, amt){
     for (const [k, va] of Object.entries(sa.params)){
       if (PRESET_SKIP.has(k)) continue;
       const vb = sb.params[k]; let v;
+      if (vb === undefined) continue; // the other preset has no value for this: leave it alone
       if (typeof va === 'number' && typeof vb === 'number') v = +(va + (vb - va)*amt).toFixed(5);
       else if (Array.isArray(va) && Array.isArray(vb) && typeof va[0] === 'number'){ t.params[k] = va.map((x, i) => x + ((vb[i] ?? x) - x)*amt); continue; }
       else if (typeof va === 'string' && typeof vb === 'string' && /^#[0-9a-f]{6}$/i.test(va) && /^#[0-9a-f]{6}$/i.test(vb)){
@@ -2963,6 +2964,8 @@ async function applySink(el){
 // Restart the audio engine (after changing devices, or if another program grabbed the sound card).
 let audioRestarting = null;
 async function restartAudio(){
+  // A take's sound comes from the engine it started with: restarting now would leave the rest of the take silent.
+  for (const r of nodes.values()) if (r.type === 'recorder' && recActive(r)){ toast('Stop the recording first, then restart the sound.'); return; }
   if (audioRestarting) return audioRestarting; // a second press while one is running waits for it
   audioRestarting = (async () => {
     // The old engine stays in place while it closes, so modules drawing in the meantime still have a working one.
@@ -3314,6 +3317,7 @@ const DEFS = {
       const recycle = f => { if (f.cv.width === W && f.cv.height === H) n.pool.push(f); };
       while (n.buf.length > 1 && n.buf[1].t < now - keep) recycle(n.buf.shift());
       while (n.buf.length > 260) recycle(n.buf.shift());
+      if (n.pool.length > 4) n.pool.length = 4; // spare frames from a shortened delay aren't kept
       const at = t => { for (let i = n.buf.length - 1; i >= 0; i--) if (n.buf[i].t <= t) return n.buf[i]; return n.buf[0]; };
       fitCanvas(n.cv, W, H); fitCanvas(n.tmp, W, H);
       const o = n.ctx, tc = n.tctx;
@@ -3453,6 +3457,7 @@ const DEFS = {
       const keyRow = (k, K) => {
         if (typeof n.params['kc' + k] !== 'string') n.params['kc' + k] = '#00ff00';
         if (typeof n.params['kt' + k] !== 'number') n.params['kt' + k] = 0;
+        (n.dflt = n.dflt || {})['kt' + k] = 0; // double-click reset: Off
         const c = h('input', {type:'color', class:'kcol', 'aria-label':'Key color ' + K, value: n.params['kc' + k]});
         c.addEventListener('input', () => { n.params['kc' + k] = c.value; save(); });
         n.ctl = n.ctl || {}; n.ctl['kc' + k] = {set(v){ n.params['kc' + k] = v; c.value = v; }};
@@ -5253,7 +5258,7 @@ const DEFS = {
     title:'Send', kind:'video', fam:'util', w:230, ins:[{name:'in', kind:'video', label:'Video'},{name:'cv', kind:'mod', label:'Control'},{name:'trig', kind:'gate', label:'Trigger'},{name:'aud', kind:'audio', label:'Audio'}], outs:[],
     initAudio(n){ n.ain = stereoGain(); }, audioIn(n){ return n.ain; },
     params:{label:'A'},
-    build(n){ return [textField(n, 'label', 'Name'), h('div', {class:'status', text:'Anything patched here comes out of every Receive with the same name, without a cable.'})]; },
+    build(n){ return [textField(n, 'label', 'Name', false, syncAudio), h('div', {class:'status', text:'Anything patched here comes out of every Receive with the same name, without a cable.'})]; },
     pull(n){ return new PortOut({out: inputRaw(n, 'in'), cv: readIn(n, 'cv', 0), trig: readIn(n, 'trig', 0)}); },
     render(n){ pullNode(n.id); }
   },
@@ -5271,7 +5276,7 @@ const DEFS = {
       };
       n.sel.addEventListener('focus', fill); n.sel.addEventListener('change', () => { n.params.label = n.sel.value; syncAudio(); save(); });
       n.fill = fill; fill();
-      n.ctl = n.ctl || {}; n.ctl.label = {set(v){ n.params.label = v; fill(); n.sel.value = v; }};
+      n.ctl = n.ctl || {}; n.ctl.label = {set(v){ n.params.label = v; fill(); n.sel.value = v; syncAudio(); }};
       return [row('From', n.sel), h('div', {class:'status', text:'Pick a Send by its name.'})];
     },
     pull(n){
@@ -5515,6 +5520,7 @@ const DEFS = {
       const m = currentMix(), [W, H] = dims(oa ? a : b);
       if (m <= 0.001 && oa) return a; if (m >= 0.999 && ob) return b;
       return gpu(n, FS.mixer, [oa ? a : null, ob ? b : null, null, null], {has: [oa ? 1 : 0, ob ? 1 : 0, 0, 0], lvl: [1, m, 0, 0], md: [0, 0, 0, 0],
+        kt: [0, 0, 0, 0], k0: [0, 0, 0], k1: [0, 0, 0], k2: [0, 0, 0], k3: [0, 0, 0], // the shader is shared with Video mixer: its key settings must not carry over
         s0: oa ? dims(a) : [1, 1], s1: ob ? dims(b) : [1, 1], s2: [1, 1], s3: [1, 1], bgc: [0, 0, 0]}, W, H);
     }
   },
@@ -7009,7 +7015,8 @@ function recolorCables(){
 /* ---------- patching ---------- */
 let drag = null;
 function onJackDown(e, n, p, dir){
-  e.stopPropagation(); e.preventDefault();
+  e.stopPropagation(); if (e.button) return; // only the main button plugs and unplugs
+  e.preventDefault();
   if (drag) return; // already drawing a cable: this click finishes it
   let anchor = {node: n.id, port: p.name, dir, kind: p.kind};
   if (dir === 'in'){
@@ -7929,6 +7936,7 @@ async function loadPatchFile(f, handle){
     // Failed part-way, or none of its modules could be made: put the patch back as it was.
     if (ok === null || (!ok && d.nodes.length)){ reconcile(JSON.parse(before)); applyPan(); syncCableEls(); throw new Error('the file is damaged or from a newer version. Your patch is unchanged.'); }
     patchName = d.name || f.name.replace(/(\.seeds)?\.json$/i, ''); pnameEl.value = patchName; setFile(handle);
+    simpleRestoreOuts(); // a file saved in Simple mode: its own screen and recorder cables come back first
     applyPan(); syncCableEls(); if (settings.simple) setMode('simple'); save(); toast('Loaded ' + patchName + '.');
   } catch(e){ toast('Couldn’t load that file: ' + e.message); }
 }
@@ -8482,16 +8490,24 @@ function simpleEnter(){
   simple.on = true; document.body.classList.add('simple');
   simpleEnsure(); clipsBpm();
   setTimeout(() => { const c = nodes.get(simple.input); if (c && c.type === 'camera' && !c.stream && settings.camAuto !== false) startCam(c); }, 0);
+  if (simple.micWas){ simple.micWas = false; const m = nodes.get(simple.mic); if (m && !m.stream) startMic(m); }
   const mine = new Set([simple.input, simple.mic, ...simple.slots].filter(Boolean));
   const outs = e => (e.to.node === 'main' && e.to.port === 'in') || (e.to.node === 'rec' && (e.to.port === 'video' || e.to.port === 'audio'));
   simple.saved = edges.filter(e => outs(e) && !mine.has(e.from.node)).map(e => JSON.parse(JSON.stringify(e)));
   simpleWire(); applyScope(); simpleRender();
+}
+function simpleRestoreOuts(){
+  if (!simple.saved) return;
+  const outs = e => (e.to.node === 'main' && e.to.port === 'in') || (e.to.node === 'rec' && (e.to.port === 'video' || e.to.port === 'audio'));
+  edges = edges.filter(e => !outs(e)).concat(simple.saved.filter(e => nodes.has(e.from.node))); simple.saved = null; afterEdges();
 }
 function simpleExit(){
   if (!simple.on) return;
   for (const id of [simple.input, ...simple.slots]) simpleReturnBody(nodes.get(id));
   simpleRow.replaceChildren(); simple.on = false; document.body.classList.remove('simple');
   const cam = nodes.get(simple.input); if (cam && cam.stream) stopCam(cam);
+  // Simple mode's microphone is only heard there: let go of it too, and take it up again on the way back in.
+  const mic = nodes.get(simple.mic); simple.micWas = !!(mic && mic.stream); if (simple.micWas) stopMic(mic);
   if (simple.saved){
     const outs = e => (e.to.node === 'main' && e.to.port === 'in') || (e.to.node === 'rec' && (e.to.port === 'video' || e.to.port === 'audio'));
     edges = edges.filter(e => !outs(e)).concat(simple.saved.filter(e => nodes.has(e.from.node)));
@@ -8899,13 +8915,15 @@ function reconcile(d){
   if (wasPerf) perfEnter();
 }
 function undo(){
+  histPush(); // an edit from the last moment (not yet noted) is its own step
   if (!histStack.length) return;
   redoStack.push(histLast); const prev = histStack.pop(); histBytes -= prev.length;
   histBusy = true; try { reconcile(JSON.parse(prev)); } finally { histBusy = false; }
   histLast = histState(); updUndo(); save(); toast('Undone');
 }
 function redo(){
-  if (!redoStack.length) return;
+  histPush(); // a fresh edit clears Redo, as it would a moment later
+  if (!redoStack.length){ updUndo(); return; }
   histStack.push(histLast); histBytes += histLast.length; const nx = redoStack.pop();
   histBusy = true; try { reconcile(JSON.parse(nx)); } finally { histBusy = false; }
   histLast = histState(); updUndo(); save(); toast('Redone');
@@ -9727,11 +9745,12 @@ function remapPatch(src){
 // so changing the tempo never moves the beat grid (a queued clip still starts on the beat it was waiting for).
 function freePos(){ return live.beat0 + (performance.now() - live.t0)/1000*live.bpm/60; }
 function clipPos(){ return live.extSync && live.ticks > 0 ? live.ticks/24 : freePos(); }
+function clipNextAt(){ const q = +live.quant; return q > 0 ? Math.ceil(clipPos()/q + 1e-6)*q : 0; }
 function clipTrigger(i){
   const sl = live.slots[i]; if (!sl || !sl.patch) return;
   clipsBpm();
   const q = +live.quant;
-  if (q > 0 && live.active >= 0){ const pos = clipPos(); live.pending = {i, at: Math.ceil(pos/q + 1e-6)*q}; liveRender(); return; }
+  if (q > 0 && live.active >= 0){ live.pending = {i, at: clipNextAt()}; liveRender(); return; }
   clipLaunch(i);
 }
 // The playing clip's patch keeps every change you make, in any mode.
@@ -9808,6 +9827,7 @@ function clipFinish(){
 }
 function liveTick(){
   if (live.fadeState && live.out && performance.now() - live.t0f >= live.dur) clipFinish();
+  if (live.pending && simple.on) live.pending = null; // Simple mode has its own patch: a clip queued before it never starts there
   if (live.pending && clipPos() >= live.pending.at - 0.01) clipLaunch(live.pending.i);
   if (live.on && live.pending && frameNo % 8 === 0){ const el = liveGrid.children[live.pending.i]; if (el) el.classList.toggle('blink'); }
 }
@@ -9820,7 +9840,7 @@ function clipsBpm(){
   return b;
 }
 function liveEnter(){ if (live.on) return; live.on = true; document.body.classList.add('live'); clipsBpm(); liveRender(); }
-function liveExit(){ if (!live.on) return; live.on = false; document.body.classList.remove('live'); }
+function liveExit(){ if (!live.on) return; live.on = false; live.learnSlot = -1; document.body.classList.remove('live'); }
 // Ready-made note layouts for common controllers (slot 1 is the top-left pad).
 const LAYOUTS = {
   launchpad: {name: 'Launchpad (Programmer mode)', note: i => (8 - Math.floor(i/8))*10 + (i % 8) + 1},
@@ -9880,14 +9900,14 @@ function liveRender(){
 }
 // Tap tempo (Clips and Simple mode share it): taps within 2.5 s of each other set the tempo.
 let taps = [];
-function tapTempo(){ const now = performance.now(); taps = taps.filter(t => now - t < 2500); taps.push(now); if (taps.length >= 2) setClipsBpm((60000/((taps[taps.length-1] - taps[0])/(taps.length - 1))).toFixed(1)); }
+function tapTempo(){ const now = performance.now(); if (taps.length && now - taps[taps.length-1] < 60) return; /* one tap counted twice */ taps = taps.filter(t => now - t < 2500); taps.push(now); if (taps.length >= 2) setClipsBpm((60000/((taps[taps.length-1] - taps[0])/(taps.length - 1))).toFixed(1)); }
 // Clips tempo: drives quantized launches, beat-length fades and every Sync BPM effect in the clips.
 function setClipsBpm(v){ live.beat0 = freePos(); live.t0 = performance.now(); live.bpm = Math.max(20, Math.min(2000, +v || 120)); const b = nodes.get(live.bpmId); if (b) setParam(b, 'bpm', live.bpm); document.getElementById('lbpm').value = (+live.bpm).toFixed(1); const sb = document.getElementById('sbpm'); if (sb) sb.value = (+live.bpm).toFixed(1); liveSave(); }
 {
   const inp = document.getElementById('lbpm'); inp.value = live.bpm;
   inp.addEventListener('change', () => setClipsBpm(inp.value));
   document.getElementById('ltap').addEventListener('click', tapTempo);
-  document.getElementById('lsync').addEventListener('click', () => { live.extSync = !live.extSync; if (live.extSync){ midiInit().catch(err => toast(err.message)); toast('Following MIDI clock. Start your drum machine or sequencer.'); } liveRender(); });
+  document.getElementById('lsync').addEventListener('click', () => { live.extSync = !live.extSync; if (live.pending) live.pending.at = clipNextAt(); if (live.extSync){ midiInit().catch(err => toast(err.message)); toast('Following MIDI clock. Start your drum machine or sequencer.'); } liveRender(); });
   const q = document.getElementById('lquant'); q.replaceChildren(...QUANTS.map(([v, l]) => h('option', {value: v, text: l}))); q.value = live.quant;
   q.addEventListener('change', () => { live.quant = q.value; liveSave(); });
   const c = document.getElementById('lcount'); c.addEventListener('change', () => { live.count = Math.max(2, Math.min(32, Math.round(+c.value) || 16)); liveSave(); liveRender(); });
@@ -9913,7 +9933,7 @@ document.getElementById('lexport').addEventListener('click', () => downloadJson(
 let clkTimes = [];
 function clipsClock(st, t){
   const now = t || performance.now();
-  if (st === 0xFA){ live.ticks = 0; clkTimes = []; if (live.extSync){ live.t0 = now; live.beat0 = 0; } return; }
+  if (st === 0xFA){ live.ticks = 0; clkTimes = []; if (live.extSync){ live.t0 = now; live.beat0 = 0; if (live.pending) live.pending.at = 0; } return; } // the count starts again: a waiting clip starts with it
   // Stop and Continue: the gap while stopped must not count as one very slow beat.
   if (st === 0xFC || st === 0xFB){ clkTimes = []; return; }
   if (st !== 0xF8) return;
@@ -10288,10 +10308,7 @@ setTimeout(() => { histLast = histState(); updUndo(); backupNow(); }, 1500);
 recSummary();
 if (settings.tips === false) document.getElementById('hint').hidden = true;
 // If the last session ended in Simple mode, give the patch its own screen and recorder connections back.
-if (simple.saved){
-  const outs = e => (e.to.node === 'main' && e.to.port === 'in') || (e.to.node === 'rec' && (e.to.port === 'video' || e.to.port === 'audio'));
-  edges = edges.filter(e => !outs(e)).concat(simple.saved.filter(e => nodes.has(e.from.node))); simple.saved = null; afterEdges();
-}
+simpleRestoreOuts();
 applyScope();
 setSimpleCount(simpleCount());
 if (settings.simple) setSimpleMode(true);
@@ -10327,7 +10344,11 @@ function frameBody(){
 }
 // requestAnimationFrame stops when the window is hidden; fall back to a timer so
 // output windows and recordings keep running.
-function schedule(){ if (document.hidden) setTimeout(frame, 33); else requestAnimationFrame(frame); }
+// Only the newest booking runs, so the two never double up.
+let booked = 0;
+function schedule(){ const id = ++booked, go = () => { if (id === booked) frame(); }; if (document.hidden) setTimeout(go, 33); else requestAnimationFrame(go); }
+// A frame already booked with requestAnimationFrame never arrives once the window is hidden: book the timer instead.
+document.addEventListener('visibilitychange', () => { if (document.hidden) schedule(); });
 schedule();
 })();
 </script>
