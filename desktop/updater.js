@@ -22,10 +22,11 @@ function newer(a, b){
   return false;
 }
 
-function setupUpdates({ name, page, repo }){
+function setupUpdates({ name, page, repo, getWin }){
   const state = { version: app.getVersion(), avail: null, ready: false, notifyOnly: true, dl: null, file: null };   // dl: 0–1 while downloading, 1 done
   let auBusy = false;   // electron-updater's own background download (Windows installer) is running
-  const win = () => BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null;
+  // Boxes belong to the main window (never the full-screen output window on the projector, even when it has focus).
+  const win = () => { const m = getWin && getWin(); return (m && !m.isDestroyed() ? m : null) || BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null; };
   const box = o => { const w = win(); return w ? dialog.showMessageBox(w, o) : dialog.showMessageBox(o); };
   const send = () => { for (const w of BrowserWindow.getAllWindows()) try { w.webContents.send('seeds:upd', { ...state }); } catch (e) {} };
   const told = new Set();
@@ -36,11 +37,14 @@ function setupUpdates({ name, page, repo }){
      Mac's chip (Seeds-x.y.z-arm64.dmg or -x64.dmg), found through GitHub's API; it's written to Downloads as name.part
      and renamed when complete, so a half-finished file never looks like the real one. */
   const dl = { busy: false, file: null, version: null };
+  // A connection that goes quiet without closing (Wi-Fi drop, captive portal) must end the download, not hang it for good.
+  const STALL_MS = 30000;
+  const within = (p, ms) => { let t; return Promise.race([p, new Promise((_, rej) => { t = setTimeout(() => rej(new Error('stalled')), ms); })]).finally(() => clearTimeout(t)); };
   const wantAsset = (n, exact) => process.platform === 'darwin'
     ? (exact ? new RegExp('-' + process.arch + '\\.dmg$', 'i').test(n) : /\.dmg$/i.test(n))
     : /-portable\.exe$/i.test(n);
   const assetOf = async version => {
-    const r = await net.fetch('https://api.github.com/repos/' + repo + '/releases/tags/v' + version, { headers: GH });
+    const r = await net.fetch('https://api.github.com/repos/' + repo + '/releases/tags/v' + version, { headers: GH, signal: AbortSignal.timeout(STALL_MS) });
     if (!r.ok) return null;
     const list = ((await r.json()).assets || []).filter(x => x && x.name);
     const a = list.find(x => wantAsset(String(x.name), true)) || list.find(x => wantAsset(String(x.name), false));
@@ -62,22 +66,23 @@ function setupUpdates({ name, page, repo }){
     if (dl.busy){ box({ type: 'info', buttons: ['OK'], title: name + ' update', message: 'Downloading ' + name + ' ' + version + '… ' + Math.round((state.dl || 0) * 100) + '%' }); return; }
     if (dl.file && dl.version === version && fs.existsSync(dl.file)){ openIt(); return; }
     dl.busy = true; state.dl = 0; send(); bar(0.01);
-    let part = null, rd = null, out = null;
+    let part = null, rd = null, out = null; const ac = new AbortController();
     // On any failure: stop the download (so the connection closes) and close the half-written file.
     const stopAll = () => {
+      try { ac.abort(); } catch (e) {}
       if (rd){ const x = rd; rd = null; try { const c = x.cancel && x.cancel(); if (c && c.catch) c.catch(() => {}); } catch (e) {} }
       if (out){ try { out.destroy(); } catch (e) {} }
     };
     try {
       const a = repo && await assetOf(version); if (!a) throw new Error('no file');
       const dir = app.getPath('downloads'), file = path.join(dir, a.name); part = file + '.part';
-      const r = await net.fetch(a.url); if (!r.ok || !r.body) throw new Error('HTTP ' + r.status);
+      const r = await within(net.fetch(a.url, { signal: ac.signal }), STALL_MS); if (!r.ok || !r.body) throw new Error('HTTP ' + r.status);
       const total = +r.headers.get('content-length') || a.size || 0; out = fs.createWriteStream(part); rd = r.body.getReader();
       const hash = crypto.createHash('sha256');   // hashed as it arrives, so there's no second pass over the file
       let got = 0, shown = 0, werr = null; out.on('error', e => { werr = e; });   // a disk error must not take the app down
       try {
         for (;;){
-          const { done, value } = await rd.read(); if (done) break;
+          const { done, value } = await within(rd.read(), STALL_MS); if (done) break;
           if (werr) throw werr;
           got += value.length; hash.update(value);
           if (!out.write(Buffer.from(value))) await new Promise(res => { const go = () => { out.off('drain', go); out.off('error', go); res(); }; out.on('drain', go); out.on('error', go); });

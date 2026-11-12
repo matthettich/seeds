@@ -35,4 +35,6 @@ jobs:
           # Safety: this job may only ever change beta/.
           if git diff --cached --name-only | grep -v '^beta/'; then echo "refusing: changes outside beta/"; exit 1; fi
           git commit -m "beta/: publish $(git rev-parse --short origin/beta) from the beta branch"
+          # main may have moved since checkout (a hotfix or release merge): put this commit on top and try again.
+          for i in 1 2 3; do git push origin HEAD:main && exit 0; git pull --rebase origin main; done
           git push origin HEAD:main
