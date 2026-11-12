@@ -164,7 +164,7 @@ if (firstCopy) app.whenReady().then(() => {
   createWindow();
   // New versions come from the public 'seeds' repo's Releases page (see updater.js). The page asks through preload.js
   // (File ▾ → Check for updates…, and the Update button in its top bar).
-  updates = setupUpdates({ name: '...Seeds', page: 'https://github.com/matthettich/seeds/releases/latest', repo: 'matthettich/seeds' });
+  updates = setupUpdates({ name: '...Seeds', page: 'https://github.com/matthettich/seeds/releases/latest', repo: 'matthettich/seeds', getWin: () => mainWin });
   ipcMain.handle('seeds:upd-state', () => updates.state());
   ipcMain.handle('seeds:upd-check', () => updates.check());
   ipcMain.handle('seeds:upd-act', () => updates.act());

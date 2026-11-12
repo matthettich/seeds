@@ -22,6 +22,28 @@ Start a new chat with: *"Clone matthettich/seeds and read HANDOFF.md, then …"*
   into `beta`; desktop v1.1.1 released (Run workflow with a version — pushing tags from Claude sessions is blocked).
 - Not done: writing takes to disk as they record in the desktop app (takes are held in memory until Stop).
 
+## Nov 12 bug review (on `beta`, not yet on live)
+- **Data / editing:** a patch file saved in Simple mode and opened again lost its own Main view and Recorder cables on
+  leaving Simple (`simpleRestoreOuts()`, shared with start-up); Undo/Redo within 0.3 s of an edit skipped a step and
+  dropped the edit (`histPush()` first); Preset morph set params the other preset doesn't have to `undefined` (wiped
+  stored shapes); right/middle-click on a patched input jack unplugged it.
+- **Picture:** Clips output (`liveout`) shares the Video mixer's shader and picked up its Key settings (holes in the
+  picture): it now sets the key uniforms itself. Video mixer Key slider double-click reset gave 40% instead of Off.
+- **Sound:** renaming a Send re-pairs its audio with Receives (`textField(…, onchange)`); Restart audio is refused while
+  a take is recording (the take would go silent); Simple mode's microphone is let go on leaving Simple and taken up
+  again on return (`simple.micWas`).
+- **Clips:** a queued clip never starts in Simple mode; "Learn note" is disarmed on leaving Clips; a queued clip follows
+  the clock when MIDI Start arrives or Sync is switched (`clipNextAt()`); a double-counted tap no longer sets 2000 BPM.
+- **Frame loop:** the hidden-window timer never took over, because the frame already booked with
+  `requestAnimationFrame` never arrives; a `visibilitychange` listener books the timer and only the newest booking runs
+  (`booked`). Browsers still slow hidden tabs to about one frame a second; the Worker idea below is still open.
+- **Memory:** RGB delay kept every spare frame after its delay was shortened (now 4, like `FrameBuf`).
+- **Desktop (next build):** the Mac/portable update download gives up after 30 s of silence instead of hanging with the
+  Update button stuck; update boxes open on the main window, never the output window. `beta-web.yml` retries its push
+  when `main` moved during the run.
+- Not changed: none of this touches saved patch formats. Tests: smoke test (all modes, every module added and removed)
+  plus targeted checks for Undo and the Simple-mode file, run before and after.
+
 ## Nov 3 review (senior code review + fixes)
 - **Released Nov 3 (owner: "build a desktop release with everything as well as push to main"):** `beta` merged into `main` (live web app) and desktop **v1.1.0** published as the latest release (installed copies update to it). Beta desktop v1.1.0-beta.1 was the pre-release before it. Test punchlist: https://claude.ai/artifact/4S9NAf8QNqdQwFtH6RKwVj
 - **Live (`main`) hotfixes:** frame loop can't freeze (next frame booked first; each module's render caught on its own);
