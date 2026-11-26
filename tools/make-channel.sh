@@ -18,7 +18,7 @@
 set -euo pipefail
 REF=${1:?ref}; DIR=${2:?dir}; PREFIX=${3:?cache prefix}; LABEL=${4:-$DIR}
 ROOT=$(git rev-parse --show-toplevel); cd "$ROOT"
-case "$DIR" in beta|stable) ;; *) echo "only beta/ or stable/ (got '$DIR')"; exit 1 ;; esac
+case "$DIR" in beta|stable|beats) ;; *) echo "only beta/, stable/ or beats/ (got '$DIR')"; exit 1 ;; esac
 # LABEL and PREFIX go into sed replacements: keep them to plain characters so they can't break the commands.
 [[ $LABEL =~ ^[A-Za-z0-9._\ -]+$ ]] || { echo "label may only use letters, digits, space, . _ - (got '$LABEL')"; exit 1; }
 [[ $PREFIX =~ ^[A-Za-z0-9._-]+$ ]] || { echo "cache prefix may only use letters, digits, . _ - (got '$PREFIX')"; exit 1; }
@@ -33,6 +33,15 @@ sed -i -E "s#^const CACHE = 'seeds-v([0-9]+)';#const CACHE = '${PREFIX}\1';#" "$
 sed -i -E "s#k\.startsWith\('seeds-v'\)#k.startsWith('${PREFIX}')#" "$DIR/sw.js"
 grep -q "^const CACHE = '${PREFIX}" "$DIR/sw.js" || { echo "sw.js cache name not found"; exit 1; }
 grep -q "startsWith('${PREFIX}')" "$DIR/sw.js" || { echo "sw.js clean-up filter not found"; exit 1; }
+# beats/ is the sequencer test copy: give it its OWN saves (local storage key, IndexedDB, folder picker id) so a
+# half-finished save format can never touch the live app's or beta's patches.
+if [ "$DIR" = beats ]; then
+  sed -i -E "s#^const STORE = 'videopatch:v1';#const STORE = 'videopatch-beats:v1';#" "$DIR/index.html"
+  sed -i -E "s#indexedDB\.open\('seeds', 1\)#indexedDB.open('seeds-beats', 1)#; s#id: 'seeds-patches'#id: 'seeds-beats-patches'#" "$DIR/index.html"
+  grep -q "^const STORE = 'videopatch-beats:v1';" "$DIR/index.html" || { echo "STORE key not found"; exit 1; }
+  grep -q "indexedDB.open('seeds-beats', 1)" "$DIR/index.html" || { echo "IndexedDB name not found"; exit 1; }
+  grep -q "id: 'seeds-beats-patches'" "$DIR/index.html" || { echo "folder picker id not found"; exit 1; }
+fi
 # The page title and the installed app's name.
 sed -i -E "0,/<title>([^<]*)<\/title>/s##<title>\1 (${LABEL})</title>#" "$DIR/index.html"
 grep -q "(${LABEL})</title>" "$DIR/index.html" || { echo "title not found"; exit 1; }
@@ -42,6 +51,6 @@ cat > "$DIR/README.md" <<EOF
 # ...Seeds: ${LABEL} copy
 
 Made by \`tools/make-channel.sh\` from \`${REF}\` (commit ${SHA}). Don't edit files here: change the \`${LABEL}\` branch and
-it publishes again. Runs at https://matthettich.github.io/seeds/${DIR}/ and shares saved patches with the live app.
+it publishes again. Runs at https://matthettich.github.io/seeds/${DIR}/. $( [ "$DIR" = beats ] && echo "Keeps its own saved patches, apart from the live app and beta." || echo "Shares saved patches with the live app." )
 EOF
 echo "$DIR/ <- $REF ($SHA)"

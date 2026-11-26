@@ -1,0 +1,40 @@
+# BEATS WEB COPY: every push to the `beats` branch (the beginner sequencer work) publishes that branch's app to beats/
+# on main, so it runs at https://matthettich.github.io/seeds/beats/ with its OWN saved patches. The live app and
+# beta/ are never touched. The publish script comes from the beats branch, so main's tools stay as they are until
+# beats is merged. Run workflow by hand to republish.
+name: Beats web copy
+
+on:
+  push:
+    branches: [beats]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: beats-web
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: main, fetch-depth: 0 }
+      - name: Copy the beats branch into beats/
+        run: |
+          git fetch origin beats
+          git show origin/beats:tools/make-channel.sh > /tmp/make-channel.sh
+          bash /tmp/make-channel.sh origin/beats beats seedsbeats-v beats
+      - name: Commit to main (beats/ only)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add beats
+          if git diff --cached --quiet; then echo "beats/ unchanged"; exit 0; fi
+          # Safety: this job may only ever change beats/.
+          if git diff --cached --name-only | grep -v '^beats/'; then echo "refusing: changes outside beats/"; exit 1; fi
+          git commit -m "beats/: publish $(git rev-parse --short origin/beats) from the beats branch"
+          for i in 1 2 3; do git push origin HEAD:main && exit 0; git pull --rebase origin main; done
+          git push origin HEAD:main
