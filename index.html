@@ -2824,11 +2824,13 @@ function makeBlobs(seed){
 }
 
 /* ---------- graph pulling ---------- */
-let _eIdx = null, _eArr = null, _eLen = -1, _eFrame = -1, _eVer = -1, edgeVer = 0;
+// Rebuilt only when the cables change: a new edges array, a different length, or edgeVer (bumped by syncCableEls).
+// Nothing edits edges in place without one of those, so it isn't rebuilt every frame.
+let _eIdx = null, _eArr = null, _eLen = -1, _eVer = -1, edgeVer = 0;
 function edgeInto(id, port){
-  if (_eArr !== edges || _eLen !== edges.length || _eFrame !== frameNo || _eVer !== edgeVer){
+  if (_eArr !== edges || _eLen !== edges.length || _eVer !== edgeVer){
     _eIdx = new Map(); for (const e of edges){ const k = e.to.node + '\u0001' + e.to.port; if (!_eIdx.has(k)) _eIdx.set(k, e); }
-    _eArr = edges; _eLen = edges.length; _eFrame = frameNo; _eVer = edgeVer;
+    _eArr = edges; _eLen = edges.length; _eVer = edgeVer;
   }
   return _eIdx.get(id + '\u0001' + port);
 }
@@ -6928,7 +6930,8 @@ function cableGroup(kind){
 function syncCableEls(){
   edgeVer++;
   document.body.classList.toggle('recmainon', recMainOn());
-  for (const [e, c] of cableEls) if (!edges.includes(e)){ c.g.remove(); cableEls.delete(e); }
+  const cur = new Set(edges);
+  for (const [e, c] of cableEls) if (!cur.has(e)){ c.g.remove(); cableEls.delete(e); }
   for (const e of edges){
     if (cableEls.has(e)) continue;
     const c = cableGroup(e.kind);
@@ -8001,6 +8004,7 @@ function perfTitleEls(n, st){
   return [t, sub];
 }
 function perfBuildPanel(n){
+  if (n._pp) return; // already has a panel: building it again would wrap its controls twice
   const st = perfState(n), body = n.el.querySelector(':scope > .body'); if (!body) return;
   const minB = h('button', {class:'hx', title:'Minimize', 'aria-label':'Minimize ' + perfName(n), text:'–'});
   const hideB = h('button', {class:'x hidebtn', title:'Hide this module (bring it back from Hidden modules)', 'aria-label':'Hide ' + perfName(n), text:'Hide'});
@@ -8128,7 +8132,8 @@ function perfEnter(){
 }
 function perfExit(){
   if (!perf.on) return;
-  for (const n of perfMods()) perfRemovePanel(n);
+  // Every module that has a panel, not just those perfMods() lists now (one can drop out while shown, e.g. in a Clips crossfade).
+  for (const n of nodes.values()) if (n._pp) perfRemovePanel(n);
   perf.on = false; document.body.classList.remove('perform');
   perfMenu.hidden = true;
 }
@@ -9660,15 +9665,15 @@ function fontOptions(){ return [...FONTS.map(f => [f[0], f[1]]), ...userFonts.ma
 function fontPicker(n){
   const sel = h('select', {'aria-label':'Font'});
   const fill = () => { const cur = n.params.font; sel.replaceChildren(...fontOptions().map(([v, l]) => h('option', {value: v, text: l}))); sel.value = cur; if (sel.value !== cur){ sel.append(h('option', {value: cur, text: cur.replace(/^u:/, '') + ' (missing)'})); sel.value = cur; } };
-  // Font menus refresh when a font is imported. Menus of deleted modules are dropped from the list.
-  fill(); window.fontPickers = (window.fontPickers || []).filter(f => nodes.get(f.n.id) === f.n).concat([{n, fill}]);
+  // Font menus refresh when a font is imported (fontRefresh). Kept on the module, so it goes when the module does.
+  fill(); n.fontFill = fill;
   sel.addEventListener('change', () => { n.params.font = sel.value; n.dirty = true; save(); });
   n.ctl = n.ctl || {}; n.ctl.font = {set(v){ n.params.font = v; fill(); }};
   const file = h('input', {type:'file', accept:'.ttf,.otf,.woff,.woff2,font/*', hidden: true});
   file.addEventListener('change', async () => { const f = file.files[0]; file.value = ''; if (!f) return; const nm = await importFont(f); if (nm){ n.params.font = 'u:' + nm; fill(); save(); } });
   return [row('Font', sel), file, h('button', {class:'btn', text:'Import font…', onclick: () => file.click()})];
 }
-function fontRefresh(){ window.fontPickers = (window.fontPickers || []).filter(f => nodes.get(f.n.id) === f.n); window.fontPickers.forEach(f => f.fill()); }
+function fontRefresh(){ for (const n of nodes.values()) if (n.fontFill) n.fontFill(); }
 async function addFontFace(name, data){ const ff = new FontFace(name, data); await ff.load(); document.fonts.add(ff); }
 async function importFont(file){
   const name = file.name.replace(/\.(ttf|otf|woff2?)$/i, '').replace(/["\\]/g, '').trim() || 'Imported font';

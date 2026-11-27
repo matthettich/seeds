@@ -22,6 +22,21 @@ Start a new chat with: *"Clone matthettich/seeds and read HANDOFF.md, then …"*
   into `beta`; desktop v1.1.1 released (Run workflow with a version — pushing tags from Claude sessions is blocked).
 - Not done: writing takes to disk as they record in the desktop app (takes are held in memory until Stop).
 
+## Nov 27 review fixes (docs/code-review-2026-11-27.md, phases 0–2; on `main`)
+- **Tests:** `npm test` at the repo root runs the updater tests and `tests/smoke.mjs` (no dependencies: Node 22+ and
+  Chrome; set `CHROME_PATH` if it isn't found). The smoke test serves a copy of `index.html` with a read-only hook
+  (`window.__seedsTest`) added before the closure ends, goes through every mode, adds and removes every module type,
+  and fails on console errors, uncaught exceptions, anything left behind (modules, cables, Present panels, GPU textures,
+  font menus, modules not garbage-collected), plus checks for each fix below. Run it before and after every change.
+- **Fixed:** an emptied patch (File → New, or every module deleted) no longer comes back as the demo patch after a
+  reload (`load()` returns `'ok'`/`'empty'`/false; a stored value that isn't a v1 patch goes to Backups); an output
+  window closing mid-frame no longer throws in `drawOutput`, and `closeOutput` frees its full-size copy (`n.pbuf`);
+  Present panels can't be built twice and leaving Present removes every panel (`n._pp`), even for a module that left
+  `perfMods()` while shown; font menus live on the module (`n.fontFill`, no `window.fontPickers`), so deleted text
+  modules are freed; `edgeInto`'s cable index is rebuilt only when cables change (not every frame); `syncCableEls`
+  uses a Set. Saved patch format unchanged.
+- **Not changed:** A3 (the report said `redo()` doesn't count `histBytes`; it does — checked over 50 undo/redo cycles).
+
 ## Nov 12 bug review (on `beta`, not yet on live)
 - **Data / editing:** a patch file saved in Simple mode and opened again lost its own Main view and Recorder cables on
   leaving Simple (`simpleRestoreOuts()`, shared with start-up); Undo/Redo within 0.3 s of an edit skipped a step and
