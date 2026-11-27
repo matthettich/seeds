@@ -6803,6 +6803,7 @@ function openOutput(n){
 function closeOutput(n){
   if (n.popup){ try { n.popup.close(); } catch(e){} }
   n.popup = null; n.pcv = null; n.pctx = null;
+  n.pbuf = null; n.pPending = false; // the copy is the window's full size (about 33 MB at 4K)
   setOutBtns(n);
 }
 // The output window draws on its own refresh (no tearing lines) and at its exact pixel size (no resampling stripes).
@@ -6824,7 +6825,8 @@ function drawOutput(n, src){
   // If that window isn't refreshing (hidden, or a system that pauses it), draw straight away so it never goes blank.
   if (n.pPending && now - n.pT > 150){ show(); return; }
   if (n.pPending) return; n.pPending = true; n.pT = now;
-  (w.requestAnimationFrame || window.requestAnimationFrame).call(w, show);
+  // The window can close between the check above and here.
+  try { (w.requestAnimationFrame || window.requestAnimationFrame).call(w, show); } catch(e){ closeOutput(n); }
 }
 window.addEventListener('pagehide', () => { for (const n of nodes.values()) if (n.popup) try { n.popup.close(); } catch(e){} });
 
@@ -7274,18 +7276,21 @@ function clearPatch(){
   decor = []; presets = []; activePreset = -1; midiMap = [];
   renderPresets(); markMapped(); syncCableEls();
 }
+// 'ok' = the saved patch was built; 'empty' = it has no modules (left empty on purpose, e.g. after File → New:
+// it stays empty, no demo patch); false = nothing saved, or it couldn't be opened (kept in Settings → Backups).
 function load(){
   let raw = null;
   try {
     raw = localStorage.getItem(STORE);
     const d = JSON.parse(raw || 'null');
-    if (!d || d.v !== 1 || !Array.isArray(d.nodes)) return false;
+    if (!d) return false;
+    if (d.v !== 1 || !Array.isArray(d.nodes)) throw new Error('not a ...Seeds patch');
     if (d.name){ patchName = d.name; pnameEl.value = d.name; }
     const ok = applyPatch(d);
     if (ok === null || (!ok && d.nodes.length)) throw new Error('the saved patch couldn’t be rebuilt');
     let stale = null; try { stale = localStorage.getItem(STORE + ':stale'); } catch(e2){}
     if (stale){ autosaveStale = true; setTimeout(() => toast('This is an older copy of your patch: the last changes were too big to autosave. Open your saved file if you have one.'), 1200); }
-    return ok;
+    return ok ? 'ok' : 'empty';
   } catch(e){
     // The autosave couldn't be opened. Keep a copy before anything overwrites it, and start from a clean patch
     // (not the demo patch on top of a half-loaded one).
