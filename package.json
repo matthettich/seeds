@@ -1,0 +1,10 @@
+{
+  "name": "seeds-tests",
+  "private": true,
+  "description": "Tests for ...Seeds. No dependencies: needs Node 22+ and Chrome (set CHROME_PATH if it isn't found).",
+  "scripts": {
+    "test": "node --test tests/updater.test.js && node tests/smoke.mjs",
+    "test:smoke": "node tests/smoke.mjs",
+    "test:updater": "node --test tests/updater.test.js"
+  }
+}
